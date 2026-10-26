@@ -1,0 +1,12 @@
+NAS漫画阅读器
+Copyright 2026 tmadmao
+
+本产品按 Apache License 2.0 发布，全文见同目录 LICENSE。
+
+本产品包含第三方开源组件，各自版权归其作者所有：
+
+  AndroidX libraries — Copyright The Android Open Source Project — Apache-2.0
+  Material Components for Android — Copyright The Android Open Source Project — Apache-2.0
+  Kotlin Standard Library — Copyright JetBrains s.r.o. — Apache-2.0
+
+各组件版本与坐标见 app/build.gradle.kts 与 gradle/libs.versions.toml。

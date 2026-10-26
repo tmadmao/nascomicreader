@@ -1,0 +1,29 @@
+# 构建产物
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+captures/
+.cxx/
+
+# 签名材料（离线保管）
+*.jks
+*.keystore
+keystore.properties
+
+# 编辑器 / 系统
+.idea/
+.DS_Store
+*.iml
+
+# 私有材料（不纳入版本控制）
+_local/
+_m5/
+_refactor/
+.workbuddy/
+
+# 测试用的真实漫画文件不进仓库
+*.rar
+*.cbr
+*.cbz

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 书脊标记：一根竖立的书脊条，顶部留缺口（"被抽出一半的书"），
+     底部实心表示已读比例。这是全站复用的品牌符号，源自本项目设计基线。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="96dp"
+    android:viewportWidth="72"
+    android:viewportHeight="96">
+
+    <!-- 书脊轮廓 -->
+    <path
+        android:pathData="M27,12 h18 a4,4 0 0 1 4,4 v64 a4,4 0 0 1 -4,4 h-18 a4,4 0 0 1 -4,-4 v-64 a4,4 0 0 1 4,-4 z"
+        android:strokeColor="#22262B"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000" />
+
+    <!-- 已读填充（底部起） -->
+    <path
+        android:pathData="M23,62 h26 v18 a4,4 0 0 1 -4,4 h-18 a4,4 0 0 1 -4,-4 z"
+        android:fillColor="#2F5FD0" />
+
+    <!-- 顶部缺口：一道纸色横条切断书脊上沿 -->
+    <path
+        android:pathData="M18,20 h14 v5 h-14 z"
+        android:fillColor="#F4F6F8" />
+    <path
+        android:pathData="M18.5,20.5 h13"
+        android:strokeColor="#22262B"
+        android:strokeWidth="2.5" />
+
+</vector>

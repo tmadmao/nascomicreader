@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 24/25 没有 adaptive-icon，这里给同构的静态图标 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M0,0 h108 v108 h-108 z"
+        android:fillColor="#F4F6F8" />
+
+    <path
+        android:pathData="M46,28 h16 a4,4 0 0 1 4,4 v48 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-48 a4,4 0 0 1 4,-4 z"
+        android:strokeColor="#22262B"
+        android:strokeWidth="4"
+        android:fillColor="#00000000" />
+
+    <path
+        android:pathData="M42,64 h24 v16 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 z"
+        android:fillColor="#2F5FD0" />
+</vector>

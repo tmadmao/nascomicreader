@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      权限按功能重审，最小化原则。当前为空壳，不声明任何权限。
+      实现到对应阶段时再逐条加入，并在提交信息里写明"哪条功能需要它"：
+        INTERNET                    远程仓库（WebDAV）
+        ACCESS_NETWORK_STATE        远程仓库可达性判断
+        ACCESS_LOCAL_NETWORK        局域网 WebDAV（targetSdk 37 起需要）
+        FOREGROUND_SERVICE          扫描/缓存后台任务
+        FOREGROUND_SERVICE_DATA_SYNC 同上
+        POST_NOTIFICATIONS          后台任务进度通知
+      存储一律走 SAF 持久化授权，不申请任何外部存储权限。
+    -->
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.NasComic">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

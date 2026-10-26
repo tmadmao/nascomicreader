@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NAS漫画阅读器</string>
+    <string name="shell_tagline">本地与远程漫画阅读</string>
+    <string name="shell_version">版本 %1$s</string>
+</resources>

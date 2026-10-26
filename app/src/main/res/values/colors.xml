@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 设计基线（见 .oil-ui/shelf-direction/设计说明.md）：冷灰纸面 + 单一靛蓝强调 -->
+    <color name="shell_background">#F4F6F8</color>
+    <color name="shell_ink">#22262B</color>
+    <color name="shell_ink_muted">#5F666D</color>
+    <color name="brand_indigo">#2F5FD0</color>
+    <color name="brand_indigo_dark">#2854BC</color>
+</resources>
