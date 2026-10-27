@@ -33,6 +33,10 @@ echo 'sdk.dir=<你的 Android SDK 路径>' > local.properties
 
 赞助不换取任何功能优先权，也不会改变 issue 的处理顺序。
 
+## 更新记录
+
+每个版本改了什么，见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 许可
 
 [Apache-2.0](LICENSE)
