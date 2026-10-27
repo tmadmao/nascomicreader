@@ -5,14 +5,28 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 
 /**
+ * 一页要画的东西：位图 + 取哪一块（裁白边、跨页拆分都只改这块矩形，不复制位图）。
+ */
+data class ReaderPage(
+    val bitmap: Bitmap,
+    val src: Rect,
+    /** 宽图（跨页大图）。宽图不并排，可拆两半看 */
+    val wide: Boolean,
+) {
+    val width: Int get() = src.width()
+    val height: Int get() = src.height()
+}
+
+/**
  * 阅读画面。一屏画一到两页，位置由 [PageFit] 算好。
  *
- * 用自绘而不是 ImageView：双页要两页并排、之后还要接裁白边（按裁剪后的矩形取源），
+ * 用自绘而不是 ImageView：双页要两页并排，裁白边与拆页要按矩形取源，
  * ImageView 的 scaleType 表达不了这些。
  */
 class ReaderView @JvmOverloads constructor(
@@ -20,8 +34,9 @@ class ReaderView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
 
-    private var pages: List<Bitmap> = emptyList()
+    private var pages: List<ReaderPage> = emptyList()
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+    private val dst = RectF()
 
     /** 左右各留的边距（px） */
     var marginPx: Int = 0
@@ -43,8 +58,8 @@ class ReaderView @JvmOverloads constructor(
 
     private val gapPx: Int get() = (marginPx * 0.5f).toInt().coerceAtLeast(0)
 
-    fun setPages(bitmaps: List<Bitmap>) {
-        pages = bitmaps
+    fun setPages(list: List<ReaderPage>) {
+        pages = list
         invalidate()
     }
 
@@ -59,16 +74,12 @@ class ReaderView @JvmOverloads constructor(
             gap = gapPx,
             sizes = pages.map { it.width to it.height },
         )
-        pages.forEachIndexed { index, bitmap ->
-            if (bitmap.isRecycled) return@forEachIndexed
+        pages.forEachIndexed { index, page ->
+            if (page.bitmap.isRecycled) return@forEachIndexed
             val box = boxes.getOrNull(index) ?: return@forEachIndexed
             if (box.width <= 0f || box.height <= 0f) return@forEachIndexed
-            canvas.drawBitmap(
-                bitmap,
-                null,
-                RectF(box.left, box.top, box.right, box.bottom),
-                paint,
-            )
+            dst.set(box.left, box.top, box.right, box.bottom)
+            canvas.drawBitmap(page.bitmap, page.src, dst, paint)
         }
     }
 }

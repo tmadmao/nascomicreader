@@ -66,6 +66,22 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         host.addView(
+            switchRow(
+                title = getString(R.string.settings_trim_border),
+                desc = getString(R.string.settings_trim_border_desc),
+                checked = reader.trimBorder,
+            ) { checked -> reader.trimBorder = checked }
+        )
+
+        host.addView(
+            switchRow(
+                title = getString(R.string.settings_split_wide),
+                desc = getString(R.string.settings_split_wide_desc),
+                checked = reader.splitWide,
+            ) { checked -> reader.splitWide = checked }
+        )
+
+        host.addView(
             sliderRow(
                 title = getString(R.string.settings_margin),
                 min = 0,

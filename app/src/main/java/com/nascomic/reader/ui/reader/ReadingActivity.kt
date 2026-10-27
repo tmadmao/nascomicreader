@@ -2,6 +2,7 @@ package com.nascomic.reader.ui.reader
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -63,6 +64,10 @@ class ReadingActivity : AppCompatActivity() {
     private var toolbarShown = false
     /** 当前这一屏画了几页：双页开启时可能是 2，翻页步进跟着变 */
     private var shownPages = 1
+    /** 跨页拆分：0 看左半，1 看右半。只在宽图上生效 */
+    private var half = 0
+    /** 当前页是不是宽图 */
+    private var currentWide = false
     private var resumedOnce = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -189,6 +194,7 @@ class ReadingActivity : AppCompatActivity() {
             } else {
                 binding.error.isVisible = false
                 shownPages = loaded.size
+                currentWide = loaded.first().wide
                 binding.page.setPages(loaded)
             }
             binding.loading.isVisible = false
@@ -197,23 +203,44 @@ class ReadingActivity : AppCompatActivity() {
     }
 
     /**
-     * 取这一屏要画的页。双页开启时，只有两页都是竖版才并排——
-     * 横版宽图本身就是跨页大图，并排会挤成两条。
+     * 取这一屏要画的内容。双页开启时只有两页都不是宽图才并排——
+     * 宽图本身就是跨页大图，并排会挤成两条。
      */
-    private fun loadSpread(src: BookSource, targetW: Int, targetH: Int): List<Bitmap> {
-        val first = runCatching {
-            PageBitmapLoader.load(src.openPage(page), targetW, targetH)
-        }.getOrNull() ?: return emptyList()
-
-        if (!prefs.dualPage) return listOf(first)
-        if (first.width > first.height) return listOf(first)
+    private fun loadSpread(src: BookSource, targetW: Int, targetH: Int): List<ReaderPage> {
+        val first = buildPage(src, page, targetW, targetH) ?: return emptyList()
+        if (first.wide || !prefs.dualPage) return listOf(first)
         if (page + 1 >= total) return listOf(first)
 
-        val second = runCatching {
-            PageBitmapLoader.load(src.openPage(page + 1), targetW, targetH)
-        }.getOrNull() ?: return listOf(first)
+        val second = buildPage(src, page + 1, targetW, targetH) ?: return listOf(first)
+        return if (second.wide) listOf(first) else listOf(first, second)
+    }
 
-        return if (second.width <= second.height) listOf(first, second) else listOf(first)
+    /**
+     * 解一页，并按参数决定取哪一块：裁白边、跨页拆分都只改源矩形，不复制位图。
+     */
+    private fun buildPage(src: BookSource, index: Int, targetW: Int, targetH: Int): ReaderPage? {
+        val bitmap = runCatching {
+            PageBitmapLoader.load(src.openPage(index), targetW, targetH)
+        }.getOrNull() ?: return null
+
+        val bounds = if (prefs.trimBorder) {
+            TrimBounds.detect(bitmap)
+        } else {
+            TrimBounds.Bounds(0, 0, bitmap.width, bitmap.height)
+        }
+        val full = Rect(bounds.left, bounds.top, bounds.right, bounds.bottom)
+        val wide = full.width() > full.height() * 1.2f
+
+        if (wide && prefs.splitWide) {
+            val mid = full.left + full.width() / 2
+            val part = if (half == 1) {
+                Rect(mid, full.top, full.right, full.bottom)
+            } else {
+                Rect(full.left, full.top, mid, full.bottom)
+            }
+            return ReaderPage(bitmap, part, wide = true)
+        }
+        return ReaderPage(bitmap, full, wide = wide)
     }
 
     private fun showError(message: String) {
@@ -310,18 +337,32 @@ class ReadingActivity : AppCompatActivity() {
         }
     }
 
-    /** 前进一屏：并排时一次跨两页 */
+    /** 前进一屏：并排时一次跨两页；拆页时先看右半再翻页 */
     private fun turnForward() {
-        turnTo(page + shownPages.coerceAtLeast(1))
+        if (splitActive() && half == 0) {
+            half = 1
+            showPage()
+            return
+        }
+        turnTo(page + shownPages.coerceAtLeast(1), newHalf = 0)
     }
 
     private fun turnBackward() {
-        turnTo(page - shownPages.coerceAtLeast(1))
+        if (splitActive() && half == 1) {
+            half = 0
+            showPage()
+            return
+        }
+        // 后退落到宽图时先看右半，符合「从后往前」的直觉
+        turnTo(page - shownPages.coerceAtLeast(1), newHalf = 1)
     }
 
-    private fun turnTo(target: Int) {
+    private fun splitActive(): Boolean = currentWide && prefs.splitWide
+
+    private fun turnTo(target: Int, newHalf: Int = 0) {
         if (loading) return
         if (target < 0 || target >= total) return
+        half = newHalf
         page = target
         showPage()
         saveProgress()

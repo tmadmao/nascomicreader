@@ -71,6 +71,12 @@
     <string name="settings_dual_page">双页并排</string>
     <string name="settings_dual_page_desc">两页都是竖版时并排显示，横版大图仍单页</string>
 
+    <string name="settings_trim_border">裁白边</string>
+    <string name="settings_trim_border_desc">切掉页面四周的白边，只显示有内容的部分</string>
+
+    <string name="settings_split_wide">跨页拆分</string>
+    <string name="settings_split_wide_desc">横向跨页大图拆成左右两半，先看左再翻到右</string>
+
     <string name="settings_margin">两侧边距</string>
     <string name="settings_margin_value">%1$d dp</string>
 

@@ -34,6 +34,16 @@ class ReaderPrefs(context: Context) {
         get() = sp.getInt(KEY_CANVAS, Canvas.DARK.value)
         set(value) = sp.edit().putInt(KEY_CANVAS, value).apply()
 
+    /** 裁白边：把页面四周的白边切掉，只显示有内容的部分 */
+    var trimBorder: Boolean
+        get() = sp.getBoolean(KEY_TRIM, false)
+        set(value) = sp.edit().putBoolean(KEY_TRIM, value).apply()
+
+    /** 跨页拆分：宽图按左右两半分别显示 */
+    var splitWide: Boolean
+        get() = sp.getBoolean(KEY_SPLIT, false)
+        set(value) = sp.edit().putBoolean(KEY_SPLIT, value).apply()
+
     /** 页面上是否显示页码与章名 */
     var showPageLabel: Boolean
         get() = sp.getBoolean(KEY_PAGE_LABEL, true)
@@ -56,5 +66,7 @@ class ReaderPrefs(context: Context) {
         const val KEY_MARGIN = "reader.side_margin_dp"
         const val KEY_CANVAS = "reader.canvas"
         const val KEY_PAGE_LABEL = "reader.show_page_label"
+        const val KEY_TRIM = "reader.trim_border"
+        const val KEY_SPLIT = "reader.split_wide"
     }
 }
