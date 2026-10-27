@@ -22,6 +22,12 @@ object ScanRules {
     /** PDF 自成一本书，不参与章回体划分 */
     fun isPdf(name: String): Boolean = extensionOf(name) in PDF_EXTENSIONS
 
+    /** EPUB 同样自成一本书 */
+    fun isEpub(name: String): Boolean = extensionOf(name) == "epub"
+
+    /** 能直接当一本书的单个文件 */
+    fun isSingleBookFile(name: String): Boolean = isArchive(name) || isPdf(name) || isEpub(name)
+
     fun isImage(name: String): Boolean = ImageNames.isImage(name)
 
     /** 目录里直接有图片 */

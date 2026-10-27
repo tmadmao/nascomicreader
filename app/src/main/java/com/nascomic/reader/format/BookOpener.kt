@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
+import com.nascomic.reader.format.epub.EpubBookSource
 import com.nascomic.reader.format.pdf.PdfBookSource
 import com.nascomic.reader.format.zip.RandomAccessData
 import com.nascomic.reader.format.zip.ZipCatalog
@@ -28,6 +29,7 @@ class BookOpener(private val context: Context) {
         return when (book.format) {
             BookEntity.FORMAT_ZIP -> openZip(walker, book.docRef)
             BookEntity.FORMAT_PDF -> openPdf(walker, book.docRef)
+            BookEntity.FORMAT_EPUB -> EpubBookSource(openCatalog(walker, book.docRef))
             BookEntity.FORMAT_FOLDER ->
                 if (chapters.isEmpty()) {
                     openFolder(walker, book.docRef, book.title)
@@ -38,13 +40,17 @@ class BookOpener(private val context: Context) {
         }
     }
 
-    private fun openZip(walker: SafWalker, docId: String): BookSource {
+    private fun openZip(walker: SafWalker, docId: String): BookSource =
+        ZipBookSource(openCatalog(walker, docId))
+
+    /** 打开为压缩包目录（epub 也是 zip） */
+    private fun openCatalog(walker: SafWalker, docId: String): ZipCatalog {
         val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
             Uri.parse(walker.treeUriString), docId
         )
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: throw IllegalStateException("打不开文件：$docId")
-        return ZipBookSource(ZipCatalog.open(ChannelRandomAccess(pfd)))
+        return ZipCatalog.open(ChannelRandomAccess(pfd))
     }
 
     private fun openPdf(walker: SafWalker, docId: String): BookSource {

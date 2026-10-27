@@ -45,6 +45,7 @@ class LibraryScanner(
                     node.isDir -> classifyFolder(walker, node)?.let { found += it }
                     ScanRules.isArchive(node.name) -> found += archiveAsBook(node)
                     ScanRules.isPdf(node.name) -> found += pdfAsBook(node)
+                    ScanRules.isEpub(node.name) -> found += epubAsBook(node)
                     else -> Unit
                 }
             }
@@ -154,6 +155,12 @@ class LibraryScanner(
     private fun pdfAsBook(node: ScanNode) = Candidate(
         node = node,
         format = BookEntity.FORMAT_PDF,
+        chapters = emptyList(),
+    )
+
+    private fun epubAsBook(node: ScanNode) = Candidate(
+        node = node,
+        format = BookEntity.FORMAT_EPUB,
         chapters = emptyList(),
     )
 
