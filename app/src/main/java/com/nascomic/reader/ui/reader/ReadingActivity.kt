@@ -22,6 +22,8 @@ class ReadingActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_BOOK_ID = "book_id"
+        /** 指定从哪一页开始读；不传则接着上次的进度 */
+        const val EXTRA_START_PAGE = "start_page"
         /** 左右翻页的分区线，与后续设置项保持一致 */
         private const val ZONE_LEFT = 0.35f
         private const val ZONE_RIGHT = 0.65f
@@ -33,6 +35,7 @@ class ReadingActivity : AppCompatActivity() {
 
     private var source: BookSource? = null
     private var bookId: Long = 0
+    private var requestedPage: Int = -1
     private var page = 0
     private var total = 0
     private var loading = false
@@ -43,6 +46,7 @@ class ReadingActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         bookId = intent.getLongExtra(EXTRA_BOOK_ID, 0L)
+        requestedPage = intent.getIntExtra(EXTRA_START_PAGE, -1)
         if (bookId == 0L) {
             finish()
             return
@@ -76,9 +80,14 @@ class ReadingActivity : AppCompatActivity() {
                 val chapterCount = if (book.isSingleVolume == 1) 0 else opened.chapters.size
                 db.bookDao().setTotals(bookId, total, chapterCount)
 
-                val saved = db.progressDao().forBook(bookId)
-                page = saved?.pageGlobal?.coerceIn(0, total - 1) ?: 0
+                page = if (requestedPage >= 0) {
+                    requestedPage.coerceIn(0, total - 1)
+                } else {
+                    val saved = db.progressDao().forBook(bookId)
+                    saved?.pageGlobal?.coerceIn(0, total - 1) ?: 0
+                }
                 showPage()
+                saveProgress()
             } catch (e: Exception) {
                 showError(e.message ?: getString(com.nascomic.reader.R.string.reader_open_failed))
             } finally {

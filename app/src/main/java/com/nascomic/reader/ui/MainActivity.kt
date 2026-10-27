@@ -19,7 +19,10 @@ import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.library.scan.LibraryScanner
+import com.nascomic.reader.settings.AppPrefs
+import com.nascomic.reader.ui.detail.DetailActivity
 import com.nascomic.reader.ui.reader.ReadingActivity
+import com.nascomic.reader.ui.settings.SettingsActivity
 import com.nascomic.reader.ui.shelf.ShelfAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -37,6 +40,8 @@ class MainActivity : AppCompatActivity() {
     private val scanner by lazy { LibraryScanner(this, db) }
     private val thumbs by lazy { ThumbnailStore(this) }
     private val opener by lazy { BookOpener(this) }
+
+    private val prefs by lazy { AppPrefs(this) }
 
     private lateinit var adapter: ShelfAdapter
     private var currentTab: String = TAB_ALL
@@ -61,6 +66,9 @@ class MainActivity : AppCompatActivity() {
 
         binding.addFolder.setOnClickListener { pickFolder.launch(null) }
         binding.rescan.setOnClickListener { rescanAll() }
+        binding.settings.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
 
         refresh()
     }
@@ -182,11 +190,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 点书：默认进详情页；用户勾了「跳过详情页」就直接接着读。
+     */
     private fun openBook(book: BookEntity) {
-        startActivity(
+        val intent = if (prefs.skipDetail) {
             Intent(this, ReadingActivity::class.java)
                 .putExtra(ReadingActivity.EXTRA_BOOK_ID, book.id)
-        )
+        } else {
+            Intent(this, DetailActivity::class.java)
+                .putExtra(DetailActivity.EXTRA_BOOK_ID, book.id)
+        }
+        startActivity(intent)
     }
 
     private fun status(text: String) {

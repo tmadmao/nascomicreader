@@ -35,6 +35,16 @@
             android:background="?attr/selectableItemBackgroundBorderless" />
 
         <TextView
+            android:id="@+id/settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="12dp"
+            android:text="@string/action_settings"
+            android:textColor="@color/shell_ink_muted"
+            android:textSize="13sp"
+            android:background="?attr/selectableItemBackgroundBorderless" />
+
+        <TextView
             android:id="@+id/rescan"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

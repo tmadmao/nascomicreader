@@ -34,4 +34,23 @@
     <string name="shelf_empty">还没有书。点右上角「添加目录」，选一个放漫画的文件夹。</string>
     <string name="tab_all">全部</string>
     <string name="tab_recent">最近阅读</string>
+
+    <string name="action_back">返回</string>
+    <string name="action_settings">设置</string>
+
+    <string name="detail_start_reading">开始阅读</string>
+    <string name="detail_continue_reading">继续阅读 · 第 %1$d 页</string>
+    <string name="detail_toc">目录</string>
+    <string name="detail_meta_paged">%1$d 页</string>
+    <string name="detail_meta_chaptered">%1$d 页 · %2$d 章</string>
+    <string name="detail_progress">读到第 %1$d 页，共 %2$d 页</string>
+    <string name="detail_counting">正在统计页数…</string>
+    <string name="detail_count_failed">这本书打不开，页数统计失败</string>
+    <string name="detail_no_toc">单行本，没有章节。</string>
+    <string name="detail_chapter_row">%1$d. %2$s</string>
+    <string name="detail_chapter_pages">%1$d 页</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_skip_detail">跳过详情页</string>
+    <string name="settings_skip_detail_desc">打开书时直接继续阅读，不显示详情页</string>
 </resources>
