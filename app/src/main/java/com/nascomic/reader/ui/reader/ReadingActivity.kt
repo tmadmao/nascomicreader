@@ -8,6 +8,7 @@ import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.databinding.ActivityReaderBinding
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.BookSource
+import com.nascomic.reader.format.pagePosition
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,8 @@ class ReadingActivity : AppCompatActivity() {
     private var requestedPage: Int = -1
     private var page = 0
     private var total = 0
+    /** 是否有章的概念。单行本没有，页码按全书算 */
+    private var chaptered = false
     private var loading = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +80,8 @@ class ReadingActivity : AppCompatActivity() {
 
                 // 页数只在真正打开时才知道，这里补写回库。
                 // 单行本没有章的概念，章数记 0，免得界面把它显示成章回体
-                val chapterCount = if (book.isSingleVolume == 1) 0 else opened.chapters.size
+                chaptered = book.isSingleVolume == 0 && opened.chapters.isNotEmpty()
+                val chapterCount = if (chaptered) opened.chapters.size else 0
                 db.bookDao().setTotals(bookId, total, chapterCount)
 
                 page = if (requestedPage >= 0) {
@@ -101,9 +105,16 @@ class ReadingActivity : AppCompatActivity() {
         if (loading) return
         loading = true
         binding.loading.visibility = android.view.View.VISIBLE
-        binding.pageLabel.text = getString(
-            com.nascomic.reader.R.string.reader_page_format, page + 1, total
-        )
+        // 章回体显示章内页码：第 2 话的第 1 页就是 1/2，不是全书第 3/4
+        val pos = src.pagePosition(page, chaptered)
+        binding.pageLabel.text = if (pos.chaptered) {
+            getString(
+                com.nascomic.reader.R.string.reader_page_chapter_format,
+                pos.chapterTitle, pos.page, pos.total
+            )
+        } else {
+            getString(com.nascomic.reader.R.string.reader_page_format, pos.page, pos.total)
+        }
 
         lifecycleScope.launch {
             val bitmap: Bitmap? = withContext(Dispatchers.IO) {
@@ -116,7 +127,12 @@ class ReadingActivity : AppCompatActivity() {
                 }.getOrNull()
             }
             if (bitmap == null) {
-                showError(getString(com.nascomic.reader.R.string.reader_page_failed, page + 1))
+                showError(
+                    getString(
+                        com.nascomic.reader.R.string.reader_page_failed,
+                        src.pagePosition(page, chaptered).page
+                    )
+                )
             } else {
                 binding.error.visibility = android.view.View.GONE
                 binding.page.setImageBitmap(bitmap)

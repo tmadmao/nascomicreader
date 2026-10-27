@@ -45,6 +45,9 @@ class DetailActivity : AppCompatActivity() {
     private var progress: ProgressEntity? = null
     private var chapterStarts: IntArray = IntArray(0)
 
+    /** 数据装载过一次之后，onResume 才有东西可刷新 */
+    private var loaded = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
@@ -82,6 +85,17 @@ class DetailActivity : AppCompatActivity() {
                 }
                 render()
             }
+            loaded = true
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从阅读页返回时进度已经变了，重读一次再画
+        if (!loaded) return
+        lifecycleScope.launch {
+            progress = db.progressDao().forBook(bookId)
+            render()
         }
     }
 
@@ -98,10 +112,26 @@ class DetailActivity : AppCompatActivity() {
 
         val p = progress
         if (p != null && b.pageTotal > 0) {
+            // 章回体按章内页报进度：读到第 2 话第 1 页，而不是全书第 3 页
+            val chapter = chapters.getOrNull(p.chapterOrdinal)
+            val byChapter = isChaptered && chapter != null && chapter.pageTotal > 0
+
             binding.progressInfo.isVisible = true
-            binding.progressInfo.text =
+            binding.progressInfo.text = if (byChapter) {
+                getString(
+                    R.string.detail_progress_chapter,
+                    chapter.title, p.pageInChapter + 1, chapter.pageTotal
+                )
+            } else {
                 getString(R.string.detail_progress, p.pageGlobal + 1, b.pageTotal)
-            binding.primary.text = getString(R.string.detail_continue_reading, p.pageGlobal + 1)
+            }
+            binding.primary.text = if (byChapter) {
+                getString(
+                    R.string.detail_continue_reading_chapter, chapter.title, p.pageInChapter + 1
+                )
+            } else {
+                getString(R.string.detail_continue_reading, p.pageGlobal + 1)
+            }
         } else {
             binding.progressInfo.isVisible = false
             binding.primary.text = getString(R.string.detail_start_reading)
