@@ -1,6 +1,7 @@
 package com.nascomic.reader.ui.reader
 
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -23,6 +24,7 @@ import com.nascomic.reader.format.BookSource
 import com.nascomic.reader.format.pagePosition
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
+import com.nascomic.reader.settings.ReaderPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -47,6 +49,7 @@ class ReadingActivity : AppCompatActivity() {
     private lateinit var binding: ActivityReaderBinding
     private val db by lazy { ReaderDatabase.get(this) }
     private val opener by lazy { BookOpener(this) }
+    private val prefs by lazy { ReaderPrefs(this) }
 
     private var source: BookSource? = null
     private var bookId: Long = 0
@@ -58,6 +61,9 @@ class ReadingActivity : AppCompatActivity() {
     private var chaptered = false
     private var loading = false
     private var toolbarShown = false
+    /** 当前这一屏画了几页：双页开启时可能是 2，翻页步进跟着变 */
+    private var shownPages = 1
+    private var resumedOnce = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,6 +96,17 @@ class ReadingActivity : AppCompatActivity() {
             }
             insets
         }
+    }
+
+    /** 把显示类参数应用到画面上。设置改完回来会再调一次。 */
+    private fun applyDisplayPrefs() {
+        binding.page.canvasColor = when (ReaderPrefs.Canvas.of(prefs.canvas)) {
+            ReaderPrefs.Canvas.LIGHT -> 0xFFF4F6F8.toInt()
+            ReaderPrefs.Canvas.DARK -> 0xFF2A2E33.toInt()
+            ReaderPrefs.Canvas.BLACK -> Color.BLACK
+        }
+        binding.page.marginPx = dp(prefs.sideMarginDp)
+        binding.pageLabel.isVisible = prefs.showPageLabel && !toolbarShown
     }
 
     private fun openBook() {
@@ -141,6 +158,11 @@ class ReadingActivity : AppCompatActivity() {
     private fun showPage() {
         val src = source ?: return
         if (loading) return
+        // 首帧还没量出尺寸，等布局完再画，否则解码目标会算成 1px
+        if (binding.page.width == 0 || binding.page.height == 0) {
+            binding.page.post { showPage() }
+            return
+        }
         loading = true
         binding.loading.isVisible = true
 
@@ -155,25 +177,43 @@ class ReadingActivity : AppCompatActivity() {
         binding.pageLabelBar.text = label
         binding.chapterName.text = if (pos.chaptered) pos.chapterTitle else ""
 
+        val viewW = binding.page.width.coerceAtLeast(1)
+        val viewH = binding.page.height.coerceAtLeast(1)
+        // 双页时每页只占半宽，解码目标也跟着减半，省一半内存
+        val targetW = if (prefs.dualPage) (viewW / 2).coerceAtLeast(1) else viewW
+
         lifecycleScope.launch {
-            val bitmap: Bitmap? = withContext(Dispatchers.IO) {
-                runCatching {
-                    PageBitmapLoader.load(
-                        src.openPage(page),
-                        binding.page.width.coerceAtLeast(1),
-                        binding.page.height.coerceAtLeast(1),
-                    )
-                }.getOrNull()
-            }
-            if (bitmap == null) {
+            val loaded = withContext(Dispatchers.IO) { loadSpread(src, targetW, viewH) }
+            if (loaded.isEmpty()) {
                 showError(getString(R.string.reader_page_failed, pos.page))
             } else {
                 binding.error.isVisible = false
-                binding.page.setImageBitmap(bitmap)
+                shownPages = loaded.size
+                binding.page.setPages(loaded)
             }
             binding.loading.isVisible = false
             loading = false
         }
+    }
+
+    /**
+     * 取这一屏要画的页。双页开启时，只有两页都是竖版才并排——
+     * 横版宽图本身就是跨页大图，并排会挤成两条。
+     */
+    private fun loadSpread(src: BookSource, targetW: Int, targetH: Int): List<Bitmap> {
+        val first = runCatching {
+            PageBitmapLoader.load(src.openPage(page), targetW, targetH)
+        }.getOrNull() ?: return emptyList()
+
+        if (!prefs.dualPage) return listOf(first)
+        if (first.width > first.height) return listOf(first)
+        if (page + 1 >= total) return listOf(first)
+
+        val second = runCatching {
+            PageBitmapLoader.load(src.openPage(page + 1), targetW, targetH)
+        }.getOrNull() ?: return listOf(first)
+
+        return if (second.width <= second.height) listOf(first, second) else listOf(first)
     }
 
     private fun showError(message: String) {
@@ -187,9 +227,11 @@ class ReadingActivity : AppCompatActivity() {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.action == MotionEvent.ACTION_UP && source != null && !overToolbar(ev)) {
             val x = ev.x / (binding.readerRoot.width.coerceAtLeast(1))
+            // 方向可切：从左往右读时点右侧翻到下一页，从右往左读时反过来
+            val forwardRight = prefs.flipForwardRight
             when {
-                x < ZONE_LEFT -> turnTo(page - 1)
-                x > ZONE_RIGHT -> turnTo(page + 1)
+                x < ZONE_LEFT -> if (forwardRight) turnBackward() else turnForward()
+                x > ZONE_RIGHT -> if (forwardRight) turnForward() else turnBackward()
                 else -> setToolbarVisible(!toolbarShown)
             }
         }
@@ -207,7 +249,7 @@ class ReadingActivity : AppCompatActivity() {
     private fun setToolbarVisible(show: Boolean) {
         toolbarShown = show
         // 常驻页码与工具栏里的页码只留一个，避免重复
-        binding.pageLabel.isVisible = !show
+        binding.pageLabel.isVisible = !show && prefs.showPageLabel
         binding.topBar.isVisible = show
         binding.bottomBar.isVisible = show
         if (show) {
@@ -268,6 +310,15 @@ class ReadingActivity : AppCompatActivity() {
         }
     }
 
+    /** 前进一屏：并排时一次跨两页 */
+    private fun turnForward() {
+        turnTo(page + shownPages.coerceAtLeast(1))
+    }
+
+    private fun turnBackward() {
+        turnTo(page - shownPages.coerceAtLeast(1))
+    }
+
     private fun turnTo(target: Int) {
         if (loading) return
         if (target < 0 || target >= total) return
@@ -305,6 +356,15 @@ class ReadingActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        val first = !resumedOnce
+        resumedOnce = true
+        applyDisplayPrefs()
+        // 从设置页回来时参数可能变了，按新参数重画当前页
+        if (!first && source != null && !loading) showPage()
+    }
+
     override fun onStop() {
         super.onStop()
         saveProgress()
@@ -313,7 +373,7 @@ class ReadingActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         runCatching { source?.close() }
-        binding.page.setImageDrawable(null)
+        binding.page.setPages(emptyList())
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

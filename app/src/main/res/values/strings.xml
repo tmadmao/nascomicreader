@@ -59,4 +59,26 @@
     <string name="settings_title">设置</string>
     <string name="settings_skip_detail">跳过详情页</string>
     <string name="settings_skip_detail_desc">打开书时直接继续阅读，不显示详情页</string>
+
+    <string name="settings_section_reading">阅读</string>
+    <string name="settings_section_other">其他</string>
+
+    <string name="settings_flip_direction">翻页方向</string>
+    <string name="settings_flip_direction_desc">决定点屏幕哪一侧看下一页</string>
+    <string name="settings_flip_ltr">从左往右</string>
+    <string name="settings_flip_rtl">从右往左</string>
+
+    <string name="settings_dual_page">双页并排</string>
+    <string name="settings_dual_page_desc">两页都是竖版时并排显示，横版大图仍单页</string>
+
+    <string name="settings_margin">两侧边距</string>
+    <string name="settings_margin_value">%1$d dp</string>
+
+    <string name="settings_canvas">画布底色</string>
+    <string name="settings_canvas_light">浅色</string>
+    <string name="settings_canvas_dark">深灰</string>
+    <string name="settings_canvas_black">黑色</string>
+
+    <string name="settings_page_label">显示页码</string>
+    <string name="settings_page_label_desc">阅读时在底部显示位置，呼出工具栏时自动让位</string>
 </resources>

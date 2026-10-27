@@ -5,12 +5,10 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <ImageView
+    <com.nascomic.reader.ui.reader.ReaderView
         android:id="@+id/page"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:scaleType="fitCenter"
-        android:contentDescription="@null" />
+        android:layout_height="match_parent" />
 
     <ProgressBar
         android:id="@+id/loading"
