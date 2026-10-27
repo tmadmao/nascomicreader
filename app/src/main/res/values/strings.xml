@@ -16,4 +16,16 @@
     <string name="status_rescan_done">%1$d 个来源扫描完成 · 共 %2$d 本</string>
     <string name="status_no_source">还没有添加过目录</string>
     <string name="status_source_missing">来源记录丢失，请重新选择目录</string>
+
+    <string name="reader_page_format">%1$d / %2$d</string>
+    <string name="reader_open_failed">打不开这本书</string>
+    <string name="reader_page_failed">第 %1$d 页读不出来</string>
+    <string name="reader_empty">这本书里没有可显示的图片</string>
+
+    <string name="kind_archive">压缩包</string>
+    <string name="kind_folder">文件夹</string>
+    <string name="kind_chaptered">章回体</string>
+    <string name="kind_other">其他</string>
+    <string name="unit_chapter">章</string>
+    <string name="unit_page">页</string>
 </resources>

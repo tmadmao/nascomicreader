@@ -77,6 +77,9 @@ interface BookDao {
     )
     fun observeRecentlyRead(): Flow<List<BookEntity>>
 
+    @Query("SELECT * FROM books ORDER BY title_sort ASC")
+    suspend fun allSorted(): List<BookEntity>
+
     @Query("SELECT COUNT(*) FROM books")
     suspend fun count(): Int
 

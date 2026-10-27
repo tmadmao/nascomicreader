@@ -17,6 +17,9 @@ class SafWalker(private val context: Context, private val treeUri: Uri) {
 
     val rootDocId: String get() = DocumentsContract.getTreeDocumentId(treeUri)
 
+    /** 授权目录的 URI 字符串，用于构造子文档 URI */
+    val treeUriString: String get() = treeUri.toString()
+
     /** 列出某个目录的直接子项；目录不存在或没权限时返回空表 */
     fun list(parentDocId: String): List<ScanNode> {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
