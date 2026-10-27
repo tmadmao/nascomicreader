@@ -114,6 +114,24 @@
                 android:textColor="@color/shell_ink_muted"
                 android:textSize="12sp" />
 
+            <TextView
+                android:id="@+id/bm_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/detail_bookmarks"
+                android:textColor="@color/shell_ink"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/bm_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical" />
+
             <LinearLayout
                 android:id="@+id/toc_list"
                 android:layout_width="match_parent"

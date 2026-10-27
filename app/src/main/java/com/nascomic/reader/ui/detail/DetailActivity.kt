@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
@@ -13,6 +14,7 @@ import com.nascomic.reader.databinding.ActivityDetailBinding
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.BookEntity
+import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
@@ -47,6 +49,7 @@ class DetailActivity : AppCompatActivity() {
     private var chapters: List<ChapterEntity> = emptyList()
     private var progress: ProgressEntity? = null
     private var chapterStarts: IntArray = IntArray(0)
+    private var bookmarks: List<BookmarkEntity> = emptyList()
 
     /** 数据装载过一次之后，onResume 才有东西可刷新 */
     private var loaded = false
@@ -71,6 +74,7 @@ class DetailActivity : AppCompatActivity() {
             val src = db.sourceDao().get(book!!.sourceId)
             chapters = db.chapterDao().forBook(bookId)
             progress = db.progressDao().forBook(bookId)
+            bookmarks = db.bookmarkDao().forBookNow(bookId)
 
             render()
             loadCover()
@@ -82,6 +86,7 @@ class DetailActivity : AppCompatActivity() {
                 book = db.bookDao().get(bookId)
                 chapters = db.chapterDao().forBook(bookId)
                 progress = db.progressDao().forBook(bookId)
+                bookmarks = db.bookmarkDao().forBookNow(bookId)
 
                 if (detail == null) {
                     binding.tocHint.text = getString(R.string.detail_count_failed)
@@ -99,6 +104,7 @@ class DetailActivity : AppCompatActivity() {
         if (!loaded) return
         lifecycleScope.launch {
             progress = db.progressDao().forBook(bookId)
+            bookmarks = db.bookmarkDao().forBookNow(bookId)
             render()
         }
     }
@@ -143,7 +149,16 @@ class DetailActivity : AppCompatActivity() {
 
         binding.primary.setOnClickListener { openReader(p?.pageGlobal ?: 0) }
 
+        // 各章起始页：靠每章页数累加，读不到页数时退化为 0（点了也从章首开始）
+        chapterStarts = IntArray(chapters.size)
+        var acc = 0
+        chapters.forEachIndexed { i, ch ->
+            chapterStarts[i] = acc
+            acc += ch.pageTotal
+        }
+
         renderToc(b, isChaptered)
+        renderBookmarks(isChaptered)
     }
 
     private fun renderToc(b: BookEntity, isChaptered: Boolean) {
@@ -162,14 +177,6 @@ class DetailActivity : AppCompatActivity() {
 
         binding.tocHeader.isVisible = true
         binding.tocHint.isVisible = false
-
-        // 各章起始页：靠每章页数累加，读不到页数时退化为 0（点了也从章首开始）
-        chapterStarts = IntArray(chapters.size)
-        var acc = 0
-        chapters.forEachIndexed { i, ch ->
-            chapterStarts[i] = acc
-            acc += ch.pageTotal
-        }
 
         val currentChapter = progress?.chapterOrdinal ?: -1
         val pad = dp(6)
@@ -191,6 +198,59 @@ class DetailActivity : AppCompatActivity() {
                 setOnClickListener { openReader(chapterStarts.getOrElse(ch.ordinal) { 0 }) }
             }
             binding.tocList.addView(row)
+        }
+    }
+
+    private fun renderBookmarks(isChaptered: Boolean) {
+        binding.bmList.removeAllViews()
+        if (bookmarks.isEmpty()) {
+            binding.bmHeader.isVisible = false
+            return
+        }
+        binding.bmHeader.isVisible = true
+
+        val pad = dp(6)
+        for (bm in bookmarks) {
+            val chapter = chapters.getOrNull(bm.chapterOrdinal)
+            val row = TextView(this).apply {
+                text = if (isChaptered && chapter != null) {
+                    getString(
+                        R.string.detail_bookmark_row_chapter, chapter.title, bm.pageInChapter + 1
+                    )
+                } else {
+                    getString(R.string.detail_bookmark_row, bm.pageInChapter + 1)
+                }
+                textSize = 14f
+                setPadding(0, pad, 0, pad)
+                setTextColor(getColor(R.color.shell_ink))
+                setOnClickListener { openReader(globalPageOf(bm)) }
+                setOnLongClickListener {
+                    confirmDeleteBookmark(bm)
+                    true
+                }
+            }
+            binding.bmList.addView(row)
+        }
+    }
+
+    private fun globalPageOf(bm: BookmarkEntity): Int {
+        val start = chapterStarts.getOrElse(bm.chapterOrdinal) { 0 }
+        return (start + bm.pageInChapter).coerceAtLeast(0)
+    }
+
+    private fun confirmDeleteBookmark(bm: BookmarkEntity) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.detail_bookmark_delete))
+            .setPositiveButton(R.string.action_delete) { _, _ -> deleteBookmark(bm) }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun deleteBookmark(bm: BookmarkEntity) {
+        lifecycleScope.launch {
+            db.bookmarkDao().deleteAt(bookId, bm.chapterOrdinal, bm.pageInChapter)
+            bookmarks = db.bookmarkDao().forBookNow(bookId)
+            renderBookmarks(book!!.isSingleVolume == 0 && chapters.isNotEmpty())
         }
     }
 

@@ -20,6 +20,9 @@
     <string name="reader_page_format">%1$d / %2$d</string>
     <string name="reader_page_chapter_format">%1$s · %2$d / %3$d</string>
     <string name="reader_toolbar_toc">目录</string>
+    <string name="reader_bookmark">书签</string>
+    <string name="reader_bookmark_added">已加书签</string>
+    <string name="reader_bookmark_removed">已取消书签</string>
     <string name="reader_toc_row">%1$d. %2$s</string>
     <string name="reader_toc_row_pages">%1$d. %2$s　%3$d 页</string>
     <string name="reader_open_failed">打不开这本书</string>
@@ -53,6 +56,13 @@
     <string name="detail_counting">正在统计页数…</string>
     <string name="detail_count_failed">这本书打不开，页数统计失败</string>
     <string name="detail_no_toc">单行本，没有章节。</string>
+    <string name="detail_bookmarks">书签</string>
+    <string name="detail_bookmark_row">%1$d 页</string>
+    <string name="detail_bookmark_row_chapter">%1$s · 第 %2$d 页</string>
+    <string name="detail_bookmark_delete">删除书签</string>
+    <string name="action_delete">删除</string>
+    <string name="action_cancel">取消</string>
+    <string name="detail_bookmark_deleted">已删除</string>
     <string name="detail_chapter_row">%1$d. %2$s</string>
     <string name="detail_chapter_pages">%1$d 页</string>
 

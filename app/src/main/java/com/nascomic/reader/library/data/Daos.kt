@@ -175,6 +175,11 @@ interface BookmarkDao {
     fun observeForBook(bookId: Long): Flow<List<BookmarkEntity>>
 
     @Query(
+        "SELECT * FROM bookmarks WHERE book_id = :bookId ORDER BY chapter_ordinal ASC, page_in_chapter ASC"
+    )
+    suspend fun forBookNow(bookId: Long): List<BookmarkEntity>
+
+    @Query(
         """
         SELECT * FROM bookmarks
         WHERE book_id = :bookId AND chapter_ordinal = :chapter AND page_in_chapter = :page

@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -26,6 +27,7 @@ import com.nascomic.reader.databinding.ActivityReaderBinding
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.BookSource
 import com.nascomic.reader.format.pagePosition
+import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.settings.AppPrefs
@@ -74,6 +76,8 @@ class ReadingActivity : AppCompatActivity() {
     private var half = 0
     /** 当前页是不是宽图 */
     private var currentWide = false
+    /** 当前页有没有书签 */
+    private var bookmarked = false
     private var resumedOnce = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,6 +93,7 @@ class ReadingActivity : AppCompatActivity() {
         }
         binding.back.setOnClickListener { finish() }
         binding.toc.setOnClickListener { showTocSheet() }
+        binding.bookmark.setOnClickListener { toggleBookmark() }
         applySystemBars()
         openBook()
     }
@@ -230,6 +235,60 @@ class ReadingActivity : AppCompatActivity() {
     private fun isBlankPage(page: ReaderPage): Boolean =
         TrimBounds.isBlank(page.bitmap, prefs.trimLevel)
 
+    /** 当前页加书签 / 取消书签 */
+    private fun toggleBookmark() {
+        val src = source ?: return
+        val chapter = src.chapterOf(page)
+        val pageInChapter = page - src.firstPageOfChapter(chapter)
+
+        lifecycleScope.launch {
+            val added = withContext(Dispatchers.IO) {
+                val existing = db.bookmarkDao().find(bookId, chapter, pageInChapter)
+                if (existing == null) {
+                    db.bookmarkDao().insert(
+                        BookmarkEntity(
+                            bookId = bookId,
+                            chapterOrdinal = chapter,
+                            pageInChapter = pageInChapter,
+                            createdAt = System.currentTimeMillis(),
+                        )
+                    )
+                    true
+                } else {
+                    db.bookmarkDao().deleteAt(bookId, chapter, pageInChapter)
+                    false
+                }
+            }
+            bookmarked = added
+            updateBookmarkIcon()
+            Toast.makeText(
+                this@ReadingActivity,
+                if (added) R.string.reader_bookmark_added else R.string.reader_bookmark_removed,
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    /** 翻页后重新查一次，图标跟着变 */
+    private fun refreshBookmarkState() {
+        val src = source ?: return
+        val chapter = src.chapterOf(page)
+        val pageInChapter = page - src.firstPageOfChapter(chapter)
+        lifecycleScope.launch {
+            bookmarked = withContext(Dispatchers.IO) {
+                runCatching { db.bookmarkDao().find(bookId, chapter, pageInChapter) != null }
+                    .getOrDefault(false)
+            }
+            updateBookmarkIcon()
+        }
+    }
+
+    private fun updateBookmarkIcon() {
+        binding.bookmark.setImageResource(
+            if (bookmarked) R.drawable.ic_bookmark_on else R.drawable.ic_bookmark
+        )
+    }
+
     /** 页码、章名。章回体按章内页显示 */
     private fun updateLabels(src: BookSource) {
         val pos = src.pagePosition(page, chaptered)
@@ -241,6 +300,7 @@ class ReadingActivity : AppCompatActivity() {
         binding.pageLabel.text = label
         binding.pageLabelBar.text = label
         binding.chapterName.text = if (pos.chaptered) pos.chapterTitle else ""
+        refreshBookmarkState()
     }
 
     /**

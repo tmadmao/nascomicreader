@@ -64,6 +64,15 @@
             android:paddingEnd="16dp"
             android:textColor="#FFFFFF"
             android:textSize="15sp" />
+
+        <ImageView
+            android:id="@+id/bookmark"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_bookmark"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/reader_bookmark" />
     </LinearLayout>
 
     <LinearLayout
