@@ -6,4 +6,7 @@
     <color name="shell_ink_muted">#5F666D</color>
     <color name="brand_indigo">#2F5FD0</color>
     <color name="brand_indigo_dark">#2854BC</color>
+    <color name="cover_placeholder">#E2E6EA</color>
+    <color name="tab_active">#22262B</color>
+    <color name="tab_inactive">#8A9199</color>
 </resources>

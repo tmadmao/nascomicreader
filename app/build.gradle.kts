@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.material)
+    implementation(libs.androidx.recyclerview)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

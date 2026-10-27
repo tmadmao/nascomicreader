@@ -80,6 +80,21 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY title_sort ASC")
     suspend fun allSorted(): List<BookEntity>
 
+    @Query("SELECT * FROM books ORDER BY added_at DESC, id DESC")
+    suspend fun allRecentAdded(): List<BookEntity>
+
+    @Query(
+        """
+        SELECT b.* FROM books b
+        INNER JOIN progress p ON p.book_id = b.id
+        ORDER BY p.updated_at DESC
+        """
+    )
+    suspend fun recentlyReadNow(): List<BookEntity>
+
+    @Query("SELECT * FROM books WHERE source_id = :sourceId ORDER BY title_sort ASC")
+    suspend fun bySourceNow(sourceId: Long): List<BookEntity>
+
     @Query("SELECT COUNT(*) FROM books")
     suspend fun count(): Int
 
@@ -137,6 +152,9 @@ interface ProgressDao {
 
     @Query("SELECT * FROM progress WHERE book_id = :bookId")
     suspend fun forBook(bookId: Long): ProgressEntity?
+
+    @Query("SELECT * FROM progress")
+    suspend fun all(): List<ProgressEntity>
 
     @Query("SELECT * FROM progress WHERE book_id = :bookId")
     fun observeForBook(bookId: Long): Flow<ProgressEntity?>

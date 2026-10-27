@@ -28,4 +28,10 @@
     <string name="kind_other">其他</string>
     <string name="unit_chapter">章</string>
     <string name="unit_page">页</string>
+
+    <string name="action_add_folder">添加目录</string>
+    <string name="action_rescan_short">重新扫描</string>
+    <string name="shelf_empty">还没有书。点右上角「添加目录」，选一个放漫画的文件夹。</string>
+    <string name="tab_all">全部</string>
+    <string name="tab_recent">最近阅读</string>
 </resources>
