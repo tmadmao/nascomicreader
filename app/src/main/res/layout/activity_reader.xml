@@ -19,6 +19,7 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
+    <!-- 常驻页码：不打扰画面，翻页时能看到位置 -->
     <TextView
         android:id="@+id/page_label"
         android:layout_width="wrap_content"
@@ -33,6 +34,84 @@
         android:ellipsize="end"
         android:textColor="#FFFFFF"
         android:textSize="12sp" />
+
+    <!-- 顶部栏：点屏幕中间显隐 -->
+    <LinearLayout
+        android:id="@+id/top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#D016181C"
+        android:orientation="horizontal"
+        android:paddingVertical="8dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_back_arrow"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_back" />
+
+        <TextView
+            android:id="@+id/book_title"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:paddingEnd="16dp"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#D016181C"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="6dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/toc"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp"
+            android:text="@string/reader_toolbar_toc"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:background="?attr/selectableItemBackgroundBorderless" />
+
+        <TextView
+            android:id="@+id/chapter_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:singleLine="true"
+            android:paddingHorizontal="8dp"
+            android:textColor="#B9C0C7"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/page_label_bar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/error"

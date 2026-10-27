@@ -19,6 +19,9 @@
 
     <string name="reader_page_format">%1$d / %2$d</string>
     <string name="reader_page_chapter_format">%1$s · %2$d / %3$d</string>
+    <string name="reader_toolbar_toc">目录</string>
+    <string name="reader_toc_row">%1$d. %2$s</string>
+    <string name="reader_toc_row_pages">%1$d. %2$s　%3$d 页</string>
     <string name="reader_open_failed">打不开这本书</string>
     <string name="reader_page_failed">第 %1$d 页读不出来</string>
     <string name="reader_empty">这本书里没有可显示的图片</string>
