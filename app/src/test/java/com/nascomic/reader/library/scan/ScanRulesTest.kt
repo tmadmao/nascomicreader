@@ -29,7 +29,10 @@ class ScanRulesTest {
     fun `压缩包判定`() {
         assertTrue(ScanRules.isArchive("a.zip"))
         assertTrue(ScanRules.isArchive("卷1.CBZ"))
-        assertFalse(ScanRules.isArchive("a.rar"))   // 暂不认，留给后续版本
+        assertTrue(ScanRules.isArchive("a.tar"))
+        assertTrue(ScanRules.isArchive("a.7z"))
+        assertTrue(ScanRules.isArchive("卷1.RAR"))   // 大小写不敏感
+        assertTrue(ScanRules.isArchive("a.cbr"))
         assertFalse(ScanRules.isArchive("a.jpg"))
         assertFalse(ScanRules.isArchive("zip"))
         assertFalse(ScanRules.isArchive("a.zip.txt"))

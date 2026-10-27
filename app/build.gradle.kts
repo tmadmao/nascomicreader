@@ -9,6 +9,7 @@ plugins {
 android {
     namespace = "com.nascomic.reader"
     compileSdk = 37
+    compileSdkMinor = 2
 
     defaultConfig {
         applicationId = "com.nascomic.reader"
@@ -65,6 +66,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.material)
     implementation(libs.androidx.recyclerview)
+    implementation(libs.libarchive)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

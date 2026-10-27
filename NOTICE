@@ -8,5 +8,7 @@ Copyright 2026 tmadmao
   AndroidX libraries — Copyright The Android Open Source Project — Apache-2.0
   Material Components for Android — Copyright The Android Open Source Project — Apache-2.0
   Kotlin Standard Library — Copyright JetBrains s.r.o. — Apache-2.0
+  libarchive-android（含 libarchive、zlib、bzip2、xz、lz4、zstd、mbedtls）
+      — Copyright Hai Zhang 与各上游项目作者 — Apache-2.0 / BSD
 
 各组件版本与坐标见 app/build.gradle.kts 与 gradle/libs.versions.toml。

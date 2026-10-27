@@ -12,6 +12,7 @@ room = "2.8.5"
 recyclerview = "1.4.0"
 coroutines = "1.10.2"
 junit = "4.13.2"
+libarchive = "1.1.7"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -31,6 +32,8 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+libarchive = { group = "me.zhanghai.android.libarchive", name = "library", version.ref = "libarchive" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

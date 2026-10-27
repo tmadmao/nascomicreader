@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
+import com.nascomic.reader.format.archive.LibArchiveCatalog
 import com.nascomic.reader.format.epub.EpubBookSource
 import com.nascomic.reader.format.pdf.PdfBookSource
 import com.nascomic.reader.format.tar.TarCatalog
@@ -12,6 +13,7 @@ import com.nascomic.reader.format.zip.ZipCatalog
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.scan.SafWalker
+import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
@@ -43,20 +45,51 @@ class BookOpener(private val context: Context) {
 
     /**
      * 压缩包类书源。扩展名不可靠（cbz 里装 rar、tar 改名 .zip 都常见），
-     * 所以按内容判断：先按 zip 的中央目录读，失败再按 tar 的头读。
+     * 所以按内容判断：zip 中央目录 → tar 头 → 交给 libarchive（7z / RAR）。
      */
     private fun openArchive(walker: SafWalker, docId: String): BookSource {
         val uri = documentUri(walker, docId)
+
         val zip = runCatching { ZipBookSource(openCatalog(uri)) }.getOrNull()
         if (zip != null) return zip
 
         val pfd = openPfd(uri, docId)
-        return try {
-            TarBookSource(TarCatalog.open(ChannelRandomAccess(pfd)))
-        } catch (e: Exception) {
-            runCatching { pfd.close() }
-            throw e
+        val tar = runCatching { TarBookSource(TarCatalog.open(ChannelRandomAccess(pfd))) }.getOrNull()
+        if (tar != null) return tar
+        runCatching { pfd.close() }
+
+        // libarchive 只能按文件名重开，先把文件放到本地缓存
+        val local = copyToCache(uri, docId)
+        return LibArchiveBookSource(LibArchiveCatalog.open(local))
+    }
+
+    /**
+     * 把 SAF 里的文件复制到 cacheDir。名字带上大小与修改时间，文件变了就换一份。
+     */
+    private fun copyToCache(uri: Uri, docId: String): File {
+        val dir = File(context.cacheDir, "archives").apply { mkdirs() }
+        val stamp = runCatching {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use "0"
+                val size = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                val mtime = cursor.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                val s = if (size >= 0) cursor.getLong(size) else 0L
+                val m = if (mtime >= 0) cursor.getLong(mtime) else 0L
+                "${s}_$m"
+            } ?: "0"
+        }.getOrDefault("0")
+
+        val name = docId.hashCode().toUInt().toString(16) + "_" + stamp
+        val out = File(dir, name)
+        if (out.exists() && out.length() > 0) return out
+
+        val pfd = openPfd(uri, docId)
+        pfd.use { descriptor ->
+            FileInputStream(descriptor.fileDescriptor).use { input ->
+                out.outputStream().use { output -> input.copyTo(output) }
+            }
         }
+        return out
     }
 
     private fun documentUri(walker: SafWalker, docId: String): Uri =
