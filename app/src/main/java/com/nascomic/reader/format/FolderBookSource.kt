@@ -50,7 +50,7 @@ class FolderBookSource private constructor(
             val images = entries.filter { (name, _) -> ImageNames.isImage(name) }
 
             val grouped = images.groupBy { (name, _) -> chapterKeyOf(name) }
-            val order = NaturalSort.sortedBy(grouped.keys.toList()) { it }
+            val order = NaturalSort.sortedByName(grouped.keys.toList()) { it }
 
             val flatRefs = ArrayList<String>(images.size)
             val starts = ArrayList<Int>(order.size)
@@ -58,7 +58,7 @@ class FolderBookSource private constructor(
 
             for ((ordinal, key) in order.withIndex()) {
                 val list = grouped.getValue(key).sortedWith { a, b ->
-                    NaturalSort.key(a.first).compareTo(NaturalSort.key(b.first))
+                    NaturalSort.nameKey(a.first).compareTo(NaturalSort.nameKey(b.first))
                 }
                 starts += flatRefs.size
                 infos += ChapterInfo(

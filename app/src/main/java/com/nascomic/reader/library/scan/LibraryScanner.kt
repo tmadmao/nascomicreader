@@ -70,8 +70,8 @@ class LibraryScanner(
                     BookEntity(
                         sourceId = source.id,
                         docRef = candidate.node.docId,
-                        title = ScanRules.titleOf(candidate.node.name),
-                        titleSort = NaturalSort.key(ScanRules.titleOf(candidate.node.name)),
+                        title = ScanRules.titleOf(candidate.node),
+                        titleSort = NaturalSort.key(ScanRules.titleOf(candidate.node)),
                         format = candidate.format,
                         byteSize = candidate.size,
                         chapterTotal = candidate.chapters.size,
@@ -84,8 +84,8 @@ class LibraryScanner(
                 updated++
                 db.bookDao().upsert(
                     existing.copy(
-                        title = ScanRules.titleOf(candidate.node.name),
-                        titleSort = NaturalSort.key(ScanRules.titleOf(candidate.node.name)),
+                        title = ScanRules.titleOf(candidate.node),
+                        titleSort = NaturalSort.key(ScanRules.titleOf(candidate.node)),
                         byteSize = candidate.size,
                         chapterTotal = candidate.chapters.size,
                         isSingleVolume = if (candidate.chapters.isEmpty()) 1 else 0,
@@ -103,7 +103,7 @@ class LibraryScanner(
                         ChapterEntity(
                             bookId = bookId,
                             ordinal = index,
-                            title = ScanRules.titleOf(unit.name),
+                            title = ScanRules.titleOf(unit),
                             chapterRef = unit.docId,
                             chapterKind = if (unit.isDir) {
                                 ChapterEntity.KIND_FOLDER

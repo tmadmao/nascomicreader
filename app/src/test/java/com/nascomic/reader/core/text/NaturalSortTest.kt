@@ -54,7 +54,7 @@ class NaturalSortTest {
             "p10.jpg", "p2.jpg", "p1.jpg", "a-first.jpg",
             "第3页.jpg", "page-4.jpg", "Page5.jpg", "封面.jpg", "p07.jpg", "z-last.jpg"
         )
-        val sorted = NaturalSort.sortedBy(names) { it }
+        val sorted = NaturalSort.sortedByName(names) { it }
         println(sorted.joinToString(" | "))
 
         assertEquals(
@@ -79,8 +79,8 @@ class NaturalSortTest {
     @Test
     fun `排序稳定且幂等`() {
         val names = listOf("b2", "a10", "a2")
-        val once = NaturalSort.sortedBy(names) { it }
-        val twice = NaturalSort.sortedBy(once) { it }
+        val once = NaturalSort.sortedByName(names) { it }
+        val twice = NaturalSort.sortedByName(once) { it }
         assertEquals(once, twice)
         assertEquals(listOf("a2", "a10", "b2"), once)
     }

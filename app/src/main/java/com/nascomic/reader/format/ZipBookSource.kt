@@ -25,14 +25,14 @@ class ZipBookSource internal constructor(
         val images = catalog.entries.filter { !it.isDirectory && ImageNames.isImage(it.name) }
 
         val grouped: Map<String, List<ZipCatalog.Entry>> = images.groupBy { chapterKeyOf(it.name) }
-        val order = NaturalSort.sortedBy(grouped.keys.toList()) { it }
+        val order = NaturalSort.sortedByName(grouped.keys.toList()) { it }
 
         val flat = ArrayList<ZipCatalog.Entry>(images.size)
         val starts = ArrayList<Int>(order.size)
         val infos = ArrayList<ChapterInfo>(order.size)
         for ((ordinal, key) in order.withIndex()) {
             val list = grouped.getValue(key).sortedWith { a, b ->
-                NaturalSort.key(a.name).compareTo(NaturalSort.key(b.name))
+                NaturalSort.nameKey(a.name).compareTo(NaturalSort.nameKey(b.name))
             }
 
             starts += flat.size

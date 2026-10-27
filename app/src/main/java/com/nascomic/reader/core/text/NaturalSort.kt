@@ -46,9 +46,24 @@ object NaturalSort {
     /** 按名字比较的比较器，可直接给 sortedWith */
     fun comparator(): Comparator<String> = Comparator { a, b -> key(a).compareTo(key(b)) }
 
-    /** 按名字给列表排序（稳定） */
-    fun <T> sortedBy(items: List<T>, nameOf: (T) -> String): List<T> =
-        items.sortedWith { a, b -> key(nameOf(a)).compareTo(key(nameOf(b))) }
+    /**
+     * 按文件名排序用的键：**先去掉扩展名**再比。
+     *
+     * 为什么必须去掉：`0.zip` 和 `0.5.zip` 在数字 `0` 之后分别是 `.z` 和 `.` + 数字段，
+     * 而数字段的标记比任何字母都小，会把 `0.5` 判成排在 `0` 前面。
+     * 扩展名不参与排序，这种错位就不会发生。
+     */
+    fun nameKey(raw: String): String = key(stripExtension(raw))
+
+    /** 按文件名给列表排序（稳定），比较时忽略扩展名 */
+    fun <T> sortedByName(items: List<T>, nameOf: (T) -> String): List<T> =
+        items.sortedWith { a, b -> nameKey(nameOf(a)).compareTo(nameKey(nameOf(b))) }
+
+    private fun stripExtension(name: String): String {
+        val slash = name.lastIndexOf('/')
+        val dot = name.lastIndexOf('.')
+        return if (dot > slash) name.substring(0, dot) else name
+    }
 
     private fun normalize(raw: String): String {
         var s = java.text.Normalizer.normalize(raw.trim(), java.text.Normalizer.Form.NFKC)

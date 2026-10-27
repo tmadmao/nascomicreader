@@ -27,3 +27,6 @@ _refactor/
 *.rar
 *.cbr
 *.cbz
+
+# 本地测试用的真实漫画样本，不进仓库
+test/

@@ -44,15 +44,22 @@ object ScanRules {
         children
             .filter { it.isDir || isArchive(it.name) }
             .sortedWith { a, b ->
-                com.nascomic.reader.core.text.NaturalSort.key(a.name)
-                    .compareTo(com.nascomic.reader.core.text.NaturalSort.key(b.name))
+                com.nascomic.reader.core.text.NaturalSort.nameKey(a.name)
+                    .compareTo(com.nascomic.reader.core.text.NaturalSort.nameKey(b.name))
             }
 
     /** 目录的直接子项里，可作为「书」的条目 */
     fun bookCandidates(children: List<ScanNode>): List<ScanNode> =
         children.filter { it.isDir || isArchive(it.name) }
 
-    /** 去掉扩展名的显示名 */
+    /**
+     * 显示名。文件去掉扩展名；**目录保留原名**——
+     * 目录叫「5.1」时不能把 .1 当扩展名切掉。
+     */
+    fun titleOf(node: ScanNode): String =
+        if (node.isDir) node.name else ImageNames.baseName(node.name)
+
+    /** 已知是文件时用这个 */
     fun titleOf(name: String): String = ImageNames.baseName(name)
 
     enum class FolderKind {
