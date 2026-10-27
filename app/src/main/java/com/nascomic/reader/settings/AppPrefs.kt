@@ -20,7 +20,24 @@ class AppPrefs(context: Context) {
         get() = sp.getBoolean(KEY_SKIP_DETAIL, false)
         set(value) = sp.edit().putBoolean(KEY_SKIP_DETAIL, value).apply()
 
+    /** 屏幕方向，取值见 [Orientation] */
+    var orientation: Int
+        get() = sp.getInt(KEY_ORIENTATION, Orientation.SYSTEM.value)
+        set(value) = sp.edit().putInt(KEY_ORIENTATION, value).apply()
+
+    enum class Orientation(val value: Int) {
+        SYSTEM(0),
+        PORTRAIT(1),
+        LANDSCAPE(2),
+        ;
+
+        companion object {
+            fun of(value: Int): Orientation = entries.firstOrNull { it.value == value } ?: SYSTEM
+        }
+    }
+
     private companion object {
         const val KEY_SKIP_DETAIL = "ui.skip_detail"
+        const val KEY_ORIENTATION = "ui.orientation"
     }
 }

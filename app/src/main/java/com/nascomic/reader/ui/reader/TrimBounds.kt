@@ -15,8 +15,8 @@ object TrimBounds {
         val height: Int get() = bottom - top
     }
 
-    /** 认为「够白」的亮度下限 */
-    private const val WHITE_LEVEL = 236
+    /** 认为「够白」的默认亮度下限。设置里可调，见 [detect] 的 level 参数 */
+    const val DEFAULT_LEVEL = 236
 
     /** 一行里多少比例的像素够白，才算整行是白边 */
     private const val WHITE_RATIO = 0.98f
@@ -24,14 +24,33 @@ object TrimBounds {
     /** 单边最多裁掉的比例。整页都是白时不能把它裁成 0 像素 */
     private const val PROTECT = 0.25f
 
-    fun detect(bitmap: Bitmap): Bounds =
+    fun detect(bitmap: Bitmap, level: Int = DEFAULT_LEVEL): Bounds =
         detect(
             w = bitmap.width,
             h = bitmap.height,
             protect = PROTECT,
-            whiteRow = { y -> isWhiteLine(bitmap.width) { x -> bitmap.getPixel(x, y) } },
-            whiteCol = { x -> isWhiteLine(bitmap.height) { y -> bitmap.getPixel(x, y) } },
+            whiteRow = { y -> isWhiteLine(bitmap.width, level) { x -> bitmap.getPixel(x, y) } },
+            whiteCol = { x -> isWhiteLine(bitmap.height, level) { y -> bitmap.getPixel(x, y) } },
         )
+
+    /**
+     * 整页是不是空白（用于跳过空白页）。抽样看，不逐像素扫。
+     */
+    fun isBlank(bitmap: Bitmap, level: Int = DEFAULT_LEVEL): Boolean {
+        if (bitmap.width <= 0 || bitmap.height <= 0) return true
+        val stepX = (bitmap.width / 16).coerceAtLeast(1)
+        val stepY = (bitmap.height / 16).coerceAtLeast(1)
+        var x = 0
+        while (x < bitmap.width) {
+            var y = 0
+            while (y < bitmap.height) {
+                if (!isWhite(bitmap.getPixel(x, y), level)) return false
+                y += stepY
+            }
+            x += stepX
+        }
+        return true
+    }
 
     /**
      * 纯逻辑部分，便于单测：给出行/列的白边判定，返回内容边界。
@@ -67,25 +86,25 @@ object TrimBounds {
     }
 
     /** 逐像素采样判断一整条是不是白（按长度取步长，长边也不会太慢） */
-    private inline fun isWhiteLine(length: Int, pixel: (Int) -> Int): Boolean {
+    private inline fun isWhiteLine(length: Int, level: Int, pixel: (Int) -> Int): Boolean {
         if (length <= 0) return true
         val step = (length / 64).coerceAtLeast(1)
         var total = 0
         var white = 0
         var i = 0
         while (i < length) {
-            if (isWhite(pixel(i))) white++
+            if (isWhite(pixel(i), level)) white++
             total++
             i += step
         }
         return total > 0 && white.toFloat() / total >= WHITE_RATIO
     }
 
-    private fun isWhite(color: Int): Boolean {
+    private fun isWhite(color: Int, level: Int): Boolean {
         val r = (color shr 16) and 0xFF
         val g = (color shr 8) and 0xFF
         val b = color and 0xFF
         // 亮度按人眼权重，纯白与接近白的灰都算
-        return (r * 299 + g * 587 + b * 114) / 1000 >= WHITE_LEVEL
+        return (r * 299 + g * 587 + b * 114) / 1000 >= level
     }
 }

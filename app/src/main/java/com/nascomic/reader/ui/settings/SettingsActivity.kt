@@ -15,6 +15,7 @@ import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivitySettingsBinding
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
+import com.nascomic.reader.settings.applyOrientation
 
 /**
  * 设置。按组排列，改动立即写入（读取端在 [ReaderPrefs] / [AppPrefs]）。
@@ -74,6 +75,17 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         host.addView(
+            sliderRow(
+                title = getString(R.string.settings_trim_level),
+                min = 200,
+                max = 250,
+                step = 5,
+                initial = reader.trimLevel,
+                format = { getString(R.string.settings_trim_level_value, it) },
+            ) { value -> reader.trimLevel = value }
+        )
+
+        host.addView(
             switchRow(
                 title = getString(R.string.settings_split_wide),
                 desc = getString(R.string.settings_split_wide_desc),
@@ -116,7 +128,39 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.showPageLabel = checked }
         )
 
+        host.addView(
+            switchRow(
+                title = getString(R.string.settings_skip_blank),
+                desc = getString(R.string.settings_skip_blank_desc),
+                checked = reader.skipBlank,
+            ) { checked -> reader.skipBlank = checked }
+        )
+
+        host.addView(
+            switchRow(
+                title = getString(R.string.settings_keep_screen_on),
+                desc = getString(R.string.settings_keep_screen_on_desc),
+                checked = reader.keepScreenOn,
+            ) { checked -> reader.keepScreenOn = checked }
+        )
+
         host.addView(sectionHeader(getString(R.string.settings_section_other)))
+
+        host.addView(
+            choiceRow(
+                title = getString(R.string.settings_orientation),
+                desc = null,
+                options = listOf(
+                    getString(R.string.settings_orientation_system),
+                    getString(R.string.settings_orientation_portrait),
+                    getString(R.string.settings_orientation_landscape),
+                ),
+                selected = AppPrefs.Orientation.of(prefs.orientation).ordinal,
+            ) { index ->
+                prefs.orientation = AppPrefs.Orientation.entries[index].value
+                applyOrientation(prefs)
+            }
+        )
 
         host.addView(
             switchRow(

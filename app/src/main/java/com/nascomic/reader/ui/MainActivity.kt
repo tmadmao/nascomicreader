@@ -20,6 +20,7 @@ import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.library.scan.LibraryScanner
 import com.nascomic.reader.settings.AppPrefs
+import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.detail.DetailActivity
 import com.nascomic.reader.ui.reader.ReadingActivity
 import com.nascomic.reader.ui.settings.SettingsActivity
@@ -75,6 +76,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyOrientation(prefs)
         refresh()
     }
 

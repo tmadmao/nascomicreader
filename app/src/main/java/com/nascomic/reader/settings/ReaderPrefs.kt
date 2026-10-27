@@ -39,6 +39,21 @@ class ReaderPrefs(context: Context) {
         get() = sp.getBoolean(KEY_TRIM, false)
         set(value) = sp.edit().putBoolean(KEY_TRIM, value).apply()
 
+    /** 裁白边的白度下限：越低裁得越狠，越高越保守 */
+    var trimLevel: Int
+        get() = sp.getInt(KEY_TRIM_LEVEL, 236)
+        set(value) = sp.edit().putInt(KEY_TRIM_LEVEL, value.coerceIn(200, 250)).apply()
+
+    /** 跳过空白页 */
+    var skipBlank: Boolean
+        get() = sp.getBoolean(KEY_SKIP_BLANK, false)
+        set(value) = sp.edit().putBoolean(KEY_SKIP_BLANK, value).apply()
+
+    /** 阅读时屏幕常亮 */
+    var keepScreenOn: Boolean
+        get() = sp.getBoolean(KEY_KEEP_ON, true)
+        set(value) = sp.edit().putBoolean(KEY_KEEP_ON, value).apply()
+
     /** 跨页拆分：宽图按左右两半分别显示 */
     var splitWide: Boolean
         get() = sp.getBoolean(KEY_SPLIT, false)
@@ -68,5 +83,8 @@ class ReaderPrefs(context: Context) {
         const val KEY_PAGE_LABEL = "reader.show_page_label"
         const val KEY_TRIM = "reader.trim_border"
         const val KEY_SPLIT = "reader.split_wide"
+        const val KEY_TRIM_LEVEL = "reader.trim_level"
+        const val KEY_SKIP_BLANK = "reader.skip_blank"
+        const val KEY_KEEP_ON = "reader.keep_screen_on"
     }
 }

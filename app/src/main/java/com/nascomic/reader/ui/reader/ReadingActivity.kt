@@ -1,9 +1,12 @@
 package com.nascomic.reader.ui.reader
 
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
+import android.view.WindowManager
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -25,7 +28,9 @@ import com.nascomic.reader.format.BookSource
 import com.nascomic.reader.format.pagePosition
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
+import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
+import com.nascomic.reader.settings.applyOrientation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,6 +56,7 @@ class ReadingActivity : AppCompatActivity() {
     private val db by lazy { ReaderDatabase.get(this) }
     private val opener by lazy { BookOpener(this) }
     private val prefs by lazy { ReaderPrefs(this) }
+    private val appPrefs by lazy { AppPrefs(this) }
 
     private var source: BookSource? = null
     private var bookId: Long = 0
@@ -112,6 +118,11 @@ class ReadingActivity : AppCompatActivity() {
         }
         binding.page.marginPx = dp(prefs.sideMarginDp)
         binding.pageLabel.isVisible = prefs.showPageLabel && !toolbarShown
+        if (prefs.keepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun openBook() {
@@ -171,7 +182,56 @@ class ReadingActivity : AppCompatActivity() {
         loading = true
         binding.loading.isVisible = true
 
-        // 章回体显示章内页码：第 2 话的第 1 页就是 1 / 2，不是全书第 3 / 4
+        val viewW = binding.page.width.coerceAtLeast(1)
+        val viewH = binding.page.height.coerceAtLeast(1)
+        // 双页时每页只占半宽，解码目标也跟着减半，省一半内存
+        val targetW = if (prefs.dualPage) (viewW / 2).coerceAtLeast(1) else viewW
+
+        lifecycleScope.launch {
+            // 跳过空白页会改页码，所以整段在 IO 线程里定下来再回来更新界面
+            val spread = withContext(Dispatchers.IO) { resolveSpread(src, targetW, viewH) }
+            if (spread.pages.isEmpty()) {
+                showError(getString(R.string.reader_page_failed, spread.index + 1))
+            } else {
+                page = spread.index
+                updateLabels(src)
+                binding.error.isVisible = false
+                shownPages = spread.pages.size
+                currentWide = spread.pages.first().wide
+                binding.page.setPages(spread.pages)
+            }
+            binding.loading.isVisible = false
+            loading = false
+            saveProgress()
+        }
+    }
+
+    /** 一屏的内容，以及它实际对应哪一页（跳过空白页后可能不等于进来时的页码） */
+    private class Spread(val pages: List<ReaderPage>, val index: Int)
+
+    /**
+     * 取这一屏要画的内容。开了跳过空白页就继续往后找，最多连跳 20 页防止整本都空。
+     */
+    private fun resolveSpread(src: BookSource, targetW: Int, targetH: Int): Spread {
+        var index = page
+        var pages = loadSpread(src, index, targetW, targetH)
+        // 双页并排时不跳：一次两张，跳掉一张会让配对错乱
+        val canSkip = prefs.skipBlank && !prefs.dualPage
+        var guard = 0
+        while (canSkip && guard < 20 && index < total - 1 && pages.firstOrNull()?.let(::isBlankPage) == true) {
+            index++
+            half = 0
+            pages = loadSpread(src, index, targetW, targetH)
+            guard++
+        }
+        return Spread(pages, index)
+    }
+
+    private fun isBlankPage(page: ReaderPage): Boolean =
+        TrimBounds.isBlank(page.bitmap, prefs.trimLevel)
+
+    /** 页码、章名。章回体按章内页显示 */
+    private fun updateLabels(src: BookSource) {
         val pos = src.pagePosition(page, chaptered)
         val label = if (pos.chaptered) {
             getString(R.string.reader_page_chapter_format, pos.chapterTitle, pos.page, pos.total)
@@ -181,37 +241,18 @@ class ReadingActivity : AppCompatActivity() {
         binding.pageLabel.text = label
         binding.pageLabelBar.text = label
         binding.chapterName.text = if (pos.chaptered) pos.chapterTitle else ""
-
-        val viewW = binding.page.width.coerceAtLeast(1)
-        val viewH = binding.page.height.coerceAtLeast(1)
-        // 双页时每页只占半宽，解码目标也跟着减半，省一半内存
-        val targetW = if (prefs.dualPage) (viewW / 2).coerceAtLeast(1) else viewW
-
-        lifecycleScope.launch {
-            val loaded = withContext(Dispatchers.IO) { loadSpread(src, targetW, viewH) }
-            if (loaded.isEmpty()) {
-                showError(getString(R.string.reader_page_failed, pos.page))
-            } else {
-                binding.error.isVisible = false
-                shownPages = loaded.size
-                currentWide = loaded.first().wide
-                binding.page.setPages(loaded)
-            }
-            binding.loading.isVisible = false
-            loading = false
-        }
     }
 
     /**
      * 取这一屏要画的内容。双页开启时只有两页都不是宽图才并排——
      * 宽图本身就是跨页大图，并排会挤成两条。
      */
-    private fun loadSpread(src: BookSource, targetW: Int, targetH: Int): List<ReaderPage> {
-        val first = buildPage(src, page, targetW, targetH) ?: return emptyList()
+    private fun loadSpread(src: BookSource, index: Int, targetW: Int, targetH: Int): List<ReaderPage> {
+        val first = buildPage(src, index, targetW, targetH) ?: return emptyList()
         if (first.wide || !prefs.dualPage) return listOf(first)
-        if (page + 1 >= total) return listOf(first)
+        if (index + 1 >= total) return listOf(first)
 
-        val second = buildPage(src, page + 1, targetW, targetH) ?: return listOf(first)
+        val second = buildPage(src, index + 1, targetW, targetH) ?: return listOf(first)
         return if (second.wide) listOf(first) else listOf(first, second)
     }
 
@@ -224,7 +265,7 @@ class ReadingActivity : AppCompatActivity() {
         }.getOrNull() ?: return null
 
         val bounds = if (prefs.trimBorder) {
-            TrimBounds.detect(bitmap)
+            TrimBounds.detect(bitmap, prefs.trimLevel)
         } else {
             TrimBounds.Bounds(0, 0, bitmap.width, bitmap.height)
         }
@@ -401,10 +442,20 @@ class ReadingActivity : AppCompatActivity() {
         super.onResume()
         val first = !resumedOnce
         resumedOnce = true
+        applyOrientation(appPrefs)
         applyDisplayPrefs()
         // 从设置页回来时参数可能变了，按新参数重画当前页
         if (!first && source != null && !loading) showPage()
     }
+
+    /** 锁了方向后屏幕尺寸会变，当前页要按新尺寸重解一次 */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!firstLayoutPending()) showPage()
+    }
+
+    private fun firstLayoutPending(): Boolean =
+        binding.page.width == 0 || binding.page.height == 0
 
     override fun onStop() {
         super.onStop()

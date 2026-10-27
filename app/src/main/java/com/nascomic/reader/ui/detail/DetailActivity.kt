@@ -17,6 +17,8 @@ import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.detail.BookDetailLoader
+import com.nascomic.reader.settings.AppPrefs
+import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.reader.ReadingActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,6 +40,7 @@ class DetailActivity : AppCompatActivity() {
     private val thumbs by lazy { ThumbnailStore(this) }
     private val opener by lazy { BookOpener(this) }
     private val loader by lazy { BookDetailLoader(this, db) }
+    private val appPrefs by lazy { AppPrefs(this) }
 
     private var bookId: Long = 0
     private var book: BookEntity? = null
@@ -91,6 +94,7 @@ class DetailActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyOrientation(appPrefs)
         // 从阅读页返回时进度已经变了，重读一次再画
         if (!loaded) return
         lifecycleScope.launch {

@@ -74,6 +74,20 @@
     <string name="settings_trim_border">裁白边</string>
     <string name="settings_trim_border_desc">切掉页面四周的白边，只显示有内容的部分</string>
 
+    <string name="settings_trim_level">白边阈值</string>
+    <string name="settings_trim_level_value">%1$d</string>
+
+    <string name="settings_skip_blank">跳过空白页</string>
+    <string name="settings_skip_blank_desc">翻到空白页自动往后跳（双页并排时不生效）</string>
+
+    <string name="settings_keep_screen_on">阅读时屏幕常亮</string>
+    <string name="settings_keep_screen_on_desc">停在一页不动时不会自动锁屏</string>
+
+    <string name="settings_orientation">屏幕方向</string>
+    <string name="settings_orientation_system">跟随系统</string>
+    <string name="settings_orientation_portrait">竖屏</string>
+    <string name="settings_orientation_landscape">横屏</string>
+
     <string name="settings_split_wide">跨页拆分</string>
     <string name="settings_split_wide_desc">横向跨页大图拆成左右两半，先看左再翻到右</string>
 
