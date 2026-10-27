@@ -7,6 +7,21 @@ import org.junit.Test
 
 class ScanRulesTest {
 
+    @Test
+    fun `pdf 自成一本书，不算章`() {
+        assertTrue(ScanRules.isPdf("漫画.pdf"))
+        assertTrue(ScanRules.isPdf("A.PDF"))
+        assertFalse(ScanRules.isPdf("a.zip"))
+        assertFalse(ScanRules.isArchive("a.pdf"))
+
+        // 章回体目录里出现 pdf 时不作为章（当前只认目录与压缩包）
+        val children = listOf(
+            ScanNode(docId = "d1", name = "第1话", isDir = true),
+            ScanNode(docId = "f1", name = "封面.pdf", isDir = false),
+        )
+        assertEquals(listOf("第1话"), ScanRules.chapterUnitsOf(children).map { it.name })
+    }
+
     private fun file(name: String) = ScanNode(docId = "id:$name", name = name, isDir = false)
     private fun dir(name: String) = ScanNode(docId = "id:$name", name = name, isDir = true)
 

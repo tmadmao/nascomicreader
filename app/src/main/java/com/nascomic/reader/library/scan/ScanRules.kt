@@ -15,8 +15,12 @@ import com.nascomic.reader.format.ImageNames
 object ScanRules {
 
     private val ARCHIVE_EXTENSIONS = setOf("zip", "cbz")
+    private val PDF_EXTENSIONS = setOf("pdf")
 
     fun isArchive(name: String): Boolean = extensionOf(name) in ARCHIVE_EXTENSIONS
+
+    /** PDF 自成一本书，不参与章回体划分 */
+    fun isPdf(name: String): Boolean = extensionOf(name) in PDF_EXTENSIONS
 
     fun isImage(name: String): Boolean = ImageNames.isImage(name)
 

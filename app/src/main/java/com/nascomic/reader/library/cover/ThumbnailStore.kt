@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.nascomic.reader.format.BookOpener
+import com.nascomic.reader.format.RenderedPageSource
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.ui.reader.PageBitmapLoader
@@ -42,8 +43,13 @@ class ThumbnailStore(private val context: Context) {
             source.use { src ->
                 if (src.pageCount == 0) return@use null
                 val index = book.coverPage.coerceIn(0, src.pageCount - 1)
-                val decoded = src.openPage(index).use {
-                    PageBitmapLoader.load(it, targetWidth, targetWidth * 3 / 2)
+                // PDF 这类来源没有字节流，直接按尺寸渲染
+                val decoded = if (src is RenderedPageSource) {
+                    src.renderPage(index, targetWidth, targetWidth * 3 / 2)
+                } else {
+                    src.openPage(index).use {
+                        PageBitmapLoader.load(it, targetWidth, targetWidth * 3 / 2)
+                    }
                 } ?: return@use null
 
                 val scaled = scaleToWidth(decoded, targetWidth)

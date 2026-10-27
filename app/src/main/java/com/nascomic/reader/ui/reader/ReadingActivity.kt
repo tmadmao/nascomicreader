@@ -26,6 +26,7 @@ import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivityReaderBinding
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.BookSource
+import com.nascomic.reader.format.RenderedPageSource
 import com.nascomic.reader.format.pagePosition
 import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ProgressEntity
@@ -321,7 +322,11 @@ class ReadingActivity : AppCompatActivity() {
      */
     private fun buildPage(src: BookSource, index: Int, targetW: Int, targetH: Int): ReaderPage? {
         val bitmap = runCatching {
-            PageBitmapLoader.load(src.openPage(index), targetW, targetH)
+            if (src is RenderedPageSource) {
+                src.renderPage(index, targetW, targetH)
+            } else {
+                PageBitmapLoader.load(src.openPage(index), targetW, targetH)
+            }
         }.getOrNull() ?: return null
 
         val bounds = if (prefs.trimBorder) {

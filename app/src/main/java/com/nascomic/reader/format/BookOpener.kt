@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
+import com.nascomic.reader.format.pdf.PdfBookSource
 import com.nascomic.reader.format.zip.RandomAccessData
 import com.nascomic.reader.format.zip.ZipCatalog
 import com.nascomic.reader.library.data.BookEntity
@@ -26,6 +27,7 @@ class BookOpener(private val context: Context) {
         val walker = SafWalker(context, Uri.parse(treeUri))
         return when (book.format) {
             BookEntity.FORMAT_ZIP -> openZip(walker, book.docRef)
+            BookEntity.FORMAT_PDF -> openPdf(walker, book.docRef)
             BookEntity.FORMAT_FOLDER ->
                 if (chapters.isEmpty()) {
                     openFolder(walker, book.docRef, book.title)
@@ -43,6 +45,15 @@ class BookOpener(private val context: Context) {
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: throw IllegalStateException("打不开文件：$docId")
         return ZipBookSource(ZipCatalog.open(ChannelRandomAccess(pfd)))
+    }
+
+    private fun openPdf(walker: SafWalker, docId: String): BookSource {
+        val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+            Uri.parse(walker.treeUriString), docId
+        )
+        val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            ?: throw IllegalStateException("打不开文件：$docId")
+        return PdfBookSource(pfd)
     }
 
     private fun openFolder(walker: SafWalker, docId: String, title: String): BookSource {
