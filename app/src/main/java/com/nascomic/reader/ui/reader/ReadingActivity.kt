@@ -137,11 +137,10 @@ class ReadingActivity : AppCompatActivity() {
             try {
                 val book = db.bookDao().get(bookId) ?: error("书不存在")
                 val src = db.sourceDao().get(book.sourceId) ?: error("来源不存在")
-                val treeUri = src.treeUri ?: error("这个来源没有目录授权")
                 val chapters = db.chapterDao().forBook(bookId)
 
                 val opened = withContext(Dispatchers.IO) {
-                    opener.open(book, treeUri, chapters)
+                    opener.open(book, src, chapters)
                 }
 
                 source = opened

@@ -8,10 +8,12 @@ import com.nascomic.reader.format.archive.LibArchiveCatalog
 import com.nascomic.reader.format.epub.EpubBookSource
 import com.nascomic.reader.format.pdf.PdfBookSource
 import com.nascomic.reader.format.tar.TarCatalog
+import com.nascomic.reader.webdav.HttpRandomAccess
 import com.nascomic.reader.format.zip.RandomAccessData
 import com.nascomic.reader.format.zip.ZipCatalog
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ChapterEntity
+import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.library.scan.SafWalker
 import java.io.File
 import java.io.FileInputStream
@@ -27,7 +29,64 @@ import java.nio.ByteBuffer
  */
 class BookOpener(private val context: Context) {
 
-    fun open(book: BookEntity, treeUri: String, chapters: List<ChapterEntity>): BookSource {
+    private val secrets by lazy { com.nascomic.reader.settings.SecretStore(context) }
+
+    fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource =
+        if (source.kind == SourceEntity.KIND_WEBDAV) {
+            openRemote(book, source, chapters)
+        } else {
+            openLocal(book, source.treeUri ?: error("这个来源没有目录授权"), chapters)
+        }
+
+    // ---- 远程（WebDAV）----
+
+    /**
+     * 远程书：能用随机读的直接读（zip / tar / epub），需要文件路径的先下到缓存（pdf / 7z / rar）。
+     */
+    private fun openRemote(
+        book: BookEntity,
+        source: SourceEntity,
+        chapters: List<ChapterEntity>,
+    ): BookSource {
+        val client = com.nascomic.reader.webdav.WebDavClient(
+            account = source.account,
+            password = secrets.get(source.secretRef),
+        )
+        val url = book.docRef
+
+        return when (book.format) {
+            BookEntity.FORMAT_ZIP -> {
+                val size = client.size(url)
+                val zip = runCatching {
+                    ZipBookSource(ZipCatalog.open(HttpRandomAccess(client, url, size)))
+                }.getOrNull()
+                zip ?: TarBookSource(TarCatalog.open(HttpRandomAccess(client, url, size)))
+            }
+            BookEntity.FORMAT_EPUB ->
+                EpubBookSource(ZipCatalog.open(HttpRandomAccess(client, url, client.size(url))))
+            else -> {
+                // PDF 要文件描述符、7z/RAR 要文件路径，都得先落到本地
+                val local = download(client, url, book)
+                when (book.format) {
+                    BookEntity.FORMAT_PDF -> PdfBookSource(ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY))
+                    else -> LibArchiveBookSource(LibArchiveCatalog.open(local))
+                }
+            }
+        }
+    }
+
+    private fun download(client: com.nascomic.reader.webdav.WebDavClient, url: String, book: BookEntity): File {
+        val dir = File(context.cacheDir, "remote").apply { mkdirs() }
+        val name = "b${book.id}_" + (book.byteSize.takeIf { it > 0 } ?: 0)
+        val out = File(dir, name)
+        if (out.exists() && out.length() > 0) return out
+        client.download(url, out)
+        return out
+    }
+
+    // ---- 本地（SAF）----
+
+    private fun openLocal(book: BookEntity, treeUri: String, chapters: List<ChapterEntity>): BookSource {
         val walker = SafWalker(context, Uri.parse(treeUri))
         return when (book.format) {
             BookEntity.FORMAT_ZIP -> openArchive(walker, book.docRef)

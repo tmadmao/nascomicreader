@@ -13,6 +13,7 @@ recyclerview = "1.4.0"
 coroutines = "1.10.2"
 junit = "4.13.2"
 libarchive = "1.1.7"
+okhttp = "4.12.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,6 +35,7 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 libarchive = { group = "me.zhanghai.android.libarchive", name = "library", version.ref = "libarchive" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -80,9 +80,9 @@ class DetailActivity : AppCompatActivity() {
             loadCover()
 
             // 首次进来页数是 0，需要打开书量一次
-            if (book!!.pageTotal <= 0 && src?.treeUri != null) {
+            if (book!!.pageTotal <= 0 && src != null) {
                 binding.tocHint.text = getString(R.string.detail_counting)
-                val detail = loader.load(book!!, src.treeUri, chapters, opener)
+                val detail = loader.load(book!!, src, chapters, opener)
                 book = db.bookDao().get(bookId)
                 chapters = db.chapterDao().forBook(bookId)
                 progress = db.progressDao().forBook(bookId)

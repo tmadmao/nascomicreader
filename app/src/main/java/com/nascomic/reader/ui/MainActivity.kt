@@ -144,9 +144,8 @@ class MainActivity : AppCompatActivity() {
             for (book in books) {
                 if (thumbs.has(book.id)) continue
                 val src = sourcesById[book.sourceId] ?: continue
-                val treeUri = src.treeUri ?: continue
                 val chapters = db.chapterDao().forBook(book.id)
-                if (thumbs.generate(book, treeUri, chapters, opener) != null) any = true
+                if (thumbs.generate(book, src, chapters, opener) != null) any = true
             }
             thumbs.prune(books.map { it.id }.toSet())
             if (any) withContext(Dispatchers.Main) { adapter.notifyDataSetChanged() }

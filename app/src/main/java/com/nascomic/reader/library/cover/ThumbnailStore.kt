@@ -33,14 +33,14 @@ class ThumbnailStore(private val context: Context) {
     /** 生成一本书的封面；打不开或没有页时返回 null，不回退到占位图 */
     suspend fun generate(
         book: BookEntity,
-        treeUri: String,
+        source: com.nascomic.reader.library.data.SourceEntity,
         chapters: List<ChapterEntity>,
         opener: BookOpener,
         targetWidth: Int = TARGET_WIDTH,
     ): File? = withContext(Dispatchers.IO) {
         runCatching {
-            val source = opener.open(book, treeUri, chapters)
-            source.use { src ->
+            val bookSource = opener.open(book, source, chapters)
+            bookSource.use { src ->
                 if (src.pageCount == 0) return@use null
                 val index = book.coverPage.coerceIn(0, src.pageCount - 1)
                 // PDF 这类来源没有字节流，直接按尺寸渲染

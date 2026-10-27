@@ -7,12 +7,18 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import android.widget.Toast
+import kotlinx.coroutines.launch
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivitySettingsBinding
+import androidx.lifecycle.lifecycleScope
+import com.nascomic.reader.library.SourceRepository
+import com.nascomic.reader.library.data.ReaderDatabase
+import com.nascomic.reader.library.scan.LibraryScanner
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
@@ -28,6 +34,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private val prefs by lazy { AppPrefs(this) }
     private val reader by lazy { ReaderPrefs(this) }
+    private val db by lazy { ReaderDatabase.get(this) }
+    private val repository by lazy { SourceRepository(this, db) }
+    private val scanner by lazy { LibraryScanner(this, db) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -144,6 +153,16 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.keepScreenOn = checked }
         )
 
+        host.addView(sectionHeader(getString(R.string.settings_section_source)))
+
+        host.addView(
+            choiceRowWithValue(
+                title = getString(R.string.settings_add_dav),
+                desc = getString(R.string.settings_add_dav_desc),
+                value = "",
+            ) { showWebDavDialog() }
+        )
+
         host.addView(sectionHeader(getString(R.string.settings_section_other)))
 
         host.addView(
@@ -169,6 +188,59 @@ class SettingsActivity : AppCompatActivity() {
                 checked = prefs.skipDetail,
             ) { checked -> prefs.skipDetail = checked }
         )
+    }
+
+    /** 只做导航的行：右侧没有值，点一下弹对话框 */
+    private fun choiceRowWithValue(
+        title: String,
+        desc: String?,
+        value: String,
+        onClick: () -> Unit,
+    ): View {
+        val row = rowContainer()
+        row.addView(titleBlock(title, desc), weighted())
+        val label = TextView(this).apply {
+            text = value
+            textSize = 14f
+            setTextColor(getColor(R.color.shell_ink_muted))
+        }
+        row.addView(label)
+        row.setOnClickListener { onClick() }
+        return withDivider(row)
+    }
+
+    private fun showWebDavDialog() {
+        val content = layoutInflater.inflate(R.layout.dialog_webdav, null)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dav_dialog_title)
+            .setView(content)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val endpoint = content.findViewById<android.widget.EditText>(R.id.dav_endpoint)
+                    .text.toString().trim()
+                if (endpoint.isEmpty()) return@setPositiveButton
+                val account = content.findViewById<android.widget.EditText>(R.id.dav_account)
+                    .text.toString().trim()
+                val password = content.findViewById<android.widget.EditText>(R.id.dav_password)
+                    .text.toString()
+                addWebDav(endpoint, account, password)
+            }
+            .show()
+    }
+
+    private fun addWebDav(endpoint: String, account: String, password: String) {
+        lifecycleScope.launch {
+            val toast = try {
+                val id = repository.addWebDav(endpoint, account, password, null)
+                val source = db.sourceDao().get(id)
+                val result = source?.let { scanner.scan(it) }
+                getString(R.string.dav_added, source?.label.orEmpty(), result?.found ?: 0)
+            } catch (e: Exception) {
+                getString(R.string.dav_failed, e.message ?: "")
+            }
+            Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
+            buildRows()
+        }
     }
 
     // ---- 三种行 ----

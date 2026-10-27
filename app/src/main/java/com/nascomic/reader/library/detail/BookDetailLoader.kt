@@ -29,13 +29,13 @@ class BookDetailLoader(
 
     suspend fun load(
         book: BookEntity,
-        treeUri: String,
+        source: com.nascomic.reader.library.data.SourceEntity,
         chapters: List<ChapterEntity>,
         opener: BookOpener,
     ): Detail? = withContext(Dispatchers.IO) {
         runCatching {
-            val source = opener.open(book, treeUri, chapters)
-            source.use { src ->
+            val bookSource = opener.open(book, source, chapters)
+            bookSource.use { src ->
                 val total = src.pageCount
                 val infos = src.chapters
                 val starts = IntArray(infos.size) { src.firstPageOfChapter(it) }

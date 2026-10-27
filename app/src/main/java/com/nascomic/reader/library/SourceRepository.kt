@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
+import com.nascomic.reader.settings.SecretStore
 
 /**
  * 书库来源的增删。
@@ -43,6 +44,44 @@ class SourceRepository(
                 addedAt = System.currentTimeMillis(),
             )
         )
+    }
+
+    /**
+     * 登记一个 WebDAV 来源。密码不落库：写进应用私有的 SecretStore，
+     * 库里只留一个键名（`secretRef`）。
+     */
+    suspend fun addWebDav(
+        endpoint: String,
+        account: String?,
+        password: String?,
+        label: String?,
+    ): Long {
+        val url = normalizeEndpoint(endpoint)
+        val display = label?.takeIf { it.isNotBlank() }
+            ?: url.removePrefix("https://").removePrefix("http://").trimEnd('/')
+
+        val id = db.sourceDao().insert(
+            SourceEntity(
+                kind = SourceEntity.KIND_WEBDAV,
+                label = display,
+                endpoint = url,
+                account = account?.takeIf { it.isNotBlank() },
+                addedAt = System.currentTimeMillis(),
+            )
+        )
+        if (!password.isNullOrBlank()) {
+            val key = "dav_$id"
+            SecretStore(context).put(key, password)
+            db.sourceDao().get(id)?.let { db.sourceDao().upsert(it.copy(secretRef = key)) }
+        }
+        return id
+    }
+
+    /** 地址补全协议与结尾斜杠，避免用户少打一个字符就列不出目录 */
+    fun normalizeEndpoint(raw: String): String {
+        var url = raw.trim()
+        if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://$url"
+        return if (url.endsWith("/")) url else "$url/"
     }
 
     suspend fun list(): List<SourceEntity> = db.sourceDao().all()

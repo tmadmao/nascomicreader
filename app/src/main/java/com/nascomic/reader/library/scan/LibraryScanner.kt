@@ -7,6 +7,9 @@ import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
+import com.nascomic.reader.settings.SecretStore
+import com.nascomic.reader.webdav.WebDavClient
+import com.nascomic.reader.webdav.WebDavException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -23,6 +26,8 @@ class LibraryScanner(
     private val db: ReaderDatabase,
 ) {
 
+    private val secrets by lazy { SecretStore(context) }
+
     data class Result(
         val found: Int,
         val added: Int,
@@ -32,6 +37,8 @@ class LibraryScanner(
     )
 
     suspend fun scan(source: SourceEntity): Result = withContext(Dispatchers.IO) {
+        if (source.kind == SourceEntity.KIND_WEBDAV) return@withContext scanRemote(source)
+
         val treeUri = source.treeUri ?: throw IllegalArgumentException("来源没有目录授权")
         val walker = SafWalker(context, Uri.parse(treeUri))
 
@@ -136,6 +143,94 @@ class LibraryScanner(
             removed = (before - present.size).coerceAtLeast(0),
             chaptered = chaptered,
         )
+    }
+
+    /**
+     * WebDAV 来源：列一层目录，认出能当书的文件。
+     * v1 只看一层（子目录先不递归），远端「一本一个文件」的结构最常见。
+     */
+    private suspend fun scanRemote(source: SourceEntity): Result {
+        val endpoint = source.endpoint ?: throw IllegalArgumentException("来源没有地址")
+        val client = WebDavClient(source.account, secrets.get(source.secretRef))
+
+        db.sourceDao().setScanState(source.id, SourceEntity.STATE_SCANNING, null, System.currentTimeMillis())
+
+        val entries = try {
+            client.list(endpoint)
+        } catch (e: WebDavException) {
+            val code = when (e.status) {
+                401, 403 -> SourceEntity.ERROR_AUTH
+                else -> SourceEntity.ERROR_UNREACHABLE
+            }
+            db.sourceDao().setScanState(source.id, SourceEntity.STATE_FAILED, code, System.currentTimeMillis())
+            throw e
+        } catch (e: Exception) {
+            db.sourceDao().setScanState(
+                source.id, SourceEntity.STATE_FAILED, SourceEntity.ERROR_UNREACHABLE, System.currentTimeMillis()
+            )
+            throw e
+        }
+
+        val files = entries.filter { !it.isDirectory && ScanRules.isSingleBookFile(it.name) }
+        val now = System.currentTimeMillis()
+        var added = 0
+        var updated = 0
+
+        for (entry in files) {
+            val title = ScanRules.titleOf(entry.name)
+            val format = formatOf(entry.name)
+            val existing = db.bookDao().findByRef(source.id, entry.url)
+            if (existing == null) {
+                added++
+                db.bookDao().insert(
+                    BookEntity(
+                        sourceId = source.id,
+                        docRef = entry.url,
+                        title = title,
+                        titleSort = NaturalSort.key(title),
+                        format = format,
+                        byteSize = entry.size.coerceAtLeast(0),
+                        chapterTotal = 0,
+                        isSingleVolume = 1,
+                        addedAt = now,
+                        modifiedAt = now,
+                    )
+                )
+            } else {
+                updated++
+                db.bookDao().upsert(
+                    existing.copy(
+                        title = title,
+                        titleSort = NaturalSort.key(title),
+                        byteSize = entry.size.coerceAtLeast(0),
+                        modifiedAt = now,
+                    )
+                )
+            }
+        }
+
+        val present = files.map { it.url }
+        if (present.isEmpty()) {
+            db.bookDao().deleteBySource(source.id)
+        } else {
+            db.bookDao().deleteMissing(source.id, present)
+        }
+        db.sourceDao().setScanState(source.id, SourceEntity.STATE_DONE, null, now)
+
+        return Result(
+            found = files.size,
+            added = added,
+            updated = updated,
+            removed = 0,
+            chaptered = 0,
+        )
+    }
+
+    private fun formatOf(name: String): Int = when {
+        ScanRules.isEpub(name) -> BookEntity.FORMAT_EPUB
+        ScanRules.isPdf(name) -> BookEntity.FORMAT_PDF
+        ScanRules.isArchive(name) -> BookEntity.FORMAT_ZIP
+        else -> BookEntity.FORMAT_ZIP
     }
 
     /** 目录 → 一本书；空目录返回 null */

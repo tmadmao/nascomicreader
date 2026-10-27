@@ -72,6 +72,15 @@
 
     <string name="settings_section_reading">阅读</string>
     <string name="settings_section_other">其他</string>
+    <string name="settings_section_source">书库来源</string>
+    <string name="settings_add_dav">添加 WebDAV 服务器</string>
+    <string name="settings_add_dav_desc">填服务器地址与账号，添加后会自动扫一次</string>
+    <string name="dav_dialog_title">添加 WebDAV</string>
+    <string name="dav_endpoint_hint">地址，例如 https://nas.example.com/dav/</string>
+    <string name="dav_account_hint">账号（可留空）</string>
+    <string name="dav_password_hint">密码（可留空）</string>
+    <string name="dav_added">已添加「%1$s」，发现 %2$d 本</string>
+    <string name="dav_failed">添加失败：%1$s</string>
 
     <string name="settings_flip_direction">翻页方向</string>
     <string name="settings_flip_direction_desc">决定点屏幕哪一侧看下一页</string>

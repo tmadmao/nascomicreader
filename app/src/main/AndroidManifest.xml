@@ -2,18 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      权限按功能重审，最小化原则。当前为空壳，不声明任何权限。
-      实现到对应阶段时再逐条加入，并在提交信息里写明"哪条功能需要它"：
-        INTERNET                    远程仓库（WebDAV）
-        ACCESS_NETWORK_STATE        远程仓库可达性判断
-        ACCESS_LOCAL_NETWORK        局域网 WebDAV（targetSdk 37 起需要）
-        FOREGROUND_SERVICE          扫描/缓存后台任务
-        FOREGROUND_SERVICE_DATA_SYNC 同上
-        POST_NOTIFICATIONS          后台任务进度通知
+      权限按功能最小化。当前只声明远程书库需要的两条：
+        INTERNET               WebDAV 列目录、取页
+        ACCESS_LOCAL_NETWORK   局域网 NAS（targetSdk 37 起需要，公网地址不影响）
+      后续真要后台扫描再加 FOREGROUND_SERVICE 与 POST_NOTIFICATIONS。
       存储一律走 SAF 持久化授权，不申请任何外部存储权限。
     -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
+    <!-- 局域网 NAS 常见只有 http，允许明文；账号密码走 Basic，不额外加密 -->
     <application
+        android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"

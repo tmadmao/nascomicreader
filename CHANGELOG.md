@@ -28,6 +28,8 @@
 - **章节目录抽屉**：列出章与每章页数，当前章高亮，点任一章跳到该章第一页
 - **PDF**：用系统 `PdfRenderer` 渲染，不引第三方库；按屏尺寸现场渲染，背景铺白；
   封面同样从第一页渲染，书架里和图片书一样显示
+- **WebDAV 远程书库**：填地址与账号即可添加来源，列目录用 PROPFIND，取页用 Range 请求
+  （zip / cbz / tar / epub 直接按区间读，PDF 与 7z/RAR 先下载到缓存）；密码不落库
 - **7z / RAR / CBR**：交给 libarchive 读（Apache-2.0，四个 ABI，16 KB 页面对齐）；
   压缩包按内容判断类型：zip 中央目录 → tar 头 → libarchive
 - **tar**：自解析 512 字节头（含 ustar prefix、GNU 长名、PAX path），不解压、按偏移读；章与页序规则同 zip
