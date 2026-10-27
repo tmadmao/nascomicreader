@@ -14,7 +14,7 @@ import com.nascomic.reader.format.ImageNames
  */
 object ScanRules {
 
-    private val ARCHIVE_EXTENSIONS = setOf("zip", "cbz")
+    private val ARCHIVE_EXTENSIONS = setOf("zip", "cbz", "tar")
     private val PDF_EXTENSIONS = setOf("pdf")
 
     fun isArchive(name: String): Boolean = extensionOf(name) in ARCHIVE_EXTENSIONS

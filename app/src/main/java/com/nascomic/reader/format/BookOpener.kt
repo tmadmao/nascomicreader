@@ -6,6 +6,7 @@ import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
 import com.nascomic.reader.format.epub.EpubBookSource
 import com.nascomic.reader.format.pdf.PdfBookSource
+import com.nascomic.reader.format.tar.TarCatalog
 import com.nascomic.reader.format.zip.RandomAccessData
 import com.nascomic.reader.format.zip.ZipCatalog
 import com.nascomic.reader.library.data.BookEntity
@@ -27,9 +28,9 @@ class BookOpener(private val context: Context) {
     fun open(book: BookEntity, treeUri: String, chapters: List<ChapterEntity>): BookSource {
         val walker = SafWalker(context, Uri.parse(treeUri))
         return when (book.format) {
-            BookEntity.FORMAT_ZIP -> openZip(walker, book.docRef)
+            BookEntity.FORMAT_ZIP -> openArchive(walker, book.docRef)
             BookEntity.FORMAT_PDF -> openPdf(walker, book.docRef)
-            BookEntity.FORMAT_EPUB -> EpubBookSource(openCatalog(walker, book.docRef))
+            BookEntity.FORMAT_EPUB -> EpubBookSource(openCatalog(documentUri(walker, book.docRef)))
             BookEntity.FORMAT_FOLDER ->
                 if (chapters.isEmpty()) {
                     openFolder(walker, book.docRef, book.title)
@@ -40,27 +41,46 @@ class BookOpener(private val context: Context) {
         }
     }
 
-    private fun openZip(walker: SafWalker, docId: String): BookSource =
-        ZipBookSource(openCatalog(walker, docId))
+    /**
+     * 压缩包类书源。扩展名不可靠（cbz 里装 rar、tar 改名 .zip 都常见），
+     * 所以按内容判断：先按 zip 的中央目录读，失败再按 tar 的头读。
+     */
+    private fun openArchive(walker: SafWalker, docId: String): BookSource {
+        val uri = documentUri(walker, docId)
+        val zip = runCatching { ZipBookSource(openCatalog(uri)) }.getOrNull()
+        if (zip != null) return zip
+
+        val pfd = openPfd(uri, docId)
+        return try {
+            TarBookSource(TarCatalog.open(ChannelRandomAccess(pfd)))
+        } catch (e: Exception) {
+            runCatching { pfd.close() }
+            throw e
+        }
+    }
+
+    private fun documentUri(walker: SafWalker, docId: String): Uri =
+        android.provider.DocumentsContract.buildDocumentUriUsingTree(
+            Uri.parse(walker.treeUriString), docId
+        )
+
+    private fun openPfd(uri: Uri, docId: String): ParcelFileDescriptor =
+        context.contentResolver.openFileDescriptor(uri, "r")
+            ?: throw IllegalStateException("打不开文件：$docId")
 
     /** 打开为压缩包目录（epub 也是 zip） */
-    private fun openCatalog(walker: SafWalker, docId: String): ZipCatalog {
-        val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
-            Uri.parse(walker.treeUriString), docId
-        )
-        val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: throw IllegalStateException("打不开文件：$docId")
-        return ZipCatalog.open(ChannelRandomAccess(pfd))
+    private fun openCatalog(uri: Uri): ZipCatalog {
+        val pfd = openPfd(uri, uri.toString())
+        return try {
+            ZipCatalog.open(ChannelRandomAccess(pfd))
+        } catch (e: Exception) {
+            runCatching { pfd.close() }
+            throw e
+        }
     }
 
-    private fun openPdf(walker: SafWalker, docId: String): BookSource {
-        val uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
-            Uri.parse(walker.treeUriString), docId
-        )
-        val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: throw IllegalStateException("打不开文件：$docId")
-        return PdfBookSource(pfd)
-    }
+    private fun openPdf(walker: SafWalker, docId: String): BookSource =
+        PdfBookSource(openPfd(documentUri(walker, docId), docId))
 
     private fun openFolder(walker: SafWalker, docId: String, title: String): BookSource {
         val entries = listImages(walker, docId, prefix = "")
@@ -72,7 +92,7 @@ class BookOpener(private val context: Context) {
     private fun openChaptered(walker: SafWalker, chapters: List<ChapterEntity>): BookSource {
         val parts = chapters.sortedBy { it.ordinal }.map { ch ->
             val source = if (ch.chapterKind == ChapterEntity.KIND_ARCHIVE) {
-                openZip(walker, ch.chapterRef)
+                openArchive(walker, ch.chapterRef)
             } else {
                 openFolder(walker, ch.chapterRef, ch.title)
             }
