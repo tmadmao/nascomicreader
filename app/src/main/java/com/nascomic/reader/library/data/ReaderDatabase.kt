@@ -19,7 +19,7 @@ import androidx.room.RoomDatabase
         ProgressEntity::class,
         BookmarkEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class ReaderDatabase : RoomDatabase() {
@@ -43,8 +43,10 @@ abstract class ReaderDatabase : RoomDatabase() {
 
         private fun build(context: Context): ReaderDatabase =
             Room.databaseBuilder(context, ReaderDatabase::class.java, NAME)
-                // 外键级联删除要显式打开
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                // 尚未发布：结构还在改，直接重建库。
+                // 发布前必须删掉这一行并写正式迁移。
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
     }
 }

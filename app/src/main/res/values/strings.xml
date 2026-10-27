@@ -3,4 +3,17 @@
     <string name="app_name">NAS漫画阅读器</string>
     <string name="shell_tagline">本地与远程漫画阅读</string>
     <string name="shell_version">版本 %1$s</string>
+
+    <string name="action_pick_folder">选择一个漫画目录</string>
+    <string name="action_rescan">重新扫描全部来源</string>
+
+    <string name="summary_counts">来源 %1$d 个 · 书 %2$d 本</string>
+
+    <string name="status_scanning">正在扫描…</string>
+    <string name="status_scanning_named">正在扫描「%1$s」…</string>
+    <string name="status_scan_done">「%1$s」扫描完成\n发现 %2$d 本 · 新增 %3$d · 更新 %4$d</string>
+    <string name="status_scan_failed">扫描失败：%1$s</string>
+    <string name="status_rescan_done">%1$d 个来源扫描完成 · 共 %2$d 本</string>
+    <string name="status_no_source">还没有添加过目录</string>
+    <string name="status_source_missing">来源记录丢失，请重新选择目录</string>
 </resources>

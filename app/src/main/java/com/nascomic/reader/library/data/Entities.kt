@@ -134,9 +134,18 @@ data class ChapterEntity(
     @ColumnInfo(name = "ordinal") val ordinal: Int,
     @ColumnInfo(name = "title") val title: String,
     /** 本章页在容器内的路径前缀，空串表示根 */
+    /** 目录章填完整路径前缀；压缩包章留空 */
     @ColumnInfo(name = "entry_prefix") val entryPrefix: String = "",
+    /** 章的来源：该章对应目录或压缩包的 docId */
+    @ColumnInfo(name = "chapter_ref") val chapterRef: String = "",
+    @ColumnInfo(name = "chapter_kind") val chapterKind: Int = KIND_FOLDER,
     @ColumnInfo(name = "page_total") val pageTotal: Int = 0,
-)
+) {
+    companion object {
+        const val KIND_FOLDER = 0
+        const val KIND_ARCHIVE = 1
+    }
+}
 
 /** 阅读进度，一本书一行。页码 0 基存库，界面显示时 +1。见 §2.4 */
 @Entity(
