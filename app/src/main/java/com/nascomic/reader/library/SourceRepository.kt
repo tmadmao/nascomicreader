@@ -86,8 +86,9 @@ class SourceRepository(
         account: String?,
         password: String?,
         label: String?,
+        port: Int? = null,
     ): Long {
-        val target = com.nascomic.reader.smb.SmbTarget.parse(endpoint)
+        val target = com.nascomic.reader.smb.SmbTarget.parse(endpoint, port)
         val url = buildString {
             append("smb://").append(target.host)
             if (target.port != com.nascomic.reader.smb.SmbTarget.DEFAULT_PORT) {

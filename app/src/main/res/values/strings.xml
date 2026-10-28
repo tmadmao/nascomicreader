@@ -150,16 +150,28 @@
     <string name="settings_add_local_desc">手机或存储卡里放漫画的文件夹，选一次就记住</string>
 
     <string name="settings_add_dav">添加 WebDAV 服务器</string>
-    <string name="settings_add_dav_desc">填服务器地址与账号，添加后会自动扫一次</string>
+    <string name="settings_add_dav_desc">填协议、地址与端口，添加后会自动扫一次</string>
     <string name="settings_add_smb">添加 SMB 共享</string>
-    <string name="settings_add_smb_desc">局域网共享（SMB2/3），填地址与账号，添加后会自动扫一次</string>
+    <string name="settings_add_smb_desc">局域网共享（SMB2/3），填地址与端口，添加后会自动扫一次</string>
 
     <string name="dav_dialog_title">添加 WebDAV</string>
     <string name="smb_dialog_title">添加 SMB 共享</string>
-    <string name="remote_endpoint_hint">地址，例如 https://nas.example.com/dav/</string>
+    <string name="remote_host_hint">服务器地址，例如 192.168.1.10 或 nas.example.com/dav</string>
+    <string name="remote_scheme">协议</string>
+    <string name="remote_scheme_http">HTTP</string>
+    <string name="remote_scheme_https">HTTPS</string>
+    <string name="remote_port_hint">端口（留空按协议默认 %1$d）</string>
+    <string name="remote_port_hint_smb">端口（留空用 %1$d）</string>
+    <string name="remote_port_error">端口要填 1–65535 之间的数字</string>
+    <string name="remote_address_error">服务器地址不能为空</string>
+    <string name="remote_error_auth">账号或密码不对</string>
+    <string name="remote_error_tls">证书不被信任：改用 HTTP，或给 NAS 换一张受信任的证书</string>
+    <string name="remote_error_host">找不到这个地址，检查主机名或 IP</string>
+    <string name="remote_error_connect">连不上，检查端口与网络</string>
+    <string name="action_add">添加</string>
     <string name="remote_account_hint">账号（可留空）</string>
     <string name="remote_password_hint">密码（可留空）</string>
-    <string name="smb_endpoint_hint">地址，例如 smb://192.168.1.10/漫画</string>
+    <string name="smb_endpoint_hint">地址，例如 192.168.1.10/漫画（要带共享名）</string>
     <string name="smb_account_hint">账号，可写 域\\账号（留空为访客）</string>
 
     <string name="source_label_hint">名称（可留空，默认用地址）</string>

@@ -58,5 +58,13 @@ data class SmbTarget(
                 path = parts.drop(2).joinToString("/"),
             )
         }
+
+        /** 界面上单独填了端口时以它为准，地址里原本那段让位 */
+        fun parse(raw: String, portOverride: Int?): SmbTarget {
+            val target = parse(raw)
+            if (portOverride == null) return target
+            require(portOverride in 1..65535) { "端口要填 1–65535 之间的数字" }
+            return target.copy(port = portOverride)
+        }
     }
 }

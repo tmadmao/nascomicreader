@@ -17,6 +17,7 @@ import androidx.appcompat.widget.SwitchCompat
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivitySettingsBinding
 import androidx.lifecycle.lifecycleScope
+import com.nascomic.reader.library.DavAddress
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
@@ -443,7 +444,7 @@ class SettingsActivity : AppCompatActivity() {
                 val result = scanner.scan(source)
                 getString(R.string.source_rescan_done, source.label, result.found)
             } catch (e: Exception) {
-                getString(R.string.source_rescan_failed, e.message ?: "")
+                getString(R.string.source_rescan_failed, remoteErrorText(e))
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()
@@ -522,36 +523,125 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * 添加远端来源。WebDAV 与 SMB 要填的是同一组东西（地址、账号、密码），
-     * 所以共用一个对话框，只有提示语按协议换。
+     * 添加远端来源。WebDAV 与 SMB 要填的是一组东西（地址、端口、账号、密码），
+     * 共用对话框，只有协议行与提示语按协议换。
+     *
+     * 端口单独一栏：NAS 的 WebDAV 常在 5005 / 5006 这类端口上，地址栏里只写主机名，
+     * 端口用数字键盘填，避免在地址里跟冒号较劲。
      */
     private fun showRemoteDialog(kind: Int) {
         val smb = kind == SourceEntity.KIND_SMB
         val content = layoutInflater.inflate(R.layout.dialog_remote, null)
 
-        content.findViewById<EditText>(R.id.remote_endpoint).hint =
-            getString(if (smb) R.string.smb_endpoint_hint else R.string.remote_endpoint_hint)
-        content.findViewById<EditText>(R.id.remote_account).hint =
-            getString(if (smb) R.string.smb_account_hint else R.string.remote_account_hint)
-        content.findViewById<EditText>(R.id.remote_password).hint =
-            getString(R.string.remote_password_hint)
+        val address = content.findViewById<EditText>(R.id.remote_endpoint)
+        val port = content.findViewById<EditText>(R.id.remote_port)
+        val account = content.findViewById<EditText>(R.id.remote_account)
+        val password = content.findViewById<EditText>(R.id.remote_password)
+        val label = content.findViewById<EditText>(R.id.remote_label)
+        val schemeRow = content.findViewById<View>(R.id.scheme_row)
+        val httpChip = content.findViewById<TextView>(R.id.scheme_http)
+        val httpsChip = content.findViewById<TextView>(R.id.scheme_https)
 
-        AlertDialog.Builder(this)
+        var scheme = "https"
+
+        fun renderScheme() {
+            styleSchemeChip(httpChip, scheme == "http")
+            styleSchemeChip(httpsChip, scheme == "https")
+            // 端口提示跟着协议走：换成 http 时把 443 的暗示消掉
+            port.hint = getString(
+                if (smb) R.string.remote_port_hint_smb else R.string.remote_port_hint,
+                if (smb) 445 else if (scheme == "http") 80 else 443,
+            )
+        }
+
+        schemeRow.visibility = if (smb) View.GONE else View.VISIBLE
+        httpChip.setOnClickListener { scheme = "http"; renderScheme() }
+        httpsChip.setOnClickListener { scheme = "https"; renderScheme() }
+
+        address.hint = getString(if (smb) R.string.smb_endpoint_hint else R.string.remote_host_hint)
+        account.hint = getString(if (smb) R.string.smb_account_hint else R.string.remote_account_hint)
+        renderScheme()
+        address.requestFocus()
+
+        val dialog = AlertDialog.Builder(this)
             .setTitle(if (smb) R.string.smb_dialog_title else R.string.dav_dialog_title)
             .setView(content)
             .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val endpoint = content.findViewById<EditText>(R.id.remote_endpoint)
-                    .text.toString().trim()
-                if (endpoint.isEmpty()) return@setPositiveButton
-                val label = content.findViewById<EditText>(R.id.remote_label).text.toString().trim()
-                val account = content.findViewById<EditText>(R.id.remote_account)
-                    .text.toString().trim()
-                val password = content.findViewById<EditText>(R.id.remote_password)
-                    .text.toString()
-                addRemote(kind, endpoint, account, password, label)
+            .setPositiveButton(R.string.action_add, null)
+            .create()
+
+        dialog.setOnShowListener {
+            // 输入不对时不关对话框，把原因说清楚，让人就地改
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val rawAddress = address.text.toString().trim()
+                val portText = port.text.toString().trim()
+                val portValue = if (portText.isEmpty()) {
+                    null
+                } else {
+                    portText.toIntOrNull()?.takeIf { it in 1..65535 }
+                }
+                if (portText.isNotEmpty() && portValue == null) {
+                    Toast.makeText(this, R.string.remote_port_error, Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (rawAddress.isEmpty()) {
+                    Toast.makeText(this, R.string.remote_address_error, Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                val endpoint = if (smb) {
+                    rawAddress
+                } else {
+                    runCatching { DavAddress.toUrl(DavAddress.parse(scheme, rawAddress, portText)) }
+                        .getOrElse {
+                            Toast.makeText(this, it.message ?: "", Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                }
+
+                dialog.dismiss()
+                addRemote(
+                    kind = kind,
+                    endpoint = endpoint,
+                    account = account.text.toString().trim(),
+                    password = password.text.toString(),
+                    label = label.text.toString().trim(),
+                    port = portValue,
+                )
             }
-            .show()
+        }
+        dialog.show()
+        // 键盘弹出来时把对话框顶上去，别把密码框挡住
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    }
+
+    /**
+     * 远程失败的人话。库的原始报错是英文（native / okhttp / smbj），
+     * 常见几种就地翻译成人能对上号的说法。
+     */
+    private fun remoteErrorText(e: Throwable): String = when {
+        e is com.nascomic.reader.webdav.WebDavException && (e.status == 401 || e.status == 403) ->
+            getString(R.string.remote_error_auth)
+        e is javax.net.ssl.SSLException || e is java.security.cert.CertificateException ->
+            getString(R.string.remote_error_tls)
+        e is java.net.UnknownHostException -> getString(R.string.remote_error_host)
+        e is java.net.ConnectException || e is java.net.SocketTimeoutException ->
+            getString(R.string.remote_error_connect)
+        else -> e.message ?: ""
+    }
+
+    /** 协议的两个小圆角块：选中的靛蓝实底白字，未选白底描边 */
+    private fun styleSchemeChip(chip: TextView, selected: Boolean) {
+        chip.setTextColor(getColor(if (selected) android.R.color.white else R.color.shell_ink_muted))
+        chip.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = dp(14).toFloat()
+            if (selected) {
+                setColor(getColor(R.color.brand_indigo))
+            } else {
+                setColor(getColor(R.color.shell_surface))
+                setStroke(dp(1), getColor(R.color.shell_stroke))
+            }
+        }
     }
 
     private fun addRemote(
@@ -560,11 +650,12 @@ class SettingsActivity : AppCompatActivity() {
         account: String,
         password: String,
         label: String,
+        port: Int? = null,
     ) {
         lifecycleScope.launch {
             val toast = try {
                 val id = if (kind == SourceEntity.KIND_SMB) {
-                    repository.addSmb(endpoint, account, password, label.ifBlank { null })
+                    repository.addSmb(endpoint, account, password, label.ifBlank { null }, port)
                 } else {
                     repository.addWebDav(endpoint, account, password, label.ifBlank { null })
                 }
@@ -572,7 +663,7 @@ class SettingsActivity : AppCompatActivity() {
                 val result = source?.let { scanner.scan(it) }
                 getString(R.string.source_added, source?.label.orEmpty(), result?.found ?: 0)
             } catch (e: Exception) {
-                getString(R.string.source_rescan_failed, e.message ?: "")
+                getString(R.string.source_rescan_failed, remoteErrorText(e))
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()
