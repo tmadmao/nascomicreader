@@ -25,6 +25,7 @@ import com.nascomic.reader.ui.detail.DetailActivity
 import com.nascomic.reader.ui.reader.ReadingActivity
 import com.nascomic.reader.ui.settings.SettingsActivity
 import com.nascomic.reader.ui.shelf.ShelfAdapter
+import com.nascomic.reader.ui.shelf.ShelfGrid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,12 +59,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         adapter = ShelfAdapter(thumbs) { openBook(it) }
-        binding.grid.layoutManager = GridLayoutManager(this, 3)
         binding.grid.adapter = adapter
-
-        // 三列：扣掉两侧 padding 与格子间距
-        val cell = (resources.displayMetrics.widthPixels - dp(16) - dp(12) * 3) / 3
-        adapter.setCoverWidth(cell)
+        applyGridMetrics()
 
         binding.addFolder.setOnClickListener { pickFolder.launch(null) }
         binding.emptyLocal.setOnClickListener { pickFolder.launch(null) }
@@ -75,6 +72,16 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        refresh()
+    }
+
+    /**
+     * 清单里声明了 configChanges，转屏不会重建 Activity——
+     * 列数与封面解码宽度得自己按新屏宽重算，否则横屏还是竖屏那 3/6 列。
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyGridMetrics()
         refresh()
     }
 
@@ -207,6 +214,18 @@ class MainActivity : AppCompatActivity() {
                 .putExtra(DetailActivity.EXTRA_BOOK_ID, book.id)
         }
         startActivity(intent)
+    }
+
+    /**
+     * 列数按屏宽算：手机上 3 列，平板上一行能放 6 本。
+     * 封面解码宽度也跟着走，免得大屏按老人的尺寸解码发虚、或小屏解太大白占内存。
+     */
+    private fun applyGridMetrics() {
+        val available = resources.displayMetrics.widthPixels - dp(16)
+        val minCell = (ShelfGrid.MIN_CELL_DP * resources.displayMetrics.density).toInt()
+        val columns = ShelfGrid.columns(available, minCell)
+        binding.grid.layoutManager = GridLayoutManager(this, columns)
+        adapter.setCoverWidth(ShelfGrid.cellWidth(available, columns) - dp(12))
     }
 
     private fun status(text: String) {
