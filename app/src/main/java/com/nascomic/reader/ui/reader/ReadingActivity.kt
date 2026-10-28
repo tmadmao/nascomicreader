@@ -39,10 +39,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 阅读页。当前做的是「打开一本书、看到第 N 页、点击左右翻页、记住位置」，
- * 以及点屏幕中间呼出的工具栏（返回 / 书名 / 目录 / 页码）。
- *
- * 缩放、双页、裁边这些等版面引擎做好再接进来。
+ * 阅读页。翻页、双页、裁白边、跨页拆分按 [ReaderPrefs] 走；点屏幕中间呼出工具栏
+ * （返回 / 书名 / 上一页 / 设置 / 书签 / 目录 / 下一页），整本读完再往后翻停在书的尾。
  */
 class ReadingActivity : AppCompatActivity() {
 
@@ -79,6 +77,10 @@ class ReadingActivity : AppCompatActivity() {
     private var currentWide = false
     /** 当前页有没有书签 */
     private var bookmarked = false
+    /** 是否停在「书的尾」整屏空态上 */
+    private var atEnd = false
+    /** 这本书读到过尾没有。双页并排时只看页号判断不出看完，单独记 */
+    private var finishedOnce = false
 
     /** 书名：顶栏要拼「书名 · 话名」，所以单独留一份 */
     private var bookTitle: String = ""
@@ -103,6 +105,7 @@ class ReadingActivity : AppCompatActivity() {
         binding.openSettings.setOnClickListener {
             startActivity(android.content.Intent(this, com.nascomic.reader.ui.settings.SettingsActivity::class.java))
         }
+        binding.endBack.setOnClickListener { backToShelf() }
         applySystemBars()
         openBook()
     }
@@ -125,18 +128,31 @@ class ReadingActivity : AppCompatActivity() {
 
     /** 把显示类参数应用到画面上。设置改完回来会再调一次。 */
     private fun applyDisplayPrefs() {
-        binding.page.canvasColor = when (ReaderPrefs.Canvas.of(prefs.canvas)) {
+        val canvas = when (ReaderPrefs.Canvas.of(prefs.canvas)) {
             ReaderPrefs.Canvas.LIGHT -> 0xFFF4F6F8.toInt()
             ReaderPrefs.Canvas.DARK -> 0xFF2A2E33.toInt()
             ReaderPrefs.Canvas.BLACK -> Color.BLACK
         }
+        binding.page.canvasColor = canvas
+        applyEndTheme(canvas)
         binding.page.marginPx = dp(prefs.sideMarginDp)
-        binding.pageLabel.isVisible = prefs.showPageLabel && !toolbarShown
+        binding.pageLabel.isVisible = prefs.showPageLabel && !toolbarShown && !atEnd
         if (prefs.keepScreenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    /** 书的尾跟着画布底色走：浅底石墨字，深底转暖白，不在深底上留一块浅色方块 */
+    private fun applyEndTheme(canvas: Int) {
+        val light = ReaderPrefs.Canvas.of(prefs.canvas) == ReaderPrefs.Canvas.LIGHT
+        val muted = if (light) 0xFF5F666D.toInt() else 0xFFA9AEB4.toInt()
+        binding.endPage.setBackgroundColor(canvas)
+        binding.endTitle.setTextColor(if (light) 0xFF22262B.toInt() else 0xFFEDEAE4.toInt())
+        binding.endMeta.setTextColor(muted)
+        binding.endSay.setTextColor(muted)
+        binding.endTip.setTextColor(muted)
     }
 
     private fun openBook() {
@@ -169,10 +185,11 @@ class ReadingActivity : AppCompatActivity() {
                 val chapterCount = if (chaptered) opened.chapters.size else 0
                 db.bookDao().setTotals(bookId, total, chapterCount)
 
+                val saved = db.progressDao().forBook(bookId)
+                finishedOnce = saved?.finished ?: false
                 page = if (requestedPage >= 0) {
                     requestedPage.coerceIn(0, total - 1)
                 } else {
-                    val saved = db.progressDao().forBook(bookId)
                     saved?.pageGlobal?.coerceIn(0, total - 1) ?: 0
                 }
                 showPage()
@@ -191,6 +208,8 @@ class ReadingActivity : AppCompatActivity() {
     private fun showPage() {
         val src = source ?: return
         if (loading) return
+        // 书的尾占着屏时不画页面，等往回翻再重解
+        if (atEnd) return
         // 首帧还没量出尺寸，等布局完再画，否则解码目标会算成 1px
         if (binding.page.width == 0 || binding.page.height == 0) {
             binding.page.post { showPage() }
@@ -215,6 +234,8 @@ class ReadingActivity : AppCompatActivity() {
                 binding.error.isVisible = false
                 shownPages = spread.pages.size
                 currentWide = spread.pages.first().wide
+                // 这一屏已经含最后一页，往后翻就是书的尾
+                if (page + shownPages >= total) finishedOnce = true
                 binding.page.setPages(spread.pages)
             }
             binding.loading.isVisible = false
@@ -372,7 +393,9 @@ class ReadingActivity : AppCompatActivity() {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.action == MotionEvent.ACTION_UP && source != null && !overToolbar(ev)) {
+        if (ev.action == MotionEvent.ACTION_UP && source != null &&
+            !overToolbar(ev) && !overEndButton(ev)
+        ) {
             val x = ev.x / (binding.readerRoot.width.coerceAtLeast(1))
             // 方向可切：从左往右读时点右侧翻到下一页，从右往左读时反过来
             val forwardRight = prefs.flipForwardRight
@@ -393,10 +416,18 @@ class ReadingActivity : AppCompatActivity() {
         return inTop || inBottom
     }
 
+    /** 书的尾上只有「回到书库」一个按钮，点它别顺带翻页 */
+    private fun overEndButton(ev: MotionEvent): Boolean {
+        if (!atEnd) return false
+        val hit = Rect()
+        binding.endBack.getHitRect(hit)
+        return hit.contains(ev.x.toInt(), ev.y.toInt())
+    }
+
     private fun setToolbarVisible(show: Boolean) {
         toolbarShown = show
-        // 常驻页码与工具栏里的页码只留一个，避免重复
-        binding.pageLabel.isVisible = !show && prefs.showPageLabel
+        // 常驻页码与工具栏里的页码只留一个，避免重复；书的尾上也不显示
+        binding.pageLabel.isVisible = !show && prefs.showPageLabel && !atEnd
         binding.topBar.isVisible = show
         binding.bottomBar.isVisible = show
         if (show) {
@@ -457,17 +488,29 @@ class ReadingActivity : AppCompatActivity() {
         }
     }
 
-    /** 前进一屏：并排时一次跨两页；拆页时先看右半再翻页 */
+    /** 前进一屏：并排时一次跨两页；拆页时先看右半再翻页；最后一屏之后进书的尾 */
     private fun turnForward() {
+        if (atEnd) return
         if (splitActive() && half == 0) {
             half = 1
             showPage()
             return
         }
-        turnTo(page + shownPages.coerceAtLeast(1), newHalf = 0)
+        val step = shownPages.coerceAtLeast(1)
+        val target = PageTurn.nextPage(page, step, total)
+        if (target == null) {
+            showEndPage()
+            return
+        }
+        turnTo(target, newHalf = 0)
     }
 
     private fun turnBackward() {
+        // 书的尾往回翻就是最后一页，不是翻不动
+        if (atEnd) {
+            leaveEndPage()
+            return
+        }
         if (splitActive() && half == 1) {
             half = 0
             showPage()
@@ -488,6 +531,53 @@ class ReadingActivity : AppCompatActivity() {
         saveProgress()
     }
 
+    /**
+     * 整本书看完：清掉当前页位图，换成一块空态。
+     * 进度仍停在最后一页，回来时接着从那里看。
+     */
+    private fun showEndPage() {
+        if (atEnd || source == null) return
+        atEnd = true
+        half = 0
+        binding.page.setPages(emptyList())
+        binding.error.isVisible = false
+        binding.loading.isVisible = false
+        binding.pageLabel.isVisible = false
+        binding.endMeta.text = endMetaText()
+        binding.endPage.isVisible = true
+        if (toolbarShown) setToolbarVisible(false)
+    }
+
+    private fun leaveEndPage() {
+        if (!atEnd) return
+        atEnd = false
+        binding.endPage.isVisible = false
+        // 最后一页是宽图且开着拆页时，从后往前落回右半
+        half = if (currentWide && prefs.splitWide) 1 else 0
+        showPage()
+    }
+
+    private fun endMetaText(): String {
+        val src = source ?: return ""
+        return if (chaptered) {
+            getString(R.string.reader_end_meta_chapter, src.chapters.size, total)
+        } else {
+            getString(R.string.reader_end_meta_pages, total)
+        }
+    }
+
+    /** 书的尾上的「回到书库」：清掉详情页与阅读页，直接回书架挑下一本 */
+    private fun backToShelf() {
+        startActivity(
+            android.content.Intent(this, com.nascomic.reader.ui.MainActivity::class.java)
+                .addFlags(
+                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+        )
+        finish()
+    }
+
     private fun saveProgress() {
         val src = source ?: return
         lifecycleScope.launch(Dispatchers.IO) {
@@ -499,6 +589,7 @@ class ReadingActivity : AppCompatActivity() {
                         chapterOrdinal = chapter,
                         pageInChapter = page - src.firstPageOfChapter(chapter),
                         pageGlobal = page,
+                        finished = finishedOnce,
                         updatedAt = System.currentTimeMillis(),
                     )
                 )

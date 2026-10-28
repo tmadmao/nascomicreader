@@ -10,12 +10,11 @@ import androidx.core.content.ContextCompat
 import com.nascomic.reader.R
 
 /**
- * 书脊进度条：一条竖细条，从下往上填已读比例。
+ * 封面底部那条进度线：从左往右填已读比例，高度由布局给（3dp）。
  *
- * 全站唯一的高亮记号（设计说明 §8「记忆点」）：不做数字角标，也不叠在封面上，
- * 单独占 4dp 立在封面左侧，像书被抽出了多少。
+ * 没读过的书不画，只留一条空白——进度是读过的记号，不该给每本书都描一道边。
  */
-class SpineProgress @JvmOverloads constructor(
+class CoverProgress @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
@@ -28,7 +27,7 @@ class SpineProgress @JvmOverloads constructor(
     }
     private val rect = RectF()
 
-    /** 0f–1f。0 或负数时不画填充，只留空槽 */
+    /** 0f–1f。0 时整条都不画 */
     var ratio: Float = 0f
         set(value) {
             val v = value.coerceIn(0f, 1f)
@@ -41,16 +40,14 @@ class SpineProgress @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
+        if (w <= 0f || h <= 0f || ratio <= 0f) return
 
-        val radius = w / 2f
+        val radius = h / 2f
         rect.set(0f, 0f, w, h)
         canvas.drawRoundRect(rect, radius, radius, trackPaint)
 
-        val filled = h * ratio
-        if (filled <= 0f) return
-        val top = h - filled.coerceAtLeast(w)
-        rect.set(0f, top, w, h)
+        val filled = (w * ratio).coerceIn(h, w)
+        rect.set(0f, 0f, filled, h)
         canvas.drawRoundRect(rect, radius, radius, fillPaint)
     }
 }

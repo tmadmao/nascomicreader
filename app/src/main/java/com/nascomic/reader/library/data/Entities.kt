@@ -166,6 +166,11 @@ data class ProgressEntity(
     @ColumnInfo(name = "chapter_ordinal") val chapterOrdinal: Int = 0,
     @ColumnInfo(name = "page_in_chapter") val pageInChapter: Int = 0,
     @ColumnInfo(name = "page_global") val pageGlobal: Int = 0,
+    /**
+     * 是否读到过书的尾。双页并排时最后一屏的第一页不是最后一页，
+     * 只看页号判断不出「看完了」，所以单独记一笔。
+     */
+    @ColumnInfo(name = "finished") val finished: Boolean = false,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
 

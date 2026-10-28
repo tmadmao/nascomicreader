@@ -5,27 +5,19 @@
     android:orientation="vertical"
     android:padding="6dp">
 
-    <LinearLayout
+    <com.nascomic.reader.ui.widget.AspectImageView
+        android:id="@+id/cover"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:background="@color/cover_placeholder"
+        android:scaleType="centerCrop"
+        android:contentDescription="@null" />
 
-        <!-- 书脊：全站唯一的进度记号，独立立在封面左侧 -->
-        <com.nascomic.reader.ui.widget.SpineProgress
-            android:id="@+id/spine"
-            android:layout_width="4dp"
-            android:layout_height="match_parent"
-            android:layout_marginEnd="3dp" />
-
-        <com.nascomic.reader.ui.widget.AspectImageView
-            android:id="@+id/cover"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@color/cover_placeholder"
-            android:scaleType="centerCrop"
-            android:contentDescription="@null" />
-    </LinearLayout>
+    <!-- 已读进度：贴着封面底边的一条横线，没读过的不画 -->
+    <com.nascomic.reader.ui.widget.CoverProgress
+        android:id="@+id/progress"
+        android:layout_width="match_parent"
+        android:layout_height="3dp" />
 
     <TextView
         android:id="@+id/title"

@@ -31,6 +31,12 @@
     <string name="reader_open_failed">打不开这本书</string>
     <string name="reader_page_failed">第 %1$d 页读不出来</string>
     <string name="reader_empty">这本书里没有可显示的图片</string>
+    <string name="reader_end_title">本漫画已看完</string>
+    <string name="reader_end_say">看看别的吧。</string>
+    <string name="reader_end_meta_pages">共 %1$d 页</string>
+    <string name="reader_end_meta_chapter">全 %1$d 话 · 共 %2$d 页</string>
+    <string name="reader_end_back">回到书库</string>
+    <string name="reader_end_tip">往回翻可以再看最后一页</string>
 
     <string name="kind_archive">压缩包</string>
     <string name="kind_folder">文件夹</string>
@@ -83,6 +89,7 @@
     <string name="detail_toc_with_count">目录</string>
     <string name="detail_toc_chapters">%1$d 话</string>
     <string name="shelf_meta_unread">未开始</string>
+    <string name="progress_finished">已读完</string>
     <string name="detail_bookmark_row">%1$d 页</string>
     <string name="detail_bookmark_row_chapter">%1$s · 第 %2$d 页</string>
     <string name="detail_bookmark_delete">删除书签</string>

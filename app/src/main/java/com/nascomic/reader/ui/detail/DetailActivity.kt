@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivityDetailBinding
 import com.nascomic.reader.format.BookOpener
+import com.nascomic.reader.format.readPercent
 import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.BookmarkEntity
@@ -134,10 +135,13 @@ class DetailActivity : AppCompatActivity() {
             binding.readInfo.visibility = View.VISIBLE
             binding.percent.text = getString(
                 R.string.shelf_percent,
-                ((p.pageGlobal + 1) * 100 / b.pageTotal).coerceIn(0, 100)
+                readPercent(p.pageGlobal, b.pageTotal, p.finished)
             )
-            binding.readInfo.text = getString(R.string.detail_read_line, p.pageGlobal + 1, b.pageTotal)
-            binding.spine.ratio = (p.pageGlobal + 1f) / b.pageTotal
+            binding.readInfo.text = if (p.finished) {
+                getString(R.string.progress_finished)
+            } else {
+                getString(R.string.detail_read_line, p.pageGlobal + 1, b.pageTotal)
+            }
 
             binding.primary.text = if (byChapter) {
                 getString(
@@ -150,7 +154,6 @@ class DetailActivity : AppCompatActivity() {
         } else {
             binding.percent.visibility = View.GONE
             binding.readInfo.visibility = View.GONE
-            binding.spine.ratio = 0f
             binding.primary.text = getString(R.string.detail_start_reading)
             binding.secondary.visibility = View.GONE
         }

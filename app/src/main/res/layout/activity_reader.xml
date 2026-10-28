@@ -33,6 +33,71 @@
         android:textColor="#FFFFFF"
         android:textSize="12sp" />
 
+    <!-- 书的尾：整本读完之后再往后翻，整屏一块空态，不再是翻不动 -->
+    <LinearLayout
+        android:id="@+id/end_page"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingHorizontal="42dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_end_mark" />
+
+        <TextView
+            android:id="@+id/end_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:fontFamily="serif"
+            android:text="@string/reader_end_title"
+            android:textColor="@color/shell_ink"
+            android:textSize="21sp" />
+
+        <TextView
+            android:id="@+id/end_meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:textColor="@color/shell_ink_muted"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/end_say"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/reader_end_say"
+            android:textColor="@color/shell_ink_muted"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/end_back"
+            android:layout_width="wrap_content"
+            android:layout_height="46dp"
+            android:layout_marginTop="26dp"
+            android:background="@drawable/bg_primary"
+            android:gravity="center"
+            android:paddingHorizontal="22dp"
+            android:text="@string/reader_end_back"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/end_tip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/reader_end_tip"
+            android:textColor="@color/shell_ink_muted"
+            android:textSize="11sp" />
+    </LinearLayout>
+
     <!-- 顶部栏：点屏幕中间显隐 -->
     <LinearLayout
         android:id="@+id/top_bar"

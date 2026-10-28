@@ -8,11 +8,12 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.nascomic.reader.R
+import com.nascomic.reader.format.readPercent
 import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.ui.widget.AspectImageView
-import com.nascomic.reader.ui.widget.SpineProgress
+import com.nascomic.reader.ui.widget.CoverProgress
 
 /** 书架网格。封面缺失时留灰底，不阻塞列表。 */
 class ShelfAdapter(
@@ -37,7 +38,7 @@ class ShelfAdapter(
 
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val cover: AspectImageView = view.findViewById(R.id.cover)
-        val spine: SpineProgress = view.findViewById(R.id.spine)
+        val progress: CoverProgress = view.findViewById(R.id.progress)
         val title: TextView = view.findViewById(R.id.title)
         val meta: TextView = view.findViewById(R.id.meta)
     }
@@ -56,7 +57,7 @@ class ShelfAdapter(
         val p = progress[book.id]
         val total = book.pageTotal
         val read = p?.pageGlobal ?: 0
-        holder.spine.ratio = if (p != null && total > 0) (read + 1f) / total else 0f
+        holder.progress.ratio = if (p != null) readPercent(read, total, p.finished) / 100f else 0f
         holder.meta.text = metaOf(holder.itemView.context, book, p)
 
         val w = if (coverWidthPx > 0) coverWidthPx else holder.cover.width
@@ -84,6 +85,8 @@ class ShelfAdapter(
                 if (chaptered) R.string.shelf_meta_unread_chapter else R.string.shelf_meta_unread_pages,
                 if (chaptered) book.chapterTotal else book.pageTotal,
             )
+            // 读到过书的尾就算读完，话多话少都按全书页数判
+            p.finished -> ctx.getString(R.string.progress_finished)
             chaptered -> ctx.getString(
                 R.string.shelf_meta_chapter, p.chapterOrdinal + 1, book.chapterTotal
             )

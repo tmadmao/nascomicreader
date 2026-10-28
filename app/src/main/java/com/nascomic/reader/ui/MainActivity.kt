@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivityMainBinding
 import com.nascomic.reader.format.BookOpener
+import com.nascomic.reader.format.readPercent
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.BookEntity
@@ -143,9 +144,8 @@ class MainActivity : AppCompatActivity() {
         binding.resumeTitle.text = book.title
         binding.resumeMeta.text = resumeMeta(book, latest)
 
-        val percent = ((latest.pageGlobal + 1) * 100 / book.pageTotal).coerceIn(0, 100)
+        val percent = readPercent(latest.pageGlobal, book.pageTotal, latest.finished)
         binding.resumePercent.text = getString(R.string.shelf_percent, percent)
-        binding.resumeSpine.ratio = (latest.pageGlobal + 1f) / book.pageTotal
 
         val coverWidth = dp(56)
         binding.resumeCover.setImageBitmap(thumbs.load(book.id, coverWidth, coverWidth * 4 / 3))
@@ -159,10 +159,11 @@ class MainActivity : AppCompatActivity() {
         p: com.nascomic.reader.library.data.ProgressEntity,
     ): String {
         val source = allSources.firstOrNull { it.id == book.sourceId }?.label.orEmpty()
-        val position = if (book.chapterTotal > 0) {
-            getString(R.string.shelf_meta_chapter, p.chapterOrdinal + 1, book.chapterTotal)
-        } else {
-            getString(R.string.shelf_meta_pages, p.pageGlobal + 1, book.pageTotal)
+        val position = when {
+            p.finished -> getString(R.string.progress_finished)
+            book.chapterTotal > 0 ->
+                getString(R.string.shelf_meta_chapter, p.chapterOrdinal + 1, book.chapterTotal)
+            else -> getString(R.string.shelf_meta_pages, p.pageGlobal + 1, book.pageTotal)
         }
         return if (source.isEmpty()) position else "$position · $source"
     }
