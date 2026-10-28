@@ -38,7 +38,9 @@
 
     <string name="action_add_folder">添加目录</string>
     <string name="action_rescan_short">重新扫描</string>
-    <string name="shelf_empty">还没有书。点右上角「添加目录」，选一个放漫画的文件夹。</string>
+    <string name="shelf_empty">还没有书库。本地目录与 NAS 共享都在这里汇总。</string>
+    <string name="shelf_empty_local">选择本地目录</string>
+    <string name="shelf_empty_remote">添加 NAS 共享</string>
     <string name="tab_all">全部</string>
     <string name="tab_recent">最近阅读</string>
 
@@ -110,6 +112,9 @@
     <string name="time_hours_ago">%1$d 小时前</string>
     <string name="time_days_ago">%1$d 天前</string>
     <string name="settings_section_source">书库来源</string>
+    <string name="settings_add_local">添加本地目录</string>
+    <string name="settings_add_local_desc">手机或存储卡里放漫画的文件夹，选一次就记住</string>
+
     <string name="settings_add_dav">添加 WebDAV 服务器</string>
     <string name="settings_add_dav_desc">填服务器地址与账号，添加后会自动扫一次</string>
     <string name="settings_add_smb">添加 SMB 共享</string>

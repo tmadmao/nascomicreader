@@ -1,9 +1,17 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     // AGP 9 起内置 Kotlin 编译，不再单独应用 org.jetbrains.kotlin.android
     alias(libs.plugins.android.application)
     alias(libs.plugins.ksp)
+}
+
+// 签名材料不进仓库：keystore.properties 与 *.jks 都在本地（已 gitignore）。
+// 没有这份文件时 release 仍可构建，只是产物未签名。
+val keystoreProps = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 // 许可清单只有一份：仓库根的 NOTICE / LICENSE。构建时复制进 assets，界面直接读，不手抄
@@ -25,7 +33,18 @@ android {
         minSdk = 24
         targetSdk = 37
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.1.0-beta1"
+    }
+
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -34,6 +53,7 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

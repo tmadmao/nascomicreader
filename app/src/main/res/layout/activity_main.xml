@@ -80,17 +80,54 @@
         android:paddingTop="4dp"
         android:clipToPadding="false" />
 
-    <TextView
+    <!-- 空书架时的引导：本地与远端各给一个入口，别让人去找右上角 -->
+    <LinearLayout
         android:id="@+id/empty"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:orientation="vertical"
         android:gravity="center"
         android:padding="32dp"
-        android:text="@string/shelf_empty"
-        android:textColor="@color/shell_ink_muted"
-        android:textSize="13sp"
-        android:visibility="gone" />
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/shelf_empty"
+            android:textColor="@color/shell_ink_muted"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/empty_local"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="12dp"
+                android:text="@string/shelf_empty_local"
+                android:textColor="@color/brand_indigo"
+                android:textSize="14sp"
+                android:background="?attr/selectableItemBackground" />
+
+            <TextView
+                android:id="@+id/empty_remote"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:padding="12dp"
+                android:text="@string/shelf_empty_remote"
+                android:textColor="@color/brand_indigo"
+                android:textSize="14sp"
+                android:background="?attr/selectableItemBackground" />
+        </LinearLayout>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/status"

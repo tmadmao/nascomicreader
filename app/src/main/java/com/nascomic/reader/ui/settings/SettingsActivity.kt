@@ -42,6 +42,11 @@ class SettingsActivity : AppCompatActivity() {
     private val repository by lazy { SourceRepository(this, db) }
     private val scanner by lazy { LibraryScanner(this, db) }
 
+    /** 本地目录用系统的目录选择器：授权一次，之后一直能用 */
+    private val pickLocalFolder = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri: android.net.Uri? -> if (uri != null) addLocalFolder(uri) }
+
     /** 来源列表的代次：界面重建后旧查询的结果要丢掉 */
     private var sourceGeneration = 0
 
@@ -164,6 +169,14 @@ class SettingsActivity : AppCompatActivity() {
 
         host.addView(
             choiceRowWithValue(
+                title = getString(R.string.settings_add_local),
+                desc = getString(R.string.settings_add_local_desc),
+                value = "",
+            ) { pickLocalFolder.launch(null) }
+        )
+
+        host.addView(
+            choiceRowWithValue(
                 title = getString(R.string.settings_add_dav),
                 desc = getString(R.string.settings_add_dav_desc),
                 value = "",
@@ -218,6 +231,21 @@ class SettingsActivity : AppCompatActivity() {
                 value = "",
             ) { startActivity(android.content.Intent(this, AboutActivity::class.java)) }
         )
+    }
+
+    private fun addLocalFolder(uri: android.net.Uri) {
+        lifecycleScope.launch {
+            val toast = try {
+                val id = repository.addLocalFolder(uri, null)
+                val source = db.sourceDao().get(id)
+                val found = source?.let { scanner.scan(it).found } ?: 0
+                getString(R.string.source_added, source?.label.orEmpty(), found)
+            } catch (e: Exception) {
+                getString(R.string.source_failed, e.message ?: "")
+            }
+            Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
+            buildRows()
+        }
     }
 
     /**

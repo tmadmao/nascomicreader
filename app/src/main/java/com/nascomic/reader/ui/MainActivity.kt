@@ -66,6 +66,10 @@ class MainActivity : AppCompatActivity() {
         adapter.setCoverWidth(cell)
 
         binding.addFolder.setOnClickListener { pickFolder.launch(null) }
+        binding.emptyLocal.setOnClickListener { pickFolder.launch(null) }
+        binding.emptyRemote.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
         binding.rescan.setOnClickListener { rescanAll() }
         binding.settings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
