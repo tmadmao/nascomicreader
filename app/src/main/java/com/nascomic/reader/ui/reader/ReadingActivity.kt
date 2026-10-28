@@ -79,6 +79,9 @@ class ReadingActivity : AppCompatActivity() {
     private var currentWide = false
     /** 当前页有没有书签 */
     private var bookmarked = false
+
+    /** 书名：顶栏要拼「书名 · 话名」，所以单独留一份 */
+    private var bookTitle: String = ""
     private var resumedOnce = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,6 +98,11 @@ class ReadingActivity : AppCompatActivity() {
         binding.back.setOnClickListener { finish() }
         binding.toc.setOnClickListener { showTocSheet() }
         binding.bookmark.setOnClickListener { toggleBookmark() }
+        binding.prevPage.setOnClickListener { turnBackward() }
+        binding.nextPage.setOnClickListener { turnForward() }
+        binding.openSettings.setOnClickListener {
+            startActivity(android.content.Intent(this, com.nascomic.reader.ui.settings.SettingsActivity::class.java))
+        }
         applySystemBars()
         openBook()
     }
@@ -150,6 +158,7 @@ class ReadingActivity : AppCompatActivity() {
                     return@launch
                 }
 
+                bookTitle = book.title
                 binding.bookTitle.text = book.title
                 chaptered = book.isSingleVolume == 0 && opened.chapters.isNotEmpty()
                 // 目录只对章回体有意义
@@ -287,7 +296,7 @@ class ReadingActivity : AppCompatActivity() {
     }
 
     private fun updateBookmarkIcon() {
-        binding.bookmark.setImageResource(
+        binding.bookmarkIcon.setImageResource(
             if (bookmarked) R.drawable.ic_bookmark_on else R.drawable.ic_bookmark
         )
     }
@@ -295,14 +304,17 @@ class ReadingActivity : AppCompatActivity() {
     /** 页码、章名。章回体按章内页显示 */
     private fun updateLabels(src: BookSource) {
         val pos = src.pagePosition(page, chaptered)
-        val label = if (pos.chaptered) {
+        binding.pageLabel.text = if (pos.chaptered) {
             getString(R.string.reader_page_chapter_format, pos.chapterTitle, pos.page, pos.total)
         } else {
             getString(R.string.reader_page_format, pos.page, pos.total)
         }
-        binding.pageLabel.text = label
-        binding.pageLabelBar.text = label
-        binding.chapterName.text = if (pos.chaptered) pos.chapterTitle else ""
+        // 顶栏一行报位置：书名 · 话名
+        binding.bookTitle.text = if (pos.chaptered) {
+            getString(R.string.reader_title_with_chapter, bookTitle, pos.chapterTitle)
+        } else {
+            bookTitle
+        }
         refreshBookmarkState()
     }
 

@@ -41,7 +41,8 @@
         android:layout_gravity="top"
         android:background="#D016181C"
         android:orientation="horizontal"
-        android:paddingVertical="8dp"
+        android:minHeight="52dp"
+        android:paddingVertical="2dp"
         android:visibility="gone">
 
         <ImageView
@@ -65,59 +66,96 @@
             android:textColor="#FFFFFF"
             android:textSize="15sp" />
 
-        <ImageView
-            android:id="@+id/bookmark"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_bookmark"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/reader_bookmark" />
     </LinearLayout>
 
+    <!-- 底栏五键：上一页 · 设置 · 书签 · 目录 · 下一页 -->
     <LinearLayout
         android:id="@+id/bottom_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="62dp"
         android:layout_gravity="bottom"
         android:background="#D016181C"
-        android:gravity="center_vertical"
+        android:gravity="center"
         android:orientation="horizontal"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="6dp"
         android:visibility="gone">
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/prev_page"
+            style="@style/ReaderBarItem">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_chevron"
+                android:contentDescription="@null" />
+
+            <TextView
+                style="@style/ReaderBarLabel"
+                android:text="@string/reader_prev_page" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/open_settings"
+            style="@style/ReaderBarItem">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_settings_line"
+                android:contentDescription="@null" />
+
+            <TextView
+                style="@style/ReaderBarLabel"
+                android:text="@string/action_settings" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/bookmark"
+            style="@style/ReaderBarItem">
+
+            <ImageView
+                android:id="@+id/bookmark_icon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_bookmark"
+                android:contentDescription="@string/reader_bookmark" />
+
+            <TextView
+                style="@style/ReaderBarLabel"
+                android:text="@string/reader_bookmark" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/toc"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="10dp"
-            android:text="@string/reader_toolbar_toc"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:background="?attr/selectableItemBackgroundBorderless" />
+            style="@style/ReaderBarItem">
 
-        <TextView
-            android:id="@+id/chapter_name"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:gravity="center"
-            android:singleLine="true"
-            android:paddingHorizontal="8dp"
-            android:textColor="#B9C0C7"
-            android:textSize="13sp" />
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_toc"
+                android:contentDescription="@null" />
 
-        <TextView
-            android:id="@+id/page_label_bar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="10dp"
-            android:textColor="#FFFFFF"
-            android:textSize="13sp" />
+            <TextView
+                style="@style/ReaderBarLabel"
+                android:text="@string/reader_toolbar_toc" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/next_page"
+            style="@style/ReaderBarItem">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:rotation="180"
+                android:src="@drawable/ic_chevron"
+                android:contentDescription="@null" />
+
+            <TextView
+                style="@style/ReaderBarLabel"
+                android:text="@string/reader_next_page" />
+        </LinearLayout>
     </LinearLayout>
 
     <TextView

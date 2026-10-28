@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -18,6 +19,7 @@ import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
+import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.library.detail.BookDetailLoader
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.applyOrientation
@@ -52,6 +54,7 @@ class DetailActivity : AppCompatActivity() {
     private var bookmarks: List<BookmarkEntity> = emptyList()
 
     /** 数据装载过一次之后，onResume 才有东西可刷新 */
+    private var source: SourceEntity? = null
     private var loaded = false
 
     /** 量页失败过（文件损坏、远端断开）：提示要停在失败上，不能一直说「正在统计」 */
@@ -74,7 +77,7 @@ class DetailActivity : AppCompatActivity() {
     private fun load() {
         lifecycleScope.launch {
             book = db.bookDao().get(bookId) ?: run { finish(); return@launch }
-            val src = db.sourceDao().get(book!!.sourceId)
+            val src = db.sourceDao().get(book!!.sourceId).also { source = it }
             chapters = db.chapterDao().forBook(bookId)
             progress = db.progressDao().forBook(bookId)
             bookmarks = db.bookmarkDao().forBookNow(bookId)
@@ -116,29 +119,26 @@ class DetailActivity : AppCompatActivity() {
     private fun render() {
         val b = book ?: return
         binding.title.text = b.title
+        binding.meta.text = metaLine(b)
+        binding.sourceLine.text = sourceLine(b)
 
         val isChaptered = b.isSingleVolume == 0 && chapters.isNotEmpty()
-        binding.meta.text = if (isChaptered) {
-            getString(R.string.detail_meta_chaptered, b.pageTotal, chapters.size)
-        } else {
-            getString(R.string.detail_meta_paged, b.pageTotal)
-        }
-
         val p = progress
-        if (p != null && b.pageTotal > 0) {
-            // 章回体按章内页报进度：读到第 2 话第 1 页，而不是全书第 3 页
-            val chapter = chapters.getOrNull(p.chapterOrdinal)
+        val hasProgress = p != null && b.pageTotal > 0
+
+        if (hasProgress) {
+            val chapter = chapters.getOrNull(p!!.chapterOrdinal)
             val byChapter = isChaptered && chapter != null && chapter.pageTotal > 0
 
-            binding.progressInfo.isVisible = true
-            binding.progressInfo.text = if (byChapter) {
-                getString(
-                    R.string.detail_progress_chapter,
-                    chapter.title, p.pageInChapter + 1, chapter.pageTotal
-                )
-            } else {
-                getString(R.string.detail_progress, p.pageGlobal + 1, b.pageTotal)
-            }
+            binding.percent.visibility = View.VISIBLE
+            binding.readInfo.visibility = View.VISIBLE
+            binding.percent.text = getString(
+                R.string.shelf_percent,
+                ((p.pageGlobal + 1) * 100 / b.pageTotal).coerceIn(0, 100)
+            )
+            binding.readInfo.text = getString(R.string.detail_read_line, p.pageGlobal + 1, b.pageTotal)
+            binding.spine.ratio = (p.pageGlobal + 1f) / b.pageTotal
+
             binding.primary.text = if (byChapter) {
                 getString(
                     R.string.detail_continue_reading_chapter, chapter.title, p.pageInChapter + 1
@@ -146,12 +146,17 @@ class DetailActivity : AppCompatActivity() {
             } else {
                 getString(R.string.detail_continue_reading, p.pageGlobal + 1)
             }
+            binding.secondary.visibility = View.VISIBLE
         } else {
-            binding.progressInfo.isVisible = false
+            binding.percent.visibility = View.GONE
+            binding.readInfo.visibility = View.GONE
+            binding.spine.ratio = 0f
             binding.primary.text = getString(R.string.detail_start_reading)
+            binding.secondary.visibility = View.GONE
         }
 
         binding.primary.setOnClickListener { openReader(p?.pageGlobal ?: 0) }
+        binding.secondary.setOnClickListener { openReader(0) }
 
         // 各章起始页：靠每章页数累加，读不到页数时退化为 0（点了也从章首开始）
         chapterStarts = IntArray(chapters.size)
@@ -165,11 +170,58 @@ class DetailActivity : AppCompatActivity() {
         renderBookmarks(isChaptered)
     }
 
+    /** 第一行：格式 · 体积 · 还剩多少 */
+    private fun metaLine(b: BookEntity): String {
+        val format = getString(
+            when (b.format) {
+                BookEntity.FORMAT_PDF -> R.string.format_pdf
+                BookEntity.FORMAT_EPUB -> R.string.format_epub
+                BookEntity.FORMAT_FOLDER -> R.string.format_folder
+                else -> R.string.format_archive
+            }
+        )
+        val size = formatSize(b.byteSize)
+        val chaptered = b.isSingleVolume == 0 && chapters.isNotEmpty()
+        val left = (chapters.size - (progress?.chapterOrdinal ?: 0) - 1).coerceAtLeast(0)
+        return if (chaptered) {
+            getString(R.string.detail_meta_line, format, size, left)
+        } else {
+            getString(R.string.detail_meta_line_pages, format, size, b.pageTotal)
+        }
+    }
+
+    private fun sourceLine(b: BookEntity): String {
+        val name = source?.label
+        if (name.isNullOrEmpty()) return ""
+        val read = progress?.updatedAt ?: 0L
+        return if (read > 0) {
+            getString(R.string.detail_source_line, name) + " · " +
+                com.nascomic.reader.library.RelativeTime.let {
+                    it.dateOf(read)
+                }
+        } else {
+            getString(R.string.detail_source_line, name)
+        }
+    }
+
+    private fun formatSize(bytes: Long): String = when {
+        bytes <= 0 -> "—"
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024L * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
+        else -> String.format(java.util.Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
+    }
+
+    /**
+     * 目录：序号 · 话名 · 页数 三栏。
+     * 已读的话在页数前打 ✓ 并把字降到次要色；当前话整行铺靛蓝浅底、右侧改写成「读到 N 页」。
+     */
     private fun renderToc(b: BookEntity, isChaptered: Boolean) {
         binding.tocList.removeAllViews()
 
         if (!isChaptered) {
             binding.tocHeader.isVisible = false
+            binding.tocCount.isVisible = false
             binding.tocHint.isVisible = true
             binding.tocHint.text = when {
                 b.pageTotal > 0 -> getString(R.string.detail_no_toc)
@@ -180,29 +232,83 @@ class DetailActivity : AppCompatActivity() {
         }
 
         binding.tocHeader.isVisible = true
+        binding.tocCount.isVisible = true
+        binding.tocHeader.text = getString(R.string.detail_toc_with_count)
+        binding.tocCount.text = getString(R.string.detail_toc_chapters, chapters.size)
         binding.tocHint.isVisible = false
 
         val currentChapter = progress?.chapterOrdinal ?: -1
-        val pad = dp(6)
         for (ch in chapters) {
-            val row = TextView(this).apply {
-                text = if (ch.pageTotal > 0) {
-                    getString(R.string.detail_chapter_row, ch.ordinal + 1, ch.title) +
-                        "   " + getString(R.string.detail_chapter_pages, ch.pageTotal)
-                } else {
-                    getString(R.string.detail_chapter_row, ch.ordinal + 1, ch.title)
-                }
-                textSize = 14f
-                gravity = Gravity.START
-                setPadding(0, pad, 0, pad)
-                setTextColor(
-                    if (ch.ordinal == currentChapter) getColor(R.color.brand_indigo)
-                    else getColor(R.color.shell_ink)
-                )
-                setOnClickListener { openReader(chapterStarts.getOrElse(ch.ordinal) { 0 }) }
-            }
-            binding.tocList.addView(row)
+            val isCurrent = ch.ordinal == currentChapter
+            val isRead = ch.ordinal < currentChapter || (isCurrent && (progress?.pageInChapter == ch.pageTotal - 1))
+            binding.tocList.addView(tocRow(ch, isCurrent, isRead))
         }
+    }
+
+    private fun tocRow(
+        ch: com.nascomic.reader.library.data.ChapterEntity,
+        isCurrent: Boolean,
+        isRead: Boolean,
+    ): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(14), dp(8), dp(14))
+            background = if (isCurrent) {
+                android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(6).toFloat()
+                    setColor(getColor(R.color.brand_indigo_tint))
+                }
+            } else {
+                null
+            }
+        }
+
+        val titleColor = when {
+            isCurrent -> getColor(R.color.brand_indigo)
+            isRead -> getColor(R.color.shell_ink_muted)
+            else -> getColor(R.color.shell_ink)
+        }
+
+        row.addView(TextView(this).apply {
+            text = "%02d".format(ch.ordinal + 1)
+            textSize = 12f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(getColor(R.color.shell_ink_muted))
+            width = dp(28)
+        })
+
+        row.addView(TextView(this).apply {
+            text = ch.title
+            textSize = 14f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(titleColor)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+
+        if (isRead) {
+            row.addView(TextView(this).apply {
+                text = "✓"
+                textSize = 12f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                setPadding(0, 0, dp(6), 0)
+            })
+        }
+
+        val right = if (isCurrent) {
+            getString(R.string.detail_current_chapter_pages, (progress?.pageInChapter ?: 0) + 1)
+        } else {
+            getString(R.string.detail_chapter_pages, ch.pageTotal)
+        }
+        row.addView(TextView(this).apply {
+            text = right
+            textSize = 12f
+            setTextColor(if (isCurrent) getColor(R.color.brand_indigo) else getColor(R.color.shell_ink_muted))
+        })
+
+        row.setOnClickListener { openReader(chapterStarts.getOrElse(ch.ordinal) { 0 }) }
+        return row
     }
 
     private fun renderBookmarks(isChaptered: Boolean) {

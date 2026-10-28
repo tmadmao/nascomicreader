@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -48,6 +49,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: ShelfAdapter
     private var currentTab: String = TAB_ALL
     private var allSources: List<SourceEntity> = emptyList()
+
+    /** 各标签下的书数，随 refresh 一起算好 */
+    private var tabCounts: Map<String, Int> = emptyMap()
 
     private val pickFolder = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -96,17 +100,71 @@ class MainActivity : AppCompatActivity() {
     private fun refresh() {
         lifecycleScope.launch {
             allSources = sources.list()
+
+            // 标签上的计数与列表分两次取：计数要全量，列表要按当前标签筛
+            val allBooks = db.bookDao().allSorted()
+            val progress = db.progressDao().all().associateBy { it.bookId }
+            tabCounts = buildMap {
+                put(TAB_ALL, allBooks.size)
+                put(TAB_RECENT, allBooks.count { progress.containsKey(it.id) })
+                allSources.forEach { source ->
+                    put("$TAB_SOURCE_PREFIX${source.id}", allBooks.count { it.sourceId == source.id })
+                }
+            }
             renderTabs()
 
             val books = queryBooks()
-            val progress = db.progressDao().all().associateBy { it.bookId }
             adapter.submit(books, progress)
 
             binding.empty.visibility = if (books.isEmpty()) View.VISIBLE else View.GONE
             binding.grid.visibility = if (books.isEmpty()) View.GONE else View.VISIBLE
 
+            renderResume(allBooks, progress)
             generateMissingCovers(books)
         }
+    }
+
+    /**
+     * 「接着读」卡片：取最近读过的那本。
+     * 最近阅读标签下不再重复——那里第一本本来就是它。
+     */
+    private fun renderResume(
+        allBooks: List<BookEntity>,
+        progress: Map<Long, com.nascomic.reader.library.data.ProgressEntity>,
+    ) {
+        val latest = progress.values.maxByOrNull { it.updatedAt }
+        val book = latest?.let { p -> allBooks.firstOrNull { it.id == p.bookId } }
+        if (book == null || latest == null || currentTab == TAB_RECENT || book.pageTotal <= 0) {
+            binding.resumeCard.visibility = View.GONE
+            return
+        }
+
+        binding.resumeCard.visibility = View.VISIBLE
+        binding.resumeTitle.text = book.title
+        binding.resumeMeta.text = resumeMeta(book, latest)
+
+        val percent = ((latest.pageGlobal + 1) * 100 / book.pageTotal).coerceIn(0, 100)
+        binding.resumePercent.text = getString(R.string.shelf_percent, percent)
+        binding.resumeSpine.ratio = (latest.pageGlobal + 1f) / book.pageTotal
+
+        val coverWidth = dp(56)
+        binding.resumeCover.setImageBitmap(thumbs.load(book.id, coverWidth, coverWidth * 4 / 3))
+        binding.resumeCard.setOnClickListener { openBook(book) }
+        binding.resumeAction.setOnClickListener { openBook(book) }
+    }
+
+    /** 「第 11 话 / 24 话 · 来源名」；单行本没有话就报页 */
+    private fun resumeMeta(
+        book: BookEntity,
+        p: com.nascomic.reader.library.data.ProgressEntity,
+    ): String {
+        val source = allSources.firstOrNull { it.id == book.sourceId }?.label.orEmpty()
+        val position = if (book.chapterTotal > 0) {
+            getString(R.string.shelf_meta_chapter, p.chapterOrdinal + 1, book.chapterTotal)
+        } else {
+            getString(R.string.shelf_meta_pages, p.pageGlobal + 1, book.pageTotal)
+        }
+        return if (source.isEmpty()) position else "$position · $source"
     }
 
     private suspend fun queryBooks(): List<BookEntity> = when {
@@ -116,31 +174,62 @@ class MainActivity : AppCompatActivity() {
         else -> db.bookDao().allSorted()
     }
 
+    /**
+     * 标签做成一排 chip：选中的靛蓝实底白字，其余白底一像素描边。
+     * 每个 chip 带书数；书数为 0 的来源不出现（设计说明 §10）。
+     */
     private fun renderTabs() {
         binding.tabRow.removeAllViews()
-        val tabs = ArrayList<Pair<String, String>>()
-        tabs += TAB_ALL to getString(R.string.tab_all)
-        tabs += TAB_RECENT to getString(R.string.tab_recent)
-        allSources.forEach { tabs += "$TAB_SOURCE_PREFIX${it.id}" to it.label }
 
-        for ((key, label) in tabs) {
-            val tv = TextView(this).apply {
-                text = label
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                setTextColor(
-                    if (key == currentTab) getColor(R.color.tab_active)
-                    else getColor(R.color.tab_inactive)
-                )
-                setOnClickListener {
-                    if (currentTab != key) {
-                        currentTab = key
-                        refresh()
-                    }
+        val tabs = ArrayList<Triple<String, String, Int>>()
+        tabs += Triple(TAB_ALL, getString(R.string.tab_all), tabCounts[TAB_ALL] ?: 0)
+        tabs += Triple(TAB_RECENT, getString(R.string.tab_recent), tabCounts[TAB_RECENT] ?: 0)
+        allSources.forEach { source ->
+            val key = "$TAB_SOURCE_PREFIX${source.id}"
+            tabs += Triple(key, source.label, tabCounts[key] ?: 0)
+        }
+
+        for ((key, label, count) in tabs) {
+            if (key.startsWith(TAB_SOURCE_PREFIX) && count == 0) continue
+            binding.tabRow.addView(chip(key, label, count))
+        }
+    }
+
+    private fun chip(key: String, label: String, count: Int): TextView {
+        val selected = key == currentTab
+        return TextView(this).apply {
+            text = if (count > 0) "$label $count" else label
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setTextColor(getColor(if (selected) android.R.color.white else R.color.shell_ink_muted))
+            background = chipBackground(selected)
+            isClickable = true
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            lp.marginEnd = dp(8)
+            layoutParams = lp
+            setOnClickListener {
+                if (currentTab != key) {
+                    currentTab = key
+                    refresh()
                 }
             }
-            binding.tabRow.addView(tv)
+        }
+    }
+
+    private fun chipBackground(selected: Boolean): android.graphics.drawable.GradientDrawable {
+        val radius = dp(14).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = radius
+            if (selected) {
+                setColor(getColor(R.color.brand_indigo))
+            } else {
+                setColor(getColor(R.color.shell_surface))
+                setStroke(dp(1), getColor(R.color.shell_stroke))
+            }
         }
     }
 

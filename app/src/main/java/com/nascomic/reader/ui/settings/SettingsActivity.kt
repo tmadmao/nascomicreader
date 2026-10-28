@@ -50,6 +50,9 @@ class SettingsActivity : AppCompatActivity() {
     /** 来源列表的代次：界面重建后旧查询的结果要丢掉 */
     private var sourceGeneration = 0
 
+    /** 展开着哪几组。默认只开「阅读」 */
+    private val expanded = mutableSetOf(GROUP_READING)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
@@ -59,13 +62,100 @@ class SettingsActivity : AppCompatActivity() {
         buildRows()
     }
 
+    /**
+     * 分组抽屉：每组一行（组名 + 项数 + 箭头），点开才展开内容。
+     * 默认只展开第一组——全收起会让人以为页面没做完，全展开又太长。
+     */
     private fun buildRows() {
         val host = binding.settingsContainer
         host.removeAllViews()
 
-        host.addView(sectionHeader(getString(R.string.settings_section_reading)))
+        addGroup(host, GROUP_READING, getString(R.string.settings_section_reading), buildReadingRows())
+        addGroup(host, GROUP_SOURCE, getString(R.string.settings_section_source), buildSourceRows())
+        addGroup(host, GROUP_OTHER, getString(R.string.settings_section_other), buildOtherRows())
+        addGroup(host, GROUP_ABOUT, getString(R.string.settings_about), buildAboutRows())
 
-        host.addView(
+        binding.expandAll.text = getString(
+            if (expanded.size == GROUP_ALL.size) R.string.settings_collapse_all
+            else R.string.settings_expand_all
+        )
+        binding.expandAll.setOnClickListener {
+            if (expanded.size == GROUP_ALL.size) expanded.clear() else expanded.addAll(GROUP_ALL)
+            buildRows()
+        }
+    }
+
+    private fun addGroup(host: LinearLayout, key: String, title: String, rows: List<View>) {
+        val isOpen = expanded.contains(key)
+        if (host.childCount > 0) {
+            host.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(8)
+                )
+            })
+        }
+        host.addView(groupHeader(title, rows.size, isOpen) {
+            if (isOpen) expanded.remove(key) else expanded.add(key)
+            buildRows()
+        })
+        if (!isOpen) return
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(getColor(R.color.shell_background))
+        }
+        rows.forEach { content.addView(it) }
+        host.addView(content)
+    }
+
+    private fun groupHeader(title: String, count: Int, isOpen: Boolean, onToggle: () -> Unit): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), dp(16), dp(16), dp(16))
+            background = getDrawable(R.drawable.bg_group_header)
+            setOnClickListener { onToggle() }
+        }
+        row.addView(TextView(this).apply {
+            text = title
+            textSize = 14f
+            setTextColor(getColor(R.color.shell_ink))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        row.addView(TextView(this).apply {
+            text = getString(R.string.settings_group_count, count)
+            textSize = 12f
+            setTextColor(getColor(R.color.shell_ink_muted))
+            setPadding(0, 0, dp(8), 0)
+        })
+        row.addView(TextView(this).apply {
+            text = if (isOpen) "⌃" else "⌄"
+            textSize = 14f
+            setTextColor(getColor(R.color.shell_ink_muted))
+        })
+        return row
+    }
+
+    /**
+     * 把一组行先塞进临时容器再取出来，避免把每种行都写成「返回 View」。
+     * 取出时必须从容器里摘掉，否则再 addView 会报「child already has a parent」。
+     */
+    private fun collect(block: LinearLayout.() -> Unit): List<View> {
+        val temp = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        temp.block()
+        val out = ArrayList<View>(temp.childCount)
+        while (temp.childCount > 0) {
+            val child = temp.getChildAt(0)
+            temp.removeViewAt(0)
+            out += child
+        }
+        return out
+    }
+
+    private fun buildReadingRows(): List<View> = collect {
+
+
+        addView(
             choiceRow(
                 title = getString(R.string.settings_flip_direction),
                 desc = getString(R.string.settings_flip_direction_desc),
@@ -79,7 +169,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         )
 
-        host.addView(
+        addView(
             switchRow(
                 title = getString(R.string.settings_dual_page),
                 desc = getString(R.string.settings_dual_page_desc),
@@ -87,7 +177,7 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.dualPage = checked }
         )
 
-        host.addView(
+        addView(
             switchRow(
                 title = getString(R.string.settings_trim_border),
                 desc = getString(R.string.settings_trim_border_desc),
@@ -95,7 +185,7 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.trimBorder = checked }
         )
 
-        host.addView(
+        addView(
             sliderRow(
                 title = getString(R.string.settings_trim_level),
                 min = 200,
@@ -106,7 +196,7 @@ class SettingsActivity : AppCompatActivity() {
             ) { value -> reader.trimLevel = value }
         )
 
-        host.addView(
+        addView(
             switchRow(
                 title = getString(R.string.settings_split_wide),
                 desc = getString(R.string.settings_split_wide_desc),
@@ -114,7 +204,7 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.splitWide = checked }
         )
 
-        host.addView(
+        addView(
             sliderRow(
                 title = getString(R.string.settings_margin),
                 min = 0,
@@ -130,7 +220,7 @@ class SettingsActivity : AppCompatActivity() {
             getString(R.string.settings_canvas_dark),
             getString(R.string.settings_canvas_black),
         )
-        host.addView(
+        addView(
             choiceRow(
                 title = getString(R.string.settings_canvas),
                 desc = null,
@@ -141,7 +231,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         )
 
-        host.addView(
+        addView(
             switchRow(
                 title = getString(R.string.settings_page_label),
                 desc = getString(R.string.settings_page_label_desc),
@@ -149,7 +239,7 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.showPageLabel = checked }
         )
 
-        host.addView(
+        addView(
             switchRow(
                 title = getString(R.string.settings_skip_blank),
                 desc = getString(R.string.settings_skip_blank_desc),
@@ -157,17 +247,19 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.skipBlank = checked }
         )
 
-        host.addView(
+        addView(
             switchRow(
                 title = getString(R.string.settings_keep_screen_on),
                 desc = getString(R.string.settings_keep_screen_on_desc),
                 checked = reader.keepScreenOn,
             ) { checked -> reader.keepScreenOn = checked }
         )
+    }
 
-        host.addView(sectionHeader(getString(R.string.settings_section_source)))
+    private fun buildSourceRows(): List<View> = collect {
 
-        host.addView(
+
+        addView(
             choiceRowWithValue(
                 title = getString(R.string.settings_add_local),
                 desc = getString(R.string.settings_add_local_desc),
@@ -175,7 +267,7 @@ class SettingsActivity : AppCompatActivity() {
             ) { pickLocalFolder.launch(null) }
         )
 
-        host.addView(
+        addView(
             choiceRowWithValue(
                 title = getString(R.string.settings_add_dav),
                 desc = getString(R.string.settings_add_dav_desc),
@@ -183,7 +275,7 @@ class SettingsActivity : AppCompatActivity() {
             ) { showRemoteDialog(SourceEntity.KIND_WEBDAV) }
         )
 
-        host.addView(
+        addView(
             choiceRowWithValue(
                 title = getString(R.string.settings_add_smb),
                 desc = getString(R.string.settings_add_smb_desc),
@@ -192,13 +284,15 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         // 已添加的来源：点一下重扫，长按删除
-        val sourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        host.addView(sourceList)
+        val sourceList = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
+        addView(sourceList)
         loadSources(sourceList)
+    }
 
-        host.addView(sectionHeader(getString(R.string.settings_section_other)))
+    private fun buildOtherRows(): List<View> = collect {
 
-        host.addView(
+
+        addView(
             choiceRow(
                 title = getString(R.string.settings_orientation),
                 desc = null,
@@ -214,22 +308,24 @@ class SettingsActivity : AppCompatActivity() {
             }
         )
 
-        host.addView(
+        addView(
             switchRow(
                 title = getString(R.string.settings_skip_detail),
                 desc = getString(R.string.settings_skip_detail_desc),
                 checked = prefs.skipDetail,
             ) { checked -> prefs.skipDetail = checked }
         )
+    }
 
-        host.addView(sectionHeader(getString(R.string.settings_about)))
+    private fun buildAboutRows(): List<View> = collect {
 
-        host.addView(
+
+        addView(
             choiceRowWithValue(
                 title = getString(R.string.settings_about_row),
                 desc = getString(R.string.settings_about_desc),
                 value = "",
-            ) { startActivity(android.content.Intent(this, AboutActivity::class.java)) }
+            ) { startActivity(android.content.Intent(this@SettingsActivity, AboutActivity::class.java)) }
         )
     }
 
@@ -484,6 +580,14 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ---- 三种行 ----
+
+    private companion object {
+        const val GROUP_READING = "reading"
+        const val GROUP_SOURCE = "source"
+        const val GROUP_OTHER = "other"
+        const val GROUP_ABOUT = "about"
+        val GROUP_ALL = listOf(GROUP_READING, GROUP_SOURCE, GROUP_OTHER, GROUP_ABOUT)
+    }
 
     private fun sectionHeader(text: String): TextView = TextView(this).apply {
         this.text = text

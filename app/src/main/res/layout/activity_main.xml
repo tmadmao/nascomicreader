@@ -16,43 +16,42 @@
         android:paddingBottom="8dp">
 
         <TextView
+            android:id="@+id/shelf_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/app_name"
+            android:fontFamily="serif"
+            android:text="@string/shelf_title"
             android:textColor="@color/shell_ink"
-            android:textSize="20sp"
-            android:fontFamily="serif" />
+            android:textSize="24sp"
+            android:textStyle="bold" />
 
-        <TextView
+        <ImageView
             android:id="@+id/add_folder"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:padding="12dp"
-            android:text="@string/action_add_folder"
-            android:textColor="@color/shell_ink_muted"
-            android:textSize="13sp"
-            android:background="?attr/selectableItemBackgroundBorderless" />
+            android:src="@drawable/ic_add"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_add_folder" />
 
-        <TextView
+        <ImageView
             android:id="@+id/settings"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:padding="12dp"
-            android:text="@string/action_settings"
-            android:textColor="@color/shell_ink_muted"
-            android:textSize="13sp"
-            android:background="?attr/selectableItemBackgroundBorderless" />
+            android:src="@drawable/ic_settings_line"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_settings" />
 
-        <TextView
+        <ImageView
             android:id="@+id/rescan"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:padding="12dp"
-            android:text="@string/action_rescan_short"
-            android:textColor="@color/shell_ink_muted"
-            android:textSize="13sp"
-            android:background="?attr/selectableItemBackgroundBorderless" />
+            android:src="@drawable/ic_refresh"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_rescan_short" />
 
     </LinearLayout>
 
@@ -71,13 +70,108 @@
 
     </HorizontalScrollView>
 
+    <!-- 接着读：最近读过的那本，封面 + 书名 + 已读百分比 -->
+    <LinearLayout
+        android:id="@+id/resume_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="14dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_card"
+        android:orientation="horizontal"
+        android:padding="10dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.nascomic.reader.ui.widget.SpineProgress
+                android:id="@+id/resume_spine"
+                android:layout_width="4dp"
+                android:layout_height="match_parent"
+                android:layout_marginEnd="3dp" />
+
+            <com.nascomic.reader.ui.widget.AspectImageView
+                android:id="@+id/resume_cover"
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:background="@color/cover_placeholder"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/shelf_resume_label"
+                android:textColor="@color/brand_indigo"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/resume_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:ellipsize="end"
+                android:fontFamily="serif"
+                android:maxLines="1"
+                android:textColor="@color/shell_ink"
+                android:textSize="17sp" />
+
+            <TextView
+                android:id="@+id/resume_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/shell_ink_muted"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="bottom"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/resume_percent"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="serif"
+                    android:textColor="@color/shell_ink"
+                    android:textSize="26sp" />
+
+                <TextView
+                    android:id="@+id/resume_action"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="4dp"
+                    android:text="@string/shelf_resume_action"
+                    android:textColor="@color/brand_indigo"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/grid"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:paddingHorizontal="8dp"
-        android:paddingTop="4dp"
+        android:paddingTop="2dp"
         android:clipToPadding="false" />
 
     <!-- 空书架时的引导：本地与远端各给一个入口，别让人去找右上角 -->

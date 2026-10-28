@@ -1,57 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="6dp">
 
-    <FrameLayout
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <!-- 书脊：全站唯一的进度记号，独立立在封面左侧 -->
+        <com.nascomic.reader.ui.widget.SpineProgress
+            android:id="@+id/spine"
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="3dp" />
 
         <com.nascomic.reader.ui.widget.AspectImageView
             android:id="@+id/cover"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:background="@color/cover_placeholder"
             android:scaleType="centerCrop"
             android:contentDescription="@null" />
-
-        <ProgressBar
-            android:id="@+id/progress"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="3dp"
-            android:layout_gravity="bottom"
-            android:max="1000"
-            android:progressDrawable="@drawable/cover_progress"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/progress_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|end"
-            android:layout_margin="6dp"
-            android:paddingHorizontal="6dp"
-            android:paddingVertical="2dp"
-            android:background="#66000000"
-            android:textColor="#FFFFFF"
-            android:textSize="10sp"
-            android:visibility="gone" />
-
-    </FrameLayout>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="8dp"
         android:ellipsize="end"
-        android:maxLines="2"
+        android:fontFamily="serif"
         android:lineSpacingExtra="2dp"
+        android:maxLines="2"
         android:textColor="@color/shell_ink"
-        android:textSize="12sp" />
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/meta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/shell_ink_muted"
+        android:textSize="11sp" />
 
 </LinearLayout>

@@ -1,14 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 设计基线（见 .oil-ui/shelf-direction/设计说明.md）：冷灰纸面 + 单一靛蓝强调 -->
-    <color name="shell_background">#F4F6F8</color>
+    <!--
+      设计基线（见 _local/design-src/shelf-direction/设计说明.md §8）：
+      冷灰纸面 + 石墨字 + 单一靛蓝强调。强调色只有一支，别处一律用明度分层。
+    -->
+    <color name="shell_background">#EEF0F2</color>
+    <color name="shell_surface">#F7F9FB</color>
     <color name="shell_ink">#22262B</color>
     <color name="shell_ink_muted">#5F666D</color>
+    <color name="shell_divider">#DCE0E4</color>
+    <color name="shell_stroke">#C9CFD5</color>
+
     <color name="brand_indigo">#2F5FD0</color>
-    <color name="brand_indigo_dark">#2854BC</color>
+    <color name="brand_indigo_press">#1F4AB0</color>
+    <!-- 当前章节行的底：靛蓝 8% 调，够浅不抢字 -->
+    <color name="brand_indigo_tint">#E3E9F7</color>
     <!-- 深色阅读界面上的强调色：靛蓝在纯黑上偏暗，提亮一档 -->
     <color name="brand_indigo_soft">#7DA0F5</color>
+
     <color name="cover_placeholder">#E2E6EA</color>
-    <color name="tab_active">#22262B</color>
-    <color name="tab_inactive">#8A9199</color>
+    <color name="tab_active">#2F5FD0</color>
+    <color name="tab_inactive">#5F666D</color>
 </resources>

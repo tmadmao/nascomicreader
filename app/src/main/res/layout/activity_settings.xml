@@ -15,25 +15,34 @@
         android:paddingTop="12dp"
         android:paddingBottom="8dp">
 
-        <TextView
+        <ImageView
             android:id="@+id/back"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:padding="12dp"
-            android:text="@string/action_back"
-            android:textColor="@color/shell_ink_muted"
-            android:textSize="14sp"
-            android:background="?attr/selectableItemBackgroundBorderless" />
+            android:src="@drawable/ic_back_arrow"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_back" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="@string/settings_title"
+            android:fontFamily="serif"
+            android:text="@string/action_settings"
             android:textColor="@color/shell_ink"
-            android:textSize="17sp" />
+            android:textSize="24sp"
+            android:textStyle="bold" />
 
+        <TextView
+            android:id="@+id/expand_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:textColor="@color/brand_indigo"
+            android:textSize="13sp"
+            android:background="?attr/selectableItemBackground" />
     </LinearLayout>
 
     <ScrollView

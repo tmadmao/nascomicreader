@@ -21,6 +21,9 @@
     <string name="reader_page_chapter_format">%1$s · %2$d / %3$d</string>
     <string name="reader_toolbar_toc">目录</string>
     <string name="reader_bookmark">书签</string>
+    <string name="reader_prev_page">上一页</string>
+    <string name="reader_next_page">下一页</string>
+    <string name="reader_title_with_chapter">%1$s · %2$s</string>
     <string name="reader_bookmark_added">已加书签</string>
     <string name="reader_bookmark_removed">已取消书签</string>
     <string name="reader_toc_row">%1$d. %2$s</string>
@@ -38,6 +41,14 @@
 
     <string name="action_add_folder">添加目录</string>
     <string name="action_rescan_short">重新扫描</string>
+    <string name="shelf_meta_chapter">第 %1$d 话 / %2$d 话</string>
+    <string name="shelf_meta_pages">第 %1$d / %2$d 页</string>
+    <string name="shelf_meta_unread_chapter">未开始 · %1$d 话</string>
+    <string name="shelf_meta_unread_pages">未开始 · %1$d 页</string>
+    <string name="shelf_title">书库</string>
+    <string name="shelf_resume_label">接着读</string>
+    <string name="shelf_resume_action">接着读 →</string>
+    <string name="shelf_percent">%1$d%%</string>
     <string name="shelf_empty">还没有书库。本地目录与 NAS 共享都在这里汇总。</string>
     <string name="shelf_empty_local">选择本地目录</string>
     <string name="shelf_empty_remote">添加 NAS 共享</string>
@@ -59,6 +70,19 @@
     <string name="detail_count_failed">这本书打不开，页数统计失败</string>
     <string name="detail_no_toc">单行本，没有章节。</string>
     <string name="detail_bookmarks">书签</string>
+    <string name="detail_start_from_first">从头开始</string>
+    <string name="detail_meta_line">%1$s · %2$s · 剩 %3$d 话</string>
+    <string name="detail_meta_line_pages">%1$s · %2$s · 共 %3$d 页</string>
+    <string name="detail_source_line">来自 %1$s</string>
+    <string name="detail_read_line">已读 %1$d / %2$d 页</string>
+    <string name="detail_current_chapter_pages">读到 %1$d 页</string>
+    <string name="format_archive">压缩包</string>
+    <string name="format_pdf">PDF</string>
+    <string name="format_epub">EPUB</string>
+    <string name="format_folder">文件夹</string>
+    <string name="detail_toc_with_count">目录</string>
+    <string name="detail_toc_chapters">%1$d 话</string>
+    <string name="shelf_meta_unread">未开始</string>
     <string name="detail_bookmark_row">%1$d 页</string>
     <string name="detail_bookmark_row_chapter">%1$s · 第 %2$d 页</string>
     <string name="detail_bookmark_delete">删除书签</string>
@@ -75,6 +99,9 @@
     <string name="settings_section_reading">阅读</string>
     <string name="settings_section_other">其他</string>
     <string name="settings_about">关于</string>
+    <string name="settings_group_count">%1$d 项</string>
+    <string name="settings_expand_all">全部展开</string>
+    <string name="settings_collapse_all">全部收起</string>
     <string name="settings_about_row">关于本应用</string>
     <string name="settings_about_desc">版本、开源许可、源代码与赞助</string>
 
