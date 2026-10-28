@@ -9,4 +9,17 @@
         <item name="android:statusBarColor">@color/shell_background</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!-- 关于页那种「点一下进去」的行：整行可点，带按压反馈 -->
+    <style name="AboutRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingHorizontal">20dp</item>
+        <item name="android:paddingVertical">14dp</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
 </resources>

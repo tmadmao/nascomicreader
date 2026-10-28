@@ -6,6 +6,15 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// 许可清单只有一份：仓库根的 NOTICE / LICENSE。构建时复制进 assets，界面直接读，不手抄
+val licensesDir = layout.buildDirectory.dir("generated/licenses")
+
+val copyLicenses = tasks.register<Copy>("copyLicenses") {
+    from(rootProject.file("NOTICE"))
+    from(rootProject.file("LICENSE"))
+    into(licensesDir)
+}
+
 android {
     namespace = "com.nascomic.reader"
     compileSdk = 37
@@ -36,6 +45,9 @@ android {
             }
         }
     }
+
+    // AGP 9 不接受 Provider，取成 File 再传
+    sourceSets.getByName("main").assets.srcDir(licensesDir.get().asFile)
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -85,3 +97,6 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.generateKotlin", "true")
 }
+
+// 许可文件要在合并 assets 之前就位
+tasks.named("preBuild").configure { dependsOn(copyLicenses) }

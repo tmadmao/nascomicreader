@@ -117,6 +117,25 @@ class SourceRepository(
         return id
     }
 
+    /**
+     * 删掉一个来源。书、章、进度、书签由外键级联删除，密码要单独清
+     * （它不在库里），本地目录还要把系统授权退回去，否则会一直挂在系统里。
+     */
+    suspend fun remove(sourceId: Long) {
+        val source = db.sourceDao().get(sourceId) ?: return
+        SecretStore(context).remove(source.secretRef)
+        db.sourceDao().delete(sourceId)
+
+        val tree = source.treeUri
+        if (source.kind == SourceEntity.KIND_LOCAL && tree != null) {
+            runCatching {
+                context.contentResolver.releasePersistableUriPermission(
+                    Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+        }
+    }
+
     /** 地址补全协议与结尾斜杠，避免用户少打一个字符就列不出目录 */
     fun normalizeEndpoint(raw: String): String {
         var url = raw.trim()

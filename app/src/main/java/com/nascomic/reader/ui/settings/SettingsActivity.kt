@@ -20,10 +20,12 @@ import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
+import com.nascomic.reader.library.RelativeTime
 import com.nascomic.reader.library.scan.LibraryScanner
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
+import com.nascomic.reader.ui.about.AboutActivity
 
 /**
  * 设置。按组排列，改动立即写入（读取端在 [ReaderPrefs] / [AppPrefs]）。
@@ -39,6 +41,9 @@ class SettingsActivity : AppCompatActivity() {
     private val db by lazy { ReaderDatabase.get(this) }
     private val repository by lazy { SourceRepository(this, db) }
     private val scanner by lazy { LibraryScanner(this, db) }
+
+    /** 来源列表的代次：界面重建后旧查询的结果要丢掉 */
+    private var sourceGeneration = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -173,6 +178,11 @@ class SettingsActivity : AppCompatActivity() {
             ) { showRemoteDialog(SourceEntity.KIND_SMB) }
         )
 
+        // 已添加的来源：点一下重扫，长按删除
+        val sourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        host.addView(sourceList)
+        loadSources(sourceList)
+
         host.addView(sectionHeader(getString(R.string.settings_section_other)))
 
         host.addView(
@@ -198,6 +208,120 @@ class SettingsActivity : AppCompatActivity() {
                 checked = prefs.skipDetail,
             ) { checked -> prefs.skipDetail = checked }
         )
+
+        host.addView(sectionHeader(getString(R.string.settings_about)))
+
+        host.addView(
+            choiceRowWithValue(
+                title = getString(R.string.settings_about_row),
+                desc = getString(R.string.settings_about_desc),
+                value = "",
+            ) { startActivity(android.content.Intent(this, AboutActivity::class.java)) }
+        )
+    }
+
+    /**
+     * 列出已有来源。点重扫、长按删除。
+     *
+     * 每次都重新查库：新增或删除之后 [buildRows] 会再走一遍，这里用代次丢掉旧结果，
+     * 免得慢的查询把行加到已经废弃的容器里。
+     */
+    private fun loadSources(container: LinearLayout) {
+        val generation = ++sourceGeneration
+        lifecycleScope.launch {
+            val list = repository.list()
+            if (generation != sourceGeneration) return@launch
+
+            if (list.isEmpty()) {
+                container.addView(
+                    TextView(this@SettingsActivity).apply {
+                        text = getString(R.string.source_empty)
+                        textSize = 13f
+                        setTextColor(getColor(R.color.shell_ink_muted))
+                        setPadding(0, dp(6), 0, dp(6))
+                    }
+                )
+                return@launch
+            }
+            for (source in list) container.addView(sourceRow(source))
+        }
+    }
+
+    private fun sourceRow(source: SourceEntity): View {
+        val row = rowContainer()
+        row.addView(titleBlock(source.label, describe(source)), weighted())
+        row.setOnClickListener { rescan(source) }
+        row.setOnLongClickListener {
+            confirmRemove(source)
+            true
+        }
+        return withDivider(row)
+    }
+
+    /** 「类型 · 状态」，状态里带上次扫描的相对时间 */
+    private fun describe(source: SourceEntity): String {
+        val kind = when (source.kind) {
+            SourceEntity.KIND_WEBDAV -> R.string.source_kind_webdav
+            SourceEntity.KIND_SMB -> R.string.source_kind_smb
+            else -> R.string.source_kind_local
+        }
+        val state = when (source.scanState) {
+            SourceEntity.STATE_SCANNING -> getString(R.string.source_state_scanning)
+            SourceEntity.STATE_DONE -> {
+                val at = source.lastScanAt
+                if (at == null || at <= 0) {
+                    getString(R.string.source_state_done)
+                } else {
+                    val shown = RelativeTime.of(System.currentTimeMillis(), at)
+                    when (shown.kind) {
+                        RelativeTime.Kind.JUST_NOW -> getString(R.string.time_just_now)
+                        RelativeTime.Kind.MINUTES -> getString(R.string.time_minutes_ago, shown.amount)
+                        RelativeTime.Kind.HOURS -> getString(R.string.time_hours_ago, shown.amount)
+                        RelativeTime.Kind.DAYS -> getString(R.string.time_days_ago, shown.amount)
+                        RelativeTime.Kind.DATE -> RelativeTime.dateOf(at)
+                    }
+                }
+            }
+            SourceEntity.STATE_FAILED -> when (source.errorCode) {
+                SourceEntity.ERROR_AUTH -> getString(R.string.source_state_failed_auth)
+                SourceEntity.ERROR_UNREACHABLE -> getString(R.string.source_state_failed_unreachable)
+                else -> getString(R.string.source_state_failed)
+            }
+            else -> getString(R.string.source_state_idle)
+        }
+        return getString(R.string.source_row_desc, getString(kind), state)
+    }
+
+    private fun rescan(source: SourceEntity) {
+        lifecycleScope.launch {
+            val toast = try {
+                val result = scanner.scan(source)
+                getString(R.string.source_rescan_done, source.label, result.found)
+            } catch (e: Exception) {
+                getString(R.string.source_rescan_failed, e.message ?: "")
+            }
+            Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
+            buildRows()
+        }
+    }
+
+    private fun confirmRemove(source: SourceEntity) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.source_delete_title)
+            .setMessage(getString(R.string.source_delete_message, source.label))
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_delete) { _, _ ->
+                lifecycleScope.launch {
+                    repository.remove(source.id)
+                    Toast.makeText(
+                        this@SettingsActivity,
+                        getString(R.string.source_deleted, source.label),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    buildRows()
+                }
+            }
+            .show()
     }
 
     /** 只做导航的行：右侧没有值，点一下弹对话框 */
@@ -263,7 +387,7 @@ class SettingsActivity : AppCompatActivity() {
                 val result = source?.let { scanner.scan(it) }
                 getString(R.string.source_added, source?.label.orEmpty(), result?.found ?: 0)
             } catch (e: Exception) {
-                getString(R.string.source_failed, e.message ?: "")
+                getString(R.string.source_rescan_failed, e.message ?: "")
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()

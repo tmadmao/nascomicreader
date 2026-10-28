@@ -72,6 +72,43 @@
 
     <string name="settings_section_reading">阅读</string>
     <string name="settings_section_other">其他</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_about_row">关于本应用</string>
+    <string name="settings_about_desc">版本、开源许可、源代码与赞助</string>
+
+    <string name="about_title">关于</string>
+    <string name="about_version">版本 %1$s（%2$d）</string>
+    <string name="about_version_unknown">版本未知</string>
+    <string name="about_tagline">本地与 NAS 上的漫画阅读器。按目录或共享整理书库，按页阅读，不进云、不收集使用数据。</string>
+    <string name="about_licenses">开源许可</string>
+    <string name="about_licenses_desc">本项目用到的第三方组件与协议</string>
+    <string name="about_license_full">许可全文（Apache-2.0）</string>
+    <string name="about_source">源代码</string>
+    <string name="about_sponsor">赞助</string>
+    <string name="about_sponsor_desc">微信收款码</string>
+    <string name="about_copyright">© 2026 tmadmao · 按 Apache License 2.0 发布</string>
+    <string name="about_arrow">›</string>
+
+    <string name="source_kind_local">本地目录</string>
+    <string name="source_kind_webdav">WebDAV</string>
+    <string name="source_kind_smb">SMB</string>
+    <string name="source_state_idle">未扫描</string>
+    <string name="source_state_scanning">扫描中</string>
+    <string name="source_state_done">已完成</string>
+    <string name="source_state_failed">失败</string>
+    <string name="source_state_failed_auth">失败 · 账号或权限</string>
+    <string name="source_state_failed_unreachable">失败 · 连不上</string>
+    <string name="source_row_desc">%1$s · %2$s</string>
+    <string name="source_empty">还没有来源。选一个本地目录，或添加 WebDAV / SMB。</string>
+    <string name="source_rescan_done">已重扫「%1$s」，%2$d 本</string>
+    <string name="source_rescan_failed">扫描失败：%1$s</string>
+    <string name="source_delete_title">删除来源</string>
+    <string name="source_delete_message">删除「%1$s」？这个来源下的书、进度与书签都会一起删掉。</string>
+    <string name="source_deleted">已删除「%1$s」</string>
+    <string name="time_just_now">刚刚</string>
+    <string name="time_minutes_ago">%1$d 分钟前</string>
+    <string name="time_hours_ago">%1$d 小时前</string>
+    <string name="time_days_ago">%1$d 天前</string>
     <string name="settings_section_source">书库来源</string>
     <string name="settings_add_dav">添加 WebDAV 服务器</string>
     <string name="settings_add_dav_desc">填服务器地址与账号，添加后会自动扫一次</string>
