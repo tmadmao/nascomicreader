@@ -84,7 +84,7 @@
     <string name="remote_account_hint">账号（可留空）</string>
     <string name="remote_password_hint">密码（可留空）</string>
     <string name="smb_endpoint_hint">地址，例如 smb://192.168.1.10/漫画</string>
-    <string name="smb_account_hint">账号，可写 域\账号（留空为访客）</string>
+    <string name="smb_account_hint">账号，可写 域\\账号（留空为访客）</string>
 
     <string name="source_added">已添加「%1$s」，发现 %2$d 本</string>
     <string name="source_failed">添加失败：%1$s</string>
