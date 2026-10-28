@@ -1,5 +1,6 @@
 package com.nascomic.reader.ui.settings
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.TypedValue
 import android.widget.EditText
@@ -18,6 +19,9 @@ import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivitySettingsBinding
 import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.library.DavAddress
+import com.nascomic.reader.smb.SmbTarget
+import com.nascomic.reader.ui.remote.RemotePickerActivity
+import com.nascomic.reader.ui.remote.remoteErrorText
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
@@ -444,7 +448,7 @@ class SettingsActivity : AppCompatActivity() {
                 val result = scanner.scan(source)
                 getString(R.string.source_rescan_done, source.label, result.found)
             } catch (e: Exception) {
-                getString(R.string.source_rescan_failed, remoteErrorText(e))
+                getString(R.string.source_rescan_failed, remoteErrorText(this@SettingsActivity, e))
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()
@@ -567,7 +571,7 @@ class SettingsActivity : AppCompatActivity() {
             .setTitle(if (smb) R.string.smb_dialog_title else R.string.dav_dialog_title)
             .setView(content)
             .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.action_add, null)
+            .setPositiveButton(R.string.action_next, null)
             .create()
 
         dialog.setOnShowListener {
@@ -599,35 +603,42 @@ class SettingsActivity : AppCompatActivity() {
                         }
                 }
 
+                // 先连上服务器、让用户自己点目录，别让人把路径打在地址里
+                pendingKind = kind
+                pendingPort = portValue
+                pendingAccount = account.text.toString().trim()
+                pendingPassword = password.text.toString()
+                pendingLabel = label.text.toString().trim()
+
+                val smbEndpoint = if (smb) {
+                    // 没写共享名先在对话框里报错，进到选目录页就没法列了
+                    val target = runCatching { SmbTarget.parse(rawAddress, portValue) }
+                        .getOrElse {
+                            Toast.makeText(this, it.message ?: "", Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                    buildString {
+                        append("smb://").append(target.host).append(':').append(target.port)
+                        append('/').append(target.share)
+                        if (target.path.isNotEmpty()) append('/').append(target.path)
+                    }
+                } else {
+                    endpoint
+                }
+
                 dialog.dismiss()
-                addRemote(
-                    kind = kind,
-                    endpoint = endpoint,
-                    account = account.text.toString().trim(),
-                    password = password.text.toString(),
-                    label = label.text.toString().trim(),
-                    port = portValue,
+                pickDirectory.launch(
+                    Intent(this, RemotePickerActivity::class.java)
+                        .putExtra(RemotePickerActivity.EXTRA_KIND, kind)
+                        .putExtra(RemotePickerActivity.EXTRA_ENDPOINT, smbEndpoint)
+                        .putExtra(RemotePickerActivity.EXTRA_ACCOUNT, pendingAccount)
+                        .putExtra(RemotePickerActivity.EXTRA_PASSWORD, pendingPassword)
                 )
             }
         }
         dialog.show()
         // 键盘弹出来时把对话框顶上去，别把密码框挡住
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-    }
-
-    /**
-     * 远程失败的人话。库的原始报错是英文（native / okhttp / smbj），
-     * 常见几种就地翻译成人能对上号的说法。
-     */
-    private fun remoteErrorText(e: Throwable): String = when {
-        e is com.nascomic.reader.webdav.WebDavException && (e.status == 401 || e.status == 403) ->
-            getString(R.string.remote_error_auth)
-        e is javax.net.ssl.SSLException || e is java.security.cert.CertificateException ->
-            getString(R.string.remote_error_tls)
-        e is java.net.UnknownHostException -> getString(R.string.remote_error_host)
-        e is java.net.ConnectException || e is java.net.SocketTimeoutException ->
-            getString(R.string.remote_error_connect)
-        else -> e.message ?: ""
     }
 
     /** 协议的两个小圆角块：选中的靛蓝实底白字，未选白底描边 */
@@ -642,6 +653,30 @@ class SettingsActivity : AppCompatActivity() {
                 setStroke(dp(1), getColor(R.color.shell_stroke))
             }
         }
+    }
+
+    private var pendingKind = SourceEntity.KIND_WEBDAV
+    private var pendingAccount = ""
+    private var pendingPassword = ""
+    private var pendingLabel = ""
+    private var pendingPort: Int? = null
+
+    /** 选完目录才真正登记来源：目录是用户在远端点的，不靠地址里手打 */
+    private val pickDirectory = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val picked = result.data?.getStringExtra(RemotePickerActivity.EXTRA_PICKED).orEmpty()
+        if (result.resultCode == RESULT_OK && picked.isNotEmpty()) {
+            addRemote(
+                kind = pendingKind,
+                endpoint = picked,
+                account = pendingAccount,
+                password = pendingPassword,
+                label = pendingLabel,
+                port = pendingPort,
+            )
+        }
+        pendingPassword = ""
     }
 
     private fun addRemote(
@@ -663,7 +698,7 @@ class SettingsActivity : AppCompatActivity() {
                 val result = source?.let { scanner.scan(it) }
                 getString(R.string.source_added, source?.label.orEmpty(), result?.found ?: 0)
             } catch (e: Exception) {
-                getString(R.string.source_rescan_failed, remoteErrorText(e))
+                getString(R.string.source_rescan_failed, remoteErrorText(this@SettingsActivity, e))
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()
