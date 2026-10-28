@@ -33,8 +33,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 书架。当前是能用的第一版：标签页 + 三列封面 + 进度条。
- * 搜索、排序菜单、详情页随后补。
+ * 书架。顶部「书库」+ 标签 chip + 「接着读」卡 + 封面网格；列数按屏宽算（[ShelfGrid]）。
+ * 搜索与排序还没做。
  */
 class MainActivity : AppCompatActivity() {
 
