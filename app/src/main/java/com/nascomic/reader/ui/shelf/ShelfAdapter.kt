@@ -19,11 +19,15 @@ import com.nascomic.reader.ui.widget.CoverProgress
 class ShelfAdapter(
     private val thumbnails: ThumbnailStore,
     private val onClick: (BookEntity) -> Unit,
+    /** 封面还没生成时叫一声，由外面排队慢慢生成——一千多本一起生成会把 NAS 连接打满 */
+    private val onCoverNeeded: (Long) -> Unit = {},
 ) : RecyclerView.Adapter<ShelfAdapter.Holder>() {
 
     private var books: List<BookEntity> = emptyList()
     private var progress: Map<Long, ProgressEntity> = emptyMap()
     private var coverWidthPx: Int = 0
+    /** 当前真正在屏幕上的格子：封面生成好时只喂给它们 */
+    private val bound = HashMap<Long, Holder>()
 
     fun submit(books: List<BookEntity>, progress: Map<Long, ProgressEntity>) {
         this.books = books
@@ -60,15 +64,34 @@ class ShelfAdapter(
         holder.progress.ratio = if (p != null) readPercent(read, total, p.finished) / 100f else 0f
         holder.meta.text = metaOf(holder.itemView.context, book, p)
 
+        // 封面只解码可见的那几张；没有就先留灰底，把活派给生成队列
+        holder.cover.tag = book.id
+        bound[book.id] = holder
         val w = if (coverWidthPx > 0) coverWidthPx else holder.cover.width
         val bitmap = if (w > 0) thumbnails.load(book.id, w, w * 4 / 3) else null
         if (bitmap != null) {
             holder.cover.setImageBitmap(bitmap)
         } else {
             holder.cover.setImageDrawable(null)
+            onCoverNeeded(book.id)
         }
 
         holder.itemView.setOnClickListener { onClick(book) }
+    }
+
+    /** 第 position 本是哪一本；越界给 null */
+    fun bookIdAt(position: Int): Long? = books.getOrNull(position)?.id
+
+    /** 封面生成好了：还在显示这一本的格子直接换图，不整表刷新 */
+    fun showCover(bookId: Long, bitmap: android.graphics.Bitmap) {
+        val holder = bound[bookId] ?: return
+        if (holder.cover.tag == bookId) holder.cover.setImageBitmap(bitmap)
+    }
+
+    override fun onViewRecycled(holder: Holder) {
+        val id = holder.cover.tag as? Long
+        if (id != null && bound[id] === holder) bound.remove(id)
+        super.onViewRecycled(holder)
     }
 
     /**

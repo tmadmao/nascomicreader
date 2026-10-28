@@ -48,6 +48,9 @@ interface BookDao {
     @Upsert
     suspend fun upsert(book: BookEntity)
 
+    @Upsert
+    suspend fun upsertAll(books: List<BookEntity>)
+
     @Query("SELECT * FROM books WHERE id = :id")
     suspend fun get(id: Long): BookEntity?
 
@@ -119,6 +122,10 @@ interface BookDao {
     /** 扫描后清理：来源里已经不存在于磁盘的条目 */
     @Query("DELETE FROM books WHERE source_id = :sourceId AND doc_ref NOT IN (:presentRefs)")
     suspend fun deleteMissing(sourceId: Long, presentRefs: List<String>)
+
+    /** 按 id 批量删（来源里消失的书）。列表长度要自己分段，别撞 SQLite 的变量上限 */
+    @Query("DELETE FROM books WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 }
 
 @Dao

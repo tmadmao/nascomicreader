@@ -21,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.library.DavAddress
 import com.nascomic.reader.smb.SmbTarget
 import com.nascomic.reader.ui.remote.RemotePickerActivity
+import com.nascomic.reader.ui.widget.ScanProgressDialog
 import com.nascomic.reader.ui.remote.remoteErrorText
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
@@ -443,12 +444,20 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun rescan(source: SourceEntity) {
+        val progress = ScanProgressDialog(this)
         lifecycleScope.launch {
+            progress.showListing(source.label)
+            val listener = object : LibraryScanner.Listener {
+                override fun onListing() = progress.showListing(source.label)
+                override fun onProgress(done: Int, total: Int) = progress.progress(done, total)
+            }
             val toast = try {
-                val result = scanner.scan(source)
+                val result = scanner.scan(source, listener)
                 getString(R.string.source_rescan_done, source.label, result.found)
             } catch (e: Exception) {
                 getString(R.string.source_rescan_failed, remoteErrorText(this@SettingsActivity, e))
+            } finally {
+                progress.dismiss()
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()
@@ -687,7 +696,13 @@ class SettingsActivity : AppCompatActivity() {
         label: String,
         port: Int? = null,
     ) {
+        val progress = ScanProgressDialog(this)
         lifecycleScope.launch {
+            progress.showListing(label.ifBlank { endpoint })
+            val listener = object : LibraryScanner.Listener {
+                override fun onListing() = progress.showListing(label.ifBlank { endpoint })
+                override fun onProgress(done: Int, total: Int) = progress.progress(done, total)
+            }
             val toast = try {
                 val id = if (kind == SourceEntity.KIND_SMB) {
                     repository.addSmb(endpoint, account, password, label.ifBlank { null }, port)
@@ -695,7 +710,7 @@ class SettingsActivity : AppCompatActivity() {
                     repository.addWebDav(endpoint, account, password, label.ifBlank { null })
                 }
                 val source = db.sourceDao().get(id)
-                val result = source?.let { scanner.scan(it) }
+                val result = source?.let { scanner.scan(it, listener) }
                 // 远程只认这一层里的单文件，子文件夹不递归；扫到 0 本时说清是为什么
                 if ((result?.found ?: 0) == 0) {
                     getString(R.string.source_added_empty, source?.label.orEmpty())
@@ -704,6 +719,8 @@ class SettingsActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 getString(R.string.source_rescan_failed, remoteErrorText(this@SettingsActivity, e))
+            } finally {
+                progress.dismiss()
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()

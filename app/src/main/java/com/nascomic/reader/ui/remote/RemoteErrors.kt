@@ -18,5 +18,8 @@ fun remoteErrorText(context: Context, e: Throwable): String = when {
     e is java.net.UnknownHostException -> context.getString(R.string.remote_error_host)
     e is java.net.ConnectException || e is java.net.SocketTimeoutException ->
         context.getString(R.string.remote_error_connect)
+    // 指到普通网站而不是 WebDAV 时，okhttp 会抛「不是 HTTP 响应」这类话
+    e.message?.contains("Unexpected status line") == true ->
+        context.getString(R.string.remote_error_not_dav)
     else -> e.message ?: ""
 }

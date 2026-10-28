@@ -10,6 +10,9 @@
     <string name="summary_counts">来源 %1$d 个 · 书 %2$d 本</string>
 
     <string name="status_scanning">正在扫描…</string>
+    <string name="scan_title">正在扫描书库</string>
+    <string name="scan_listing">正在读取「%1$s」的目录…</string>
+    <string name="scan_progress">已读 %1$d / %2$d 本</string>
     <string name="status_scanning_named">正在扫描「%1$s」…</string>
     <string name="status_scan_done">「%1$s」扫描完成\n发现 %2$d 本 · 新增 %3$d · 更新 %4$d</string>
     <string name="status_scan_failed">扫描失败：%1$s</string>
@@ -168,6 +171,7 @@
     <string name="remote_error_tls">证书不被信任：改用 HTTP，或给 NAS 换一张受信任的证书</string>
     <string name="remote_error_host">找不到这个地址，检查主机名或 IP</string>
     <string name="remote_error_connect">连不上，检查端口与网络</string>
+    <string name="remote_error_not_dav">这个地址不像 WebDAV：检查是不是少写了路径（如 /dav）</string>
     <string name="action_add">添加</string>
     <string name="action_next">下一步</string>
     <string name="picker_title">选择书库目录</string>

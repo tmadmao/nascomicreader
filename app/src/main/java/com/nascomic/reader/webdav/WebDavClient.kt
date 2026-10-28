@@ -28,15 +28,14 @@ class WebDavClient(
         val size: Long,
     )
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient get() = shared
 
     /** 列一层。返回结果里不含被查询目录自身 */
     fun list(dirUrl: String): List<Entry> {
+        // 集合地址补上结尾斜杠：不少服务端对 /dav 直接 404，对 /dav/ 才认
+        val target = if (dirUrl.endsWith("/")) dirUrl else "$dirUrl/"
         val body = PROPFIND_BODY.toRequestBody("application/xml; charset=utf-8".toMediaType())
-        val request = request(dirUrl)
+        val request = request(target)
             .header("Depth", "1")
             .method("PROPFIND", body)
             .build()
@@ -46,8 +45,7 @@ class WebDavClient(
                 throw WebDavException(response.code, "列目录失败：HTTP ${response.code}")
             }
             val xml = response.body?.string().orEmpty()
-            val base = dirUrl.trimEnd('/') + "/"
-            return parseMultiStatus(xml, base).filter { normalize(it.url) != normalize(dirUrl) }
+            return parseMultiStatus(xml, target).filter { normalize(it.url) != normalize(target) }
         }
     }
 
@@ -101,6 +99,18 @@ class WebDavClient(
     }
 
     companion object {
+        /**
+         * 一个进程就一个 HTTP 客户端：连接池与线程池共用。
+         * 每本书各建一个的话，一千多本的封面生成会把连接和内存一起耗光（NAS 直接不让连）。
+         */
+        private val shared: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .connectionPool(okhttp3.ConnectionPool(6, 30, TimeUnit.SECONDS))
+                .build()
+        }
+
         private const val PROPFIND_BODY = """<?xml version="1.0" encoding="utf-8"?>
 <propfind xmlns="DAV:"><prop><resourcetype/><getcontentlength/></prop></propfind>"""
 

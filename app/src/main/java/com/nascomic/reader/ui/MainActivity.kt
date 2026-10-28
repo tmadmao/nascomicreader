@@ -28,7 +28,9 @@ import com.nascomic.reader.ui.reader.ReadingActivity
 import com.nascomic.reader.ui.settings.SettingsActivity
 import com.nascomic.reader.ui.shelf.ShelfAdapter
 import com.nascomic.reader.ui.shelf.ShelfGrid
+import com.nascomic.reader.ui.widget.ScanProgressDialog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -54,6 +56,12 @@ class MainActivity : AppCompatActivity() {
     /** 各标签下的书数，随 refresh 一起算好 */
     private var tabCounts: Map<String, Int> = emptyMap()
 
+    /** 封面生成队列：串行，慢慢来；同一本只排一次 */
+    private val coverQueue = Channel<Long>(Channel.UNLIMITED)
+    private val queuedCovers = HashSet<Long>()
+    private val MAX_COVER_QUEUE = 60
+    private var coverWidth = 0
+
     private val pickFolder = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? -> if (uri != null) scanFolder(uri) }
@@ -63,7 +71,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        adapter = ShelfAdapter(thumbs) { openBook(it) }
+        adapter = ShelfAdapter(thumbs, { openBook(it) }, { id -> requestCover(id) })
         binding.grid.adapter = adapter
         applyGridMetrics()
 
@@ -73,10 +81,16 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         binding.rescan.setOnClickListener { rescanAll() }
+        binding.grid.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {
+                if (dy != 0) requestVisibleCovers()
+            }
+        })
         binding.settings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        startCoverWorker()
         refresh()
     }
 
@@ -121,7 +135,7 @@ class MainActivity : AppCompatActivity() {
             binding.grid.visibility = if (books.isEmpty()) View.GONE else View.VISIBLE
 
             renderResume(allBooks, progress)
-            generateMissingCovers(books)
+            requestVisibleCovers()
         }
     }
 
@@ -235,27 +249,72 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 缺封面的书逐个生成。串行做，避免同时解多本书把内存顶上去；
-     * 一轮生成完再整体刷新。
+     * 封面按需生成：只有滚到屏幕上、又没有缓存的那几本才去解一次。
+     *
+     * 早先是把当前标签下的书全量跑一遍，一千多本时等于一口气开一千多个封面——
+     * 每个封面都要连远端、建连接，NAS 直接被问挂，应用也会被系统杀掉。
      */
-    private fun generateMissingCovers(books: List<BookEntity>) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val sourcesById = allSources.associateBy { it.id }
-            var any = false
-            for (book in books) {
-                if (thumbs.has(book.id)) continue
-                val src = sourcesById[book.sourceId] ?: continue
-                val chapters = db.chapterDao().forBook(book.id)
-                if (thumbs.generate(book, src, chapters, opener) != null) any = true
+    private fun listenerFor(
+        progress: ScanProgressDialog,
+        name: String,
+    ) = object : LibraryScanner.Listener {
+        override fun onListing() = progress.showListing(name)
+        override fun onProgress(done: Int, total: Int) = progress.progress(done, total)
+    }
+
+    private fun requestCover(bookId: Long) {
+        if (queuedCovers.size > MAX_COVER_QUEUE) return
+        if (thumbs.has(bookId) || !queuedCovers.add(bookId)) return
+        coverQueue.trySend(bookId)
+    }
+
+    /**
+     * 只要眼前这一屏，外加往后一屏的预取；再远的等滚到再说。
+     * 一千多本的书库靠这个把远端开销压到「用户看得见的那点」。
+     */
+    private fun requestVisibleCovers() {
+        val lm = binding.grid.layoutManager as? GridLayoutManager ?: return
+        val first = lm.findFirstVisibleItemPosition()
+        val last = lm.findLastVisibleItemPosition()
+        if (first < 0 || last < 0) return
+        val screen = (last - first + 1).coerceAtLeast(lm.spanCount)
+        val until = (last + screen).coerceAtMost(adapter.itemCount - 1)
+        for (i in first..until) {
+            requestCover(adapter.bookIdAt(i) ?: continue)
+        }
+    }
+
+    private fun startCoverWorker() {
+        lifecycleScope.launch {
+            for (bookId in coverQueue) {
+                try {
+                    if (!thumbs.has(bookId)) {
+                        val book = db.bookDao().get(bookId) ?: continue
+                        val src = allSources.firstOrNull { it.id == book.sourceId } ?: continue
+                        val chapters = db.chapterDao().forBook(bookId)
+                        withContext(Dispatchers.IO) {
+                            thumbs.generate(book, src, chapters, opener)
+                        }
+                    }
+                    val width = if (coverWidth > 0) coverWidth else dp(112)
+                    val bitmap = withContext(Dispatchers.IO) {
+                        thumbs.load(bookId, width, width * 4 / 3)
+                    }
+                    if (bitmap != null) adapter.showCover(bookId, bitmap)
+                } catch (e: Exception) {
+                    // 单本失败不影响别的；缓存目录被清掉时下次滚到再试
+                    android.util.Log.d("Cover", "封面生成失败 $bookId", e)
+                } finally {
+                    queuedCovers.remove(bookId)
+                }
             }
-            thumbs.prune(books.map { it.id }.toSet())
-            if (any) withContext(Dispatchers.Main) { adapter.notifyDataSetChanged() }
         }
     }
 
     // ── 操作 ───────────────────────────────────────────────
 
     private fun scanFolder(uri: Uri) {
+        val progress = ScanProgressDialog(this)
         lifecycleScope.launch {
             status(getString(R.string.status_scanning))
             try {
@@ -265,12 +324,15 @@ class MainActivity : AppCompatActivity() {
                     status(getString(R.string.status_source_missing))
                     return@launch
                 }
-                val r = scanner.scan(source)
+                progress.showListing(source.label)
+                val r = scanner.scan(source, listenerFor(progress, source.label))
                 status(getString(R.string.status_scan_done, source.label, r.found, r.added, r.updated))
                 currentTab = TAB_ALL
                 refresh()
             } catch (e: Exception) {
                 status(getString(R.string.status_scan_failed, e.message ?: ""))
+            } finally {
+                progress.dismiss()
             }
         }
     }
@@ -282,11 +344,16 @@ class MainActivity : AppCompatActivity() {
                 status(getString(R.string.status_no_source))
                 return@launch
             }
+            val progress = ScanProgressDialog(this@MainActivity)
             var total = 0
             for (s in all) {
                 status(getString(R.string.status_scanning_named, s.label))
-                total += runCatching { scanner.scan(s).found }.getOrDefault(0)
+                progress.showListing(s.label)
+                total += runCatching {
+                    scanner.scan(s, listenerFor(progress, s.label)).found
+                }.getOrDefault(0)
             }
+            progress.dismiss()
             status(getString(R.string.status_rescan_done, all.size, total))
             refresh()
         }
@@ -315,7 +382,8 @@ class MainActivity : AppCompatActivity() {
         val minCell = (ShelfGrid.MIN_CELL_DP * resources.displayMetrics.density).toInt()
         val columns = ShelfGrid.columns(available, minCell)
         binding.grid.layoutManager = GridLayoutManager(this, columns)
-        adapter.setCoverWidth(ShelfGrid.cellWidth(available, columns) - dp(12))
+        coverWidth = ShelfGrid.cellWidth(available, columns) - dp(12)
+        adapter.setCoverWidth(coverWidth)
     }
 
     private fun status(text: String) {

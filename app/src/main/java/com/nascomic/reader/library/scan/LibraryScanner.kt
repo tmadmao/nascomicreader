@@ -3,6 +3,7 @@ package com.nascomic.reader.library.scan
 import android.content.Context
 import android.net.Uri
 import com.nascomic.reader.core.text.NaturalSort
+import androidx.room.withTransaction
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ReaderDatabase
@@ -24,12 +25,20 @@ import kotlinx.coroutines.withContext
  * 扫描阶段只记名字、大小和章的结构，**不解包、不数页**——几百本的目录如果每本都解包，
  * 首次扫描要几分钟。页数在打开那本书时再算。
  */
+private const val DELETE_BATCH = 400
+
 class LibraryScanner(
     private val context: Context,
     private val db: ReaderDatabase,
 ) {
 
     private val secrets by lazy { SecretStore(context) }
+
+    /** 扫描过程中的回话口：列目录（不知道要多久）与入库（能报进度）两个阶段 */
+    interface Listener {
+        fun onListing() {}
+        fun onProgress(done: Int, total: Int) {}
+    }
 
     data class Result(
         val found: Int,
@@ -39,11 +48,13 @@ class LibraryScanner(
         val chaptered: Int,
     )
 
-    suspend fun scan(source: SourceEntity): Result = withContext(Dispatchers.IO) {
+    suspend fun scan(source: SourceEntity, listener: Listener? = null): Result =
+        withContext(Dispatchers.IO) {
         when (source.kind) {
-            SourceEntity.KIND_WEBDAV -> return@withContext scanWebDav(source)
-            SourceEntity.KIND_SMB -> return@withContext scanSmb(source)
+            SourceEntity.KIND_WEBDAV -> return@withContext scanWebDav(source, listener)
+            SourceEntity.KIND_SMB -> return@withContext scanSmb(source, listener)
         }
+        listener?.onListing()
 
         val treeUri = source.treeUri ?: throw IllegalArgumentException("来源没有目录授权")
         val walker = SafWalker(context, Uri.parse(treeUri))
@@ -154,22 +165,22 @@ class LibraryScanner(
     /** 远端列表里的一条：入库只需要这三样 */
     private class RemoteFile(val docRef: String, val name: String, val size: Long)
 
-    private suspend fun scanWebDav(source: SourceEntity): Result {
+    private suspend fun scanWebDav(source: SourceEntity, listener: Listener? = null): Result {
         val endpoint = source.endpoint ?: throw IllegalArgumentException("来源没有地址")
         val client = WebDavClient(source.account, secrets.get(source.secretRef))
 
-        return scanRemote(source) {
+        return scanRemote(source, listener) {
             client.list(endpoint)
                 .filter { !it.isDirectory && ScanRules.isSingleBookFile(it.name) }
                 .map { RemoteFile(it.url, it.name, it.size) }
         }
     }
 
-    private suspend fun scanSmb(source: SourceEntity): Result {
+    private suspend fun scanSmb(source: SourceEntity, listener: Listener? = null): Result {
         val target = SmbTarget.parse(source.endpoint ?: throw IllegalArgumentException("来源没有地址"))
         val client = SmbClient(target, source.account, secrets.get(source.secretRef))
 
-        return scanRemote(source) {
+        return scanRemote(source, listener) {
             client.list(target.path)
                 .filter { !it.isDirectory && ScanRules.isSingleBookFile(it.name) }
                 .map { RemoteFile(it.path, it.name, it.size) }
@@ -182,14 +193,18 @@ class LibraryScanner(
      */
     private suspend fun scanRemote(
         source: SourceEntity,
+        listener: Listener? = null,
         listFiles: () -> List<RemoteFile>,
     ): Result {
         val startedAt = System.currentTimeMillis()
+        listener?.onListing()
         db.sourceDao().setScanState(source.id, SourceEntity.STATE_SCANNING, null, startedAt)
 
         val files = try {
             listFiles()
         } catch (e: Exception) {
+            // 原始报错留在日志里，界面只按类别说话
+            android.util.Log.w("Scan", "列目录失败：${source.label}", e)
             db.sourceDao().setScanState(source.id, SourceEntity.STATE_FAILED, errorCodeOf(e), startedAt)
             throw e
         }
@@ -198,45 +213,53 @@ class LibraryScanner(
         var added = 0
         var updated = 0
 
-        for (file in files) {
+        // 一次读全这个来源已有的书，别每本查一遍库：一千多本时那是三千多次查询
+        val known = db.bookDao().bySourceNow(source.id).associateBy { it.docRef }
+        val fresh = ArrayList<BookEntity>(files.size)
+        val touched = ArrayList<BookEntity>()
+
+        for ((index, file) in files.withIndex()) {
+            if (index % 25 == 0) listener?.onProgress(index, files.size)
             val title = ScanRules.titleOf(file.name)
-            val existing = db.bookDao().findByRef(source.id, file.docRef)
+            val existing = known[file.docRef]
             if (existing == null) {
                 added++
-                db.bookDao().insert(
-                    BookEntity(
-                        sourceId = source.id,
-                        docRef = file.docRef,
-                        title = title,
-                        titleSort = NaturalSort.key(title),
-                        format = formatOf(file.name),
-                        byteSize = file.size.coerceAtLeast(0),
-                        chapterTotal = 0,
-                        isSingleVolume = 1,
-                        addedAt = now,
-                        modifiedAt = now,
-                    )
+                fresh += BookEntity(
+                    sourceId = source.id,
+                    docRef = file.docRef,
+                    title = title,
+                    titleSort = NaturalSort.key(title),
+                    format = formatOf(file.name),
+                    byteSize = file.size.coerceAtLeast(0),
+                    chapterTotal = 0,
+                    isSingleVolume = 1,
+                    addedAt = now,
+                    modifiedAt = now,
                 )
-            } else {
+            } else if (existing.title != title || existing.byteSize != file.size.coerceAtLeast(0)) {
                 updated++
-                db.bookDao().upsert(
-                    existing.copy(
-                        title = title,
-                        titleSort = NaturalSort.key(title),
-                        byteSize = file.size.coerceAtLeast(0),
-                        modifiedAt = now,
-                    )
+                touched += existing.copy(
+                    title = title,
+                    titleSort = NaturalSort.key(title),
+                    byteSize = file.size.coerceAtLeast(0),
+                    modifiedAt = now,
                 )
             }
         }
 
-        val present = files.map { it.docRef }
-        if (present.isEmpty()) {
-            db.bookDao().deleteBySource(source.id)
-        } else {
-            db.bookDao().deleteMissing(source.id, present)
+        listener?.onProgress(files.size, files.size)
+
+        // 一个事务写完：逐条提交时每条都要刷盘，一千多本会拖到分钟级
+        db.withTransaction {
+            if (fresh.isNotEmpty()) db.bookDao().insertAll(fresh)
+            if (touched.isNotEmpty()) db.bookDao().upsertAll(touched)
+
+            // 清理远端已经没有的条目：按 id 分段删，避免一次塞几千个参数
+            val present = files.mapTo(HashSet(files.size)) { it.docRef }
+            val gone = known.values.filter { it.docRef !in present }.map { it.id }
+            gone.chunked(DELETE_BATCH).forEach { db.bookDao().deleteByIds(it) }
+            db.sourceDao().setScanState(source.id, SourceEntity.STATE_DONE, null, now)
         }
-        db.sourceDao().setScanState(source.id, SourceEntity.STATE_DONE, null, now)
 
         return Result(found = files.size, added = added, updated = updated, removed = 0, chaptered = 0)
     }
