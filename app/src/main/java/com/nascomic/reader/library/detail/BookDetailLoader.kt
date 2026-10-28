@@ -55,6 +55,9 @@ class BookDetailLoader(
                 }
                 Detail(total, infos, starts)
             }
+        }.onFailure {
+            // 量页失败不阻塞界面（详情页照常显示），但要留下原因，否则远端问题无从查起
+            android.util.Log.w("BookDetail", "量页失败：${book.title}", it)
         }.getOrNull()
     }
 }

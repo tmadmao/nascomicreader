@@ -15,3 +15,8 @@
 # 行号保留：崩溃栈要能对到源码
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# smbj 带 Kerberos（org.ietf.jgss）与 mbassador 带 EL 表达式过滤器（javax.el）两条可选路径，
+# Android 上没有这两套类。我们只用 NTLM 与基本事件分发，所以按「缺类不报错」处理。
+-dontwarn javax.el.**
+-dontwarn org.ietf.jgss.**

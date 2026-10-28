@@ -68,6 +68,7 @@ dependencies {
     implementation(libs.androidx.recyclerview)
     implementation(libs.libarchive)
     implementation(libs.okhttp)
+    implementation(libs.smbj)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

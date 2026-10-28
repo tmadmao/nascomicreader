@@ -7,29 +7,29 @@
     android:paddingTop="8dp">
 
     <EditText
-        android:id="@+id/dav_endpoint"
+        android:id="@+id/remote_endpoint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/dav_endpoint_hint"
+        android:hint="@string/remote_endpoint_hint"
         android:inputType="textUri"
         android:maxLines="1"
         android:textSize="14sp" />
 
     <EditText
-        android:id="@+id/dav_account"
+        android:id="@+id/remote_account"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:hint="@string/dav_account_hint"
+        android:hint="@string/remote_account_hint"
         android:inputType="text"
         android:maxLines="1"
         android:textSize="14sp" />
 
     <EditText
-        android:id="@+id/dav_password"
+        android:id="@+id/remote_password"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/dav_password_hint"
+        android:hint="@string/remote_password_hint"
         android:inputType="textPassword"
         android:maxLines="1"
         android:textSize="14sp" />

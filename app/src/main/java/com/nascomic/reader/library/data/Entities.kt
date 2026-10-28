@@ -19,7 +19,7 @@ import androidx.room.PrimaryKey
 )
 data class SourceEntity(
     @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
-    /** 0=本地目录 1=WebDAV */
+    /** 0=本地目录 1=WebDAV 2=SMB */
     @ColumnInfo(name = "kind") val kind: Int,
     @ColumnInfo(name = "label") val label: String,
     /** SAF 树 URI，仅本地来源 */
@@ -38,6 +38,7 @@ data class SourceEntity(
     companion object {
         const val KIND_LOCAL = 0
         const val KIND_WEBDAV = 1
+        const val KIND_SMB = 2
 
         const val STATE_IDLE = 0
         const val STATE_SCANNING = 1

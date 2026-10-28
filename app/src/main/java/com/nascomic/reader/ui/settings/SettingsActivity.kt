@@ -2,6 +2,7 @@ package com.nascomic.reader.ui.settings
 
 import android.os.Bundle
 import android.util.TypedValue
+import android.widget.EditText
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -18,6 +19,7 @@ import com.nascomic.reader.databinding.ActivitySettingsBinding
 import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
+import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.library.scan.LibraryScanner
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
@@ -160,7 +162,15 @@ class SettingsActivity : AppCompatActivity() {
                 title = getString(R.string.settings_add_dav),
                 desc = getString(R.string.settings_add_dav_desc),
                 value = "",
-            ) { showWebDavDialog() }
+            ) { showRemoteDialog(SourceEntity.KIND_WEBDAV) }
+        )
+
+        host.addView(
+            choiceRowWithValue(
+                title = getString(R.string.settings_add_smb),
+                desc = getString(R.string.settings_add_smb_desc),
+                value = "",
+            ) { showRemoteDialog(SourceEntity.KIND_SMB) }
         )
 
         host.addView(sectionHeader(getString(R.string.settings_section_other)))
@@ -209,34 +219,51 @@ class SettingsActivity : AppCompatActivity() {
         return withDivider(row)
     }
 
-    private fun showWebDavDialog() {
-        val content = layoutInflater.inflate(R.layout.dialog_webdav, null)
+    /**
+     * 添加远端来源。WebDAV 与 SMB 要填的是同一组东西（地址、账号、密码），
+     * 所以共用一个对话框，只有提示语按协议换。
+     */
+    private fun showRemoteDialog(kind: Int) {
+        val smb = kind == SourceEntity.KIND_SMB
+        val content = layoutInflater.inflate(R.layout.dialog_remote, null)
+
+        content.findViewById<EditText>(R.id.remote_endpoint).hint =
+            getString(if (smb) R.string.smb_endpoint_hint else R.string.remote_endpoint_hint)
+        content.findViewById<EditText>(R.id.remote_account).hint =
+            getString(if (smb) R.string.smb_account_hint else R.string.remote_account_hint)
+        content.findViewById<EditText>(R.id.remote_password).hint =
+            getString(R.string.remote_password_hint)
+
         AlertDialog.Builder(this)
-            .setTitle(R.string.dav_dialog_title)
+            .setTitle(if (smb) R.string.smb_dialog_title else R.string.dav_dialog_title)
             .setView(content)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                val endpoint = content.findViewById<android.widget.EditText>(R.id.dav_endpoint)
+                val endpoint = content.findViewById<EditText>(R.id.remote_endpoint)
                     .text.toString().trim()
                 if (endpoint.isEmpty()) return@setPositiveButton
-                val account = content.findViewById<android.widget.EditText>(R.id.dav_account)
+                val account = content.findViewById<EditText>(R.id.remote_account)
                     .text.toString().trim()
-                val password = content.findViewById<android.widget.EditText>(R.id.dav_password)
+                val password = content.findViewById<EditText>(R.id.remote_password)
                     .text.toString()
-                addWebDav(endpoint, account, password)
+                addRemote(kind, endpoint, account, password)
             }
             .show()
     }
 
-    private fun addWebDav(endpoint: String, account: String, password: String) {
+    private fun addRemote(kind: Int, endpoint: String, account: String, password: String) {
         lifecycleScope.launch {
             val toast = try {
-                val id = repository.addWebDav(endpoint, account, password, null)
+                val id = if (kind == SourceEntity.KIND_SMB) {
+                    repository.addSmb(endpoint, account, password, null)
+                } else {
+                    repository.addWebDav(endpoint, account, password, null)
+                }
                 val source = db.sourceDao().get(id)
                 val result = source?.let { scanner.scan(it) }
-                getString(R.string.dav_added, source?.label.orEmpty(), result?.found ?: 0)
+                getString(R.string.source_added, source?.label.orEmpty(), result?.found ?: 0)
             } catch (e: Exception) {
-                getString(R.string.dav_failed, e.message ?: "")
+                getString(R.string.source_failed, e.message ?: "")
             }
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()

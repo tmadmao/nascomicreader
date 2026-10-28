@@ -14,6 +14,7 @@ coroutines = "1.10.2"
 junit = "4.13.2"
 libarchive = "1.1.7"
 okhttp = "4.12.1"
+smbj = "0.15.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +37,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 libarchive = { group = "me.zhanghai.android.libarchive", name = "library", version.ref = "libarchive" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+smbj = { group = "com.hierynomus", name = "smbj", version.ref = "smbj" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

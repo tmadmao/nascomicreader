@@ -11,5 +11,8 @@ Copyright 2026 tmadmao
   libarchive-android（含 libarchive、zlib、bzip2、xz、lz4、zstd、mbedtls）
       — Copyright Hai Zhang 与各上游项目作者 — Apache-2.0 / BSD
   OkHttp — Copyright Square, Inc. — Apache-2.0
+  smbj（含 asn-one、mbassador）— Copyright Jeroen van Erp 与各上游作者 — Apache-2.0
+  Bouncy Castle（bcprov）— Copyright The Legion of the Bouncy Castle Inc. — Bouncy Castle Licence（MIT 式）
+  SLF4J API — Copyright QOS.ch — MIT
 
 各组件版本与坐标见 app/build.gradle.kts 与 gradle/libs.versions.toml。

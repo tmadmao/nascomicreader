@@ -8,6 +8,9 @@ import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.settings.SecretStore
+import com.nascomic.reader.smb.SmbClient
+import com.nascomic.reader.smb.SmbException
+import com.nascomic.reader.smb.SmbTarget
 import com.nascomic.reader.webdav.WebDavClient
 import com.nascomic.reader.webdav.WebDavException
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +40,10 @@ class LibraryScanner(
     )
 
     suspend fun scan(source: SourceEntity): Result = withContext(Dispatchers.IO) {
-        if (source.kind == SourceEntity.KIND_WEBDAV) return@withContext scanRemote(source)
+        when (source.kind) {
+            SourceEntity.KIND_WEBDAV -> return@withContext scanWebDav(source)
+            SourceEntity.KIND_SMB -> return@withContext scanSmb(source)
+        }
 
         val treeUri = source.treeUri ?: throw IllegalArgumentException("来源没有目录授权")
         val walker = SafWalker(context, Uri.parse(treeUri))
@@ -145,51 +151,66 @@ class LibraryScanner(
         )
     }
 
-    /**
-     * WebDAV 来源：列一层目录，认出能当书的文件。
-     * v1 只看一层（子目录先不递归），远端「一本一个文件」的结构最常见。
-     */
-    private suspend fun scanRemote(source: SourceEntity): Result {
+    /** 远端列表里的一条：入库只需要这三样 */
+    private class RemoteFile(val docRef: String, val name: String, val size: Long)
+
+    private suspend fun scanWebDav(source: SourceEntity): Result {
         val endpoint = source.endpoint ?: throw IllegalArgumentException("来源没有地址")
         val client = WebDavClient(source.account, secrets.get(source.secretRef))
 
-        db.sourceDao().setScanState(source.id, SourceEntity.STATE_SCANNING, null, System.currentTimeMillis())
-
-        val entries = try {
+        return scanRemote(source) {
             client.list(endpoint)
-        } catch (e: WebDavException) {
-            val code = when (e.status) {
-                401, 403 -> SourceEntity.ERROR_AUTH
-                else -> SourceEntity.ERROR_UNREACHABLE
-            }
-            db.sourceDao().setScanState(source.id, SourceEntity.STATE_FAILED, code, System.currentTimeMillis())
-            throw e
+                .filter { !it.isDirectory && ScanRules.isSingleBookFile(it.name) }
+                .map { RemoteFile(it.url, it.name, it.size) }
+        }
+    }
+
+    private suspend fun scanSmb(source: SourceEntity): Result {
+        val target = SmbTarget.parse(source.endpoint ?: throw IllegalArgumentException("来源没有地址"))
+        val client = SmbClient(target, source.account, secrets.get(source.secretRef))
+
+        return scanRemote(source) {
+            client.list(target.path)
+                .filter { !it.isDirectory && ScanRules.isSingleBookFile(it.name) }
+                .map { RemoteFile(it.path, it.name, it.size) }
+        }
+    }
+
+    /**
+     * 远端来源的公共流程：列一层 → 认书 → 入库 → 清掉已消失的。
+     * WebDAV 与 SMB 只差「怎么列出文件名」，所以这一段只写一份。
+     */
+    private suspend fun scanRemote(
+        source: SourceEntity,
+        listFiles: () -> List<RemoteFile>,
+    ): Result {
+        val startedAt = System.currentTimeMillis()
+        db.sourceDao().setScanState(source.id, SourceEntity.STATE_SCANNING, null, startedAt)
+
+        val files = try {
+            listFiles()
         } catch (e: Exception) {
-            db.sourceDao().setScanState(
-                source.id, SourceEntity.STATE_FAILED, SourceEntity.ERROR_UNREACHABLE, System.currentTimeMillis()
-            )
+            db.sourceDao().setScanState(source.id, SourceEntity.STATE_FAILED, errorCodeOf(e), startedAt)
             throw e
         }
 
-        val files = entries.filter { !it.isDirectory && ScanRules.isSingleBookFile(it.name) }
         val now = System.currentTimeMillis()
         var added = 0
         var updated = 0
 
-        for (entry in files) {
-            val title = ScanRules.titleOf(entry.name)
-            val format = formatOf(entry.name)
-            val existing = db.bookDao().findByRef(source.id, entry.url)
+        for (file in files) {
+            val title = ScanRules.titleOf(file.name)
+            val existing = db.bookDao().findByRef(source.id, file.docRef)
             if (existing == null) {
                 added++
                 db.bookDao().insert(
                     BookEntity(
                         sourceId = source.id,
-                        docRef = entry.url,
+                        docRef = file.docRef,
                         title = title,
                         titleSort = NaturalSort.key(title),
-                        format = format,
-                        byteSize = entry.size.coerceAtLeast(0),
+                        format = formatOf(file.name),
+                        byteSize = file.size.coerceAtLeast(0),
                         chapterTotal = 0,
                         isSingleVolume = 1,
                         addedAt = now,
@@ -202,14 +223,14 @@ class LibraryScanner(
                     existing.copy(
                         title = title,
                         titleSort = NaturalSort.key(title),
-                        byteSize = entry.size.coerceAtLeast(0),
+                        byteSize = file.size.coerceAtLeast(0),
                         modifiedAt = now,
                     )
                 )
             }
         }
 
-        val present = files.map { it.url }
+        val present = files.map { it.docRef }
         if (present.isEmpty()) {
             db.bookDao().deleteBySource(source.id)
         } else {
@@ -217,13 +238,14 @@ class LibraryScanner(
         }
         db.sourceDao().setScanState(source.id, SourceEntity.STATE_DONE, null, now)
 
-        return Result(
-            found = files.size,
-            added = added,
-            updated = updated,
-            removed = 0,
-            chaptered = 0,
-        )
+        return Result(found = files.size, added = added, updated = updated, removed = 0, chaptered = 0)
+    }
+
+    /** 账号不对和连不上要分开报：前者提示改密码，后者提示查地址与网络 */
+    private fun errorCodeOf(e: Exception): Int = when {
+        e is WebDavException && (e.status == 401 || e.status == 403) -> SourceEntity.ERROR_AUTH
+        e is SmbException && e.authFailed -> SourceEntity.ERROR_AUTH
+        else -> SourceEntity.ERROR_UNREACHABLE
     }
 
     private fun formatOf(name: String): Int = when {

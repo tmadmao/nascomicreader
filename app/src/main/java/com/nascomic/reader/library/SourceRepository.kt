@@ -77,6 +77,46 @@ class SourceRepository(
         return id
     }
 
+    /**
+     * 登记一个 SMB 来源。地址在这里就校验一遍——解析不出共享名说明是错的，
+     * 早点报比等到扫描时再报清楚。
+     */
+    suspend fun addSmb(
+        endpoint: String,
+        account: String?,
+        password: String?,
+        label: String?,
+    ): Long {
+        val target = com.nascomic.reader.smb.SmbTarget.parse(endpoint)
+        val url = buildString {
+            append("smb://").append(target.host)
+            if (target.port != com.nascomic.reader.smb.SmbTarget.DEFAULT_PORT) {
+                append(':').append(target.port)
+            }
+            append('/').append(target.share)
+            if (target.path.isNotEmpty()) append('/').append(target.path)
+        }
+
+        val display = label?.takeIf { it.isNotBlank() }
+            ?: (target.share + if (target.path.isEmpty()) "" else "/${target.path}")
+
+        val id = db.sourceDao().insert(
+            SourceEntity(
+                kind = SourceEntity.KIND_SMB,
+                label = display,
+                endpoint = url,
+                account = account?.takeIf { it.isNotBlank() },
+                addedAt = System.currentTimeMillis(),
+            )
+        )
+        if (!password.isNullOrBlank()) {
+            val key = "smb_$id"
+            SecretStore(context).put(key, password)
+            db.sourceDao().get(id)?.let { db.sourceDao().upsert(it.copy(secretRef = key)) }
+        }
+        return id
+    }
+
     /** 地址补全协议与结尾斜杠，避免用户少打一个字符就列不出目录 */
     fun normalizeEndpoint(raw: String): String {
         var url = raw.trim()
