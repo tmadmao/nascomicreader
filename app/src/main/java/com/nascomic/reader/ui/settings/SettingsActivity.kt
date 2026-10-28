@@ -696,7 +696,12 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 val source = db.sourceDao().get(id)
                 val result = source?.let { scanner.scan(it) }
-                getString(R.string.source_added, source?.label.orEmpty(), result?.found ?: 0)
+                // 远程只认这一层里的单文件，子文件夹不递归；扫到 0 本时说清是为什么
+                if ((result?.found ?: 0) == 0) {
+                    getString(R.string.source_added_empty, source?.label.orEmpty())
+                } else {
+                    getString(R.string.source_added, source?.label.orEmpty(), result?.found ?: 0)
+                }
             } catch (e: Exception) {
                 getString(R.string.source_rescan_failed, remoteErrorText(this@SettingsActivity, e))
             }

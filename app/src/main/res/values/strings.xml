@@ -186,6 +186,7 @@
     <string name="source_rename_title">重命名书库</string>
     <string name="source_rename_hint">名称</string>
     <string name="source_added">已添加「%1$s」，发现 %2$d 本</string>
+    <string name="source_added_empty">已添加「%1$s」，但这一层没有能直接打开的书（子文件夹暂不递归，往里再选一层）</string>
     <string name="source_failed">添加失败：%1$s</string>
 
     <string name="settings_flip_direction">翻页方向</string>
