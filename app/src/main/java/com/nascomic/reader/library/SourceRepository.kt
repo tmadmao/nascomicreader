@@ -118,6 +118,16 @@ class SourceRepository(
     }
 
     /**
+     * 改名。书库名是用户自己起的，默认由地址或文件夹名兜底，随时可改。
+     */
+    suspend fun rename(sourceId: Long, label: String) {
+        val name = label.trim()
+        if (name.isEmpty()) return
+        val source = db.sourceDao().get(sourceId) ?: return
+        db.sourceDao().upsert(source.copy(label = name))
+    }
+
+    /**
      * 删掉一个来源。书、章、进度、书签由外键级联删除，密码要单独清
      * （它不在库里），本地目录还要把系统授权退回去，否则会一直挂在系统里。
      */

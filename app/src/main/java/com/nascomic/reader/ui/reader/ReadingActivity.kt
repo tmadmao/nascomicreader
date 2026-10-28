@@ -169,7 +169,10 @@ class ReadingActivity : AppCompatActivity() {
                 showPage()
                 saveProgress()
             } catch (e: Exception) {
-                showError(e.message ?: getString(R.string.reader_open_failed))
+                // 打不开很常见（包损坏、授权丢了、远端断开）。界面只给一句人话，
+                // 具体是哪个库报的什么错，留给日志——原生库的原文还是英文
+                android.util.Log.w("Reading", "打不开书：$bookId", e)
+                showError(getString(R.string.reader_open_failed))
             } finally {
                 binding.loading.isVisible = false
             }

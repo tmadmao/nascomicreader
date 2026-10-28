@@ -233,10 +233,31 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * 本地目录选完后先问名字。系统选择器只给路径，名字得留给用户——
+     * 一柜子「Download」「漫画」分不清谁是谁。
+     */
     private fun addLocalFolder(uri: android.net.Uri) {
+        val suggested = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':').orEmpty()
+        val input = EditText(this).apply {
+            hint = getString(R.string.source_local_label_hint)
+            setText(suggested)
+            setSelection(text.length)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.source_local_label_hint)
+            .setView(input)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                scanLocalFolder(uri, input.text.toString().trim())
+            }
+            .show()
+    }
+
+    private fun scanLocalFolder(uri: android.net.Uri, label: String) {
         lifecycleScope.launch {
             val toast = try {
-                val id = repository.addLocalFolder(uri, null)
+                val id = repository.addLocalFolder(uri, label.ifBlank { null })
                 val source = db.sourceDao().get(id)
                 val found = source?.let { scanner.scan(it).found } ?: 0
                 getString(R.string.source_added, source?.label.orEmpty(), found)
@@ -280,7 +301,7 @@ class SettingsActivity : AppCompatActivity() {
         row.addView(titleBlock(source.label, describe(source)), weighted())
         row.setOnClickListener { rescan(source) }
         row.setOnLongClickListener {
-            confirmRemove(source)
+            showSourceActions(source)
             true
         }
         return withDivider(row)
@@ -331,6 +352,39 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
             buildRows()
         }
+    }
+
+    /** 长按来源：改名或删掉 */
+    private fun showSourceActions(source: SourceEntity) {
+        AlertDialog.Builder(this)
+            .setItems(
+                arrayOf(
+                    getString(R.string.source_rename),
+                    getString(R.string.action_delete),
+                )
+            ) { _, which ->
+                if (which == 0) renameSource(source) else confirmRemove(source)
+            }
+            .show()
+    }
+
+    private fun renameSource(source: SourceEntity) {
+        val input = EditText(this).apply {
+            hint = getString(R.string.source_rename_hint)
+            setText(source.label)
+            setSelection(text.length)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.source_rename_title)
+            .setView(input)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                lifecycleScope.launch {
+                    repository.rename(source.id, input.text.toString())
+                    buildRows()
+                }
+            }
+            .show()
     }
 
     private fun confirmRemove(source: SourceEntity) {
@@ -394,22 +448,29 @@ class SettingsActivity : AppCompatActivity() {
                 val endpoint = content.findViewById<EditText>(R.id.remote_endpoint)
                     .text.toString().trim()
                 if (endpoint.isEmpty()) return@setPositiveButton
+                val label = content.findViewById<EditText>(R.id.remote_label).text.toString().trim()
                 val account = content.findViewById<EditText>(R.id.remote_account)
                     .text.toString().trim()
                 val password = content.findViewById<EditText>(R.id.remote_password)
                     .text.toString()
-                addRemote(kind, endpoint, account, password)
+                addRemote(kind, endpoint, account, password, label)
             }
             .show()
     }
 
-    private fun addRemote(kind: Int, endpoint: String, account: String, password: String) {
+    private fun addRemote(
+        kind: Int,
+        endpoint: String,
+        account: String,
+        password: String,
+        label: String,
+    ) {
         lifecycleScope.launch {
             val toast = try {
                 val id = if (kind == SourceEntity.KIND_SMB) {
-                    repository.addSmb(endpoint, account, password, null)
+                    repository.addSmb(endpoint, account, password, label.ifBlank { null })
                 } else {
-                    repository.addWebDav(endpoint, account, password, null)
+                    repository.addWebDav(endpoint, account, password, label.ifBlank { null })
                 }
                 val source = db.sourceDao().get(id)
                 val result = source?.let { scanner.scan(it) }

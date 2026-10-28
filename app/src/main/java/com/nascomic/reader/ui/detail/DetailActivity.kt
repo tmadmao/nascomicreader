@@ -54,6 +54,9 @@ class DetailActivity : AppCompatActivity() {
     /** 数据装载过一次之后，onResume 才有东西可刷新 */
     private var loaded = false
 
+    /** 量页失败过（文件损坏、远端断开）：提示要停在失败上，不能一直说「正在统计」 */
+    private var countFailed = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
@@ -89,6 +92,7 @@ class DetailActivity : AppCompatActivity() {
                 bookmarks = db.bookmarkDao().forBookNow(bookId)
 
                 if (detail == null) {
+                    countFailed = true
                     binding.tocHint.text = getString(R.string.detail_count_failed)
                 }
                 render()
@@ -167,10 +171,10 @@ class DetailActivity : AppCompatActivity() {
         if (!isChaptered) {
             binding.tocHeader.isVisible = false
             binding.tocHint.isVisible = true
-            binding.tocHint.text = if (b.pageTotal > 0) {
-                getString(R.string.detail_no_toc)
-            } else {
-                getString(R.string.detail_counting)
+            binding.tocHint.text = when {
+                b.pageTotal > 0 -> getString(R.string.detail_no_toc)
+                countFailed -> getString(R.string.detail_count_failed)
+                else -> getString(R.string.detail_counting)
             }
             return
         }

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.NasComic" parent="Theme.Material3.DayNight.NoActionBar">
+    <!--
+      固定浅色：整套配色是手写的纸面色（见 colors.xml），没有深色变体。
+      跟着系统变成 DayNight 会出现「浅色页面 + 深色控件/对话框」的错位，
+      所以这里锁浅色；深色主题等有一套配色再做。
+    -->
+    <style name="Theme.NasComic" parent="Theme.Material3.Light.NoActionBar">
         <item name="colorPrimary">@color/brand_indigo</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorSurface">@color/shell_background</item>

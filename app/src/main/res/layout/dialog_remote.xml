@@ -7,6 +7,15 @@
     android:paddingTop="8dp">
 
     <EditText
+        android:id="@+id/remote_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/source_label_hint"
+        android:inputType="text"
+        android:maxLines="1"
+        android:textSize="14sp" />
+
+    <EditText
         android:id="@+id/remote_endpoint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
