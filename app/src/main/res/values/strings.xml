@@ -13,11 +13,8 @@
     <string name="scan_title">正在扫描书库</string>
     <string name="scan_listing">正在读取「%1$s」的目录…</string>
     <string name="scan_progress">已读 %1$d / %2$d 本</string>
-    <string name="status_scanning_named">正在扫描「%1$s」…</string>
     <string name="status_scan_done">「%1$s」扫描完成\n发现 %2$d 本 · 新增 %3$d · 更新 %4$d</string>
     <string name="status_scan_failed">扫描失败：%1$s</string>
-    <string name="status_rescan_done">%1$d 个来源扫描完成 · 共 %2$d 本</string>
-    <string name="status_no_source">还没有添加过目录</string>
     <string name="status_source_missing">来源记录丢失，请重新选择目录</string>
 
     <string name="reader_page_format">%1$d / %2$d</string>
@@ -47,8 +44,6 @@
     <string name="unit_chapter">章</string>
     <string name="unit_page">页</string>
 
-    <string name="action_add_folder">添加目录</string>
-    <string name="action_rescan_short">重新扫描</string>
     <string name="shelf_meta_chapter">第 %1$d 话 / %2$d 话</string>
     <string name="shelf_meta_pages">第 %1$d / %2$d 页</string>
     <string name="shelf_meta_unread_chapter">未开始 · %1$d 话</string>

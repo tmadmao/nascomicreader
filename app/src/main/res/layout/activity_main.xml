@@ -42,25 +42,6 @@
                 android:textStyle="bold" />
 
             <ImageView
-                android:id="@+id/rescan"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/action_rescan_short"
-                android:padding="7dp"
-                android:src="@drawable/ic_refresh" />
-
-            <ImageView
-                android:id="@+id/add_folder"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginStart="2dp"
-                android:background="@drawable/bg_circle_white"
-                android:contentDescription="@string/action_add_folder"
-                android:padding="8dp"
-                android:src="@drawable/ic_add" />
-
-            <ImageView
                 android:id="@+id/settings"
                 android:layout_width="36dp"
                 android:layout_height="36dp"

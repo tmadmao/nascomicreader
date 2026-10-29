@@ -78,12 +78,10 @@ class MainActivity : AppCompatActivity() {
         binding.grid.adapter = adapter
         applyGridMetrics()
 
-        binding.addFolder.setOnClickListener { pickFolder.launch(null) }
         binding.emptyLocal.setOnClickListener { pickFolder.launch(null) }
         binding.emptyRemote.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        binding.rescan.setOnClickListener { rescanAll() }
         binding.grid.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {
                 if (dy != 0) requestVisibleCovers()
@@ -356,28 +354,6 @@ class MainActivity : AppCompatActivity() {
             } finally {
                 progress.dismiss()
             }
-        }
-    }
-
-    private fun rescanAll() {
-        lifecycleScope.launch {
-            val all = sources.list()
-            if (all.isEmpty()) {
-                status(getString(R.string.status_no_source))
-                return@launch
-            }
-            val progress = ScanProgressDialog(this@MainActivity)
-            var total = 0
-            for (s in all) {
-                status(getString(R.string.status_scanning_named, s.label))
-                progress.showListing(s.label)
-                total += runCatching {
-                    scanner.scan(s, listenerFor(progress, s.label)).found
-                }.getOrDefault(0)
-            }
-            progress.dismiss()
-            status(getString(R.string.status_rescan_done, all.size, total))
-            refresh()
         }
     }
 
