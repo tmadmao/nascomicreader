@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivityAboutBinding
+import com.nascomic.reader.ui.widget.padBySystemBars
 
 /**
  * 关于页：版本、开源许可、源码、赞助。
@@ -19,6 +20,8 @@ class AboutActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityAboutBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Android 15 起强制边到边：自己让开状态栏与导航条
+        binding.root.padBySystemBars()
 
         binding.back.setOnClickListener { finish() }
         binding.version.text = versionText()

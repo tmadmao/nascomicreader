@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.nascomic.reader.databinding.ActivityLicensesBinding
+import com.nascomic.reader.ui.widget.padBySystemBars
 
 /**
  * 原样显示仓库根的一份许可文本文件（NOTICE / LICENSE，构建时复制进 assets）。
@@ -19,6 +20,8 @@ class LicensesActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityLicensesBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Android 15 起强制边到边：自己让开状态栏与导航条
+        binding.root.padBySystemBars()
 
         val asset = intent.getStringExtra(EXTRA_ASSET).orEmpty()
         binding.title.text = intent.getStringExtra(EXTRA_TITLE).orEmpty()

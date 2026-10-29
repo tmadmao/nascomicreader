@@ -25,6 +25,7 @@ import com.nascomic.reader.library.detail.BookDetailLoader
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.reader.ReadingActivity
+import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,6 +69,8 @@ class DetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Android 15 起强制边到边：自己让开状态栏与导航条
+        binding.root.padBySystemBars()
 
         bookId = intent.getLongExtra(EXTRA_BOOK_ID, 0L)
         if (bookId == 0L) {

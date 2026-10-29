@@ -29,6 +29,7 @@ import com.nascomic.reader.ui.settings.SettingsActivity
 import com.nascomic.reader.ui.shelf.ShelfAdapter
 import com.nascomic.reader.ui.shelf.ShelfGrid
 import com.nascomic.reader.ui.widget.ScanProgressDialog
+import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -70,6 +71,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Android 15 起强制边到边：自己让开状态栏与导航条
+        binding.root.padBySystemBars()
 
         adapter = ShelfAdapter(thumbs, { openBook(it) }, { id -> requestCover(id) })
         binding.grid.adapter = adapter

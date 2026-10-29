@@ -21,6 +21,7 @@ import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.smb.SmbClient
 import com.nascomic.reader.smb.SmbTarget
 import com.nascomic.reader.webdav.WebDavClient
+import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,6 +63,8 @@ class RemotePickerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityRemotePickerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Android 15 起强制边到边：自己让开状态栏与导航条
+        binding.root.padBySystemBars()
 
         kind = intent.getIntExtra(EXTRA_KIND, SourceEntity.KIND_WEBDAV)
         account = intent.getStringExtra(EXTRA_ACCOUNT)?.takeIf { it.isNotBlank() }

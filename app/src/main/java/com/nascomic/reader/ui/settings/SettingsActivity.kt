@@ -24,6 +24,7 @@ import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.about.AboutActivity
 import com.nascomic.reader.ui.sources.SourcesActivity
+import com.nascomic.reader.ui.widget.padBySystemBars
 
 /**
  * 设置。按组排列，改动立即写入（读取端在 [ReaderPrefs] / [AppPrefs]）。
@@ -46,6 +47,8 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Android 15 起强制边到边：自己让开状态栏与导航条
+        binding.root.padBySystemBars()
 
         binding.back.setOnClickListener { finish() }
         buildRows()
