@@ -24,7 +24,6 @@ import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.about.AboutActivity
-import com.nascomic.reader.ui.about.LicensesActivity
 import com.nascomic.reader.ui.sources.SourcesActivity
 import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.launch
@@ -379,15 +378,8 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    /** 其他：许可、关于、恢复默认 */
+    /** 其他：关于、恢复默认。开源许可在关于页里，不在这里再摆一个 */
     private fun buildOtherRows(): List<View> = collect {
-        addView(
-            choiceRowWithValue(
-                title = getString(R.string.about_licenses),
-                desc = getString(R.string.about_licenses_desc),
-            ) { startActivity(Intent(this@SettingsActivity, LicensesActivity::class.java)) }
-        )
-
         addView(
             choiceRowWithValue(
                 title = getString(R.string.settings_about_row),
