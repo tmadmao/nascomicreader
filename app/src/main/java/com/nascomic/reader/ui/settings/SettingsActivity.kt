@@ -332,6 +332,14 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         addView(
+            switchRow(
+                title = getString(R.string.settings_skip_detail),
+                desc = getString(R.string.settings_skip_detail_desc),
+                checked = prefs.skipDetail,
+            ) { checked -> prefs.skipDetail = checked }
+        )
+
+        addView(
             placeholderRow(
                 title = getString(R.string.settings_native_decode),
                 desc = getString(R.string.settings_native_decode_desc),
@@ -371,16 +379,8 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    /** 其他：跳详情、许可、关于、恢复默认 */
+    /** 其他：许可、关于、恢复默认 */
     private fun buildOtherRows(): List<View> = collect {
-        addView(
-            switchRow(
-                title = getString(R.string.settings_skip_detail),
-                desc = getString(R.string.settings_skip_detail_desc),
-                checked = prefs.skipDetail,
-            ) { checked -> prefs.skipDetail = checked }
-        )
-
         addView(
             choiceRowWithValue(
                 title = getString(R.string.about_licenses),
