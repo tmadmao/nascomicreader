@@ -153,16 +153,55 @@
     <string name="settings_sources_entry_empty">还没有书源</string>
     <string name="settings_sources_entry_desc">本地 %1$d · WebDAV %2$d · SMB %3$d</string>
 
+    <!-- 设置页：六组（照界面稿），没做的功能先占位 -->
+    <string name="settings_group_library">书库与仓库</string>
+    <string name="settings_group_flip">翻页与手势</string>
+    <string name="settings_group_zoom">缩放</string>
+    <string name="settings_group_layout">版面与显示</string>
+    <string name="settings_group_perf">动画与性能</string>
+    <string name="settings_group_other">其他</string>
+    <string name="settings_not_implemented">未实现</string>
+
+    <string name="settings_scan_rules">扫描规则</string>
+    <string name="settings_scan_rules_desc">封面、去重、排序</string>
+    <string name="settings_read_direction">阅读方向</string>
+    <string name="settings_read_direction_desc">水平翻页（竖向滚动还没做）</string>
+    <string name="settings_swap_zones">左右分区互换</string>
+    <string name="settings_swap_zones_desc">打开后点左边看下一页</string>
+    <string name="settings_tap_turn">点击翻页</string>
+    <string name="settings_tap_turn_desc">点屏幕左右区域翻页；关掉只能摇工具栏翻</string>
+    <string name="settings_jump_distance">跳进距离</string>
+    <string name="settings_jump_distance_desc">一屏内 · 半屏 · 整屏</string>
+    <string name="settings_volume_keys">音量键翻页</string>
+    <string name="settings_volume_keys_desc">音量键上下翻页</string>
+    <string name="settings_zone_hint">分区提示</string>
+    <string name="settings_zone_hint_desc">刚进阅读时标出左右分区的分界</string>
+    <string name="settings_double_tap_zoom">双击缩放</string>
+    <string name="settings_double_tap_zoom_desc">仅水平阅读时生效</string>
+    <string name="settings_double_tap_anchor">双击后对准</string>
+    <string name="settings_double_tap_anchor_desc">点击点 · 屏幕中心</string>
+    <string name="settings_long_press_zoom">长按缩放</string>
+    <string name="settings_long_press_zoom_desc">默认关闭</string>
+    <string name="settings_pinch_zoom">双指缩放</string>
+    <string name="settings_pinch_zoom_desc">两指捏合缩放整页</string>
+    <string name="settings_page_fit">页面适应</string>
+    <string name="settings_page_fit_desc">按宽度 · 完整显示</string>
+    <string name="settings_native_decode">原尺寸解码</string>
+    <string name="settings_native_decode_desc">更清晰，占用内存更多</string>
+    <string name="settings_turn_animation">翻页动画</string>
+    <string name="settings_turn_animation_desc">默认关闭</string>
+    <string name="settings_cache_limit">内存缓存上限</string>
+    <string name="settings_cache_limit_desc">超出后先丢最久没看的页</string>
+    <string name="settings_reset">恢复默认设置</string>
+    <string name="settings_reset_desc">把上面所有参数还原成初始值</string>
+    <string name="settings_reset_title">恢复默认设置</string>
+    <string name="settings_reset_message">阅读参数会还原成初始值。书源、书架与阅读进度不受影响。</string>
+    <string name="settings_reset_done">已恢复默认设置</string>
+
     <string name="settings_title">设置</string>
     <string name="settings_skip_detail">跳过详情页</string>
     <string name="settings_skip_detail_desc">打开书时直接继续阅读，不显示详情页</string>
 
-    <string name="settings_section_reading">阅读</string>
-    <string name="settings_section_other">其他</string>
-    <string name="settings_about">关于</string>
-    <string name="settings_group_count">%1$d 项</string>
-    <string name="settings_expand_all">全部展开</string>
-    <string name="settings_collapse_all">全部收起</string>
     <string name="settings_about_row">关于本应用</string>
     <string name="settings_about_desc">版本、开源许可、源代码与赞助</string>
 

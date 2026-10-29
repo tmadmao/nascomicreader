@@ -3,19 +3,20 @@ package com.nascomic.reader.ui.settings
 import android.content.Intent
 import android.os.Bundle
 import android.util.TypedValue
-import android.widget.ImageView
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
-import kotlinx.coroutines.launch
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivitySettingsBinding
-import androidx.lifecycle.lifecycleScope
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
@@ -23,13 +24,18 @@ import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.about.AboutActivity
+import com.nascomic.reader.ui.about.LicensesActivity
 import com.nascomic.reader.ui.sources.SourcesActivity
 import com.nascomic.reader.ui.widget.padBySystemBars
+import kotlinx.coroutines.launch
 
 /**
- * 设置。按组排列，改动立即写入（读取端在 [ReaderPrefs] / [AppPrefs]）。
+ * 设置。照界面稿分六组，全部默认展开——手机上滚一遍就到底，折叠反而多点一下。
  *
- * 行由代码拼，不用 preference 库：这里的控件只有开关、单选、滑杆三种，
+ * 还没做的功能留着占位行（灰字 + 「未实现」小标），点不动，也不假装能调；
+ * 做过的参数按语义放进最贴近的那一组。
+ *
+ * 行由代码拼，不用 preference 库：控件只有开关、单选、滑杆三种，
  * 自己拼比引一套框架再和它的主题打架划算。
  */
 class SettingsActivity : AppCompatActivity() {
@@ -39,9 +45,6 @@ class SettingsActivity : AppCompatActivity() {
     private val reader by lazy { ReaderPrefs(this) }
     private val db by lazy { ReaderDatabase.get(this) }
     private val repository by lazy { SourceRepository(this, db) }
-
-    /** 展开着哪几组。默认只开「阅读」 */
-    private val expanded = mutableSetOf(GROUP_READING)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,50 +57,61 @@ class SettingsActivity : AppCompatActivity() {
         buildRows()
     }
 
-    /**
-     * 分组抽屉：每组一行（组名 + 项数 + 箭头），点开才展开内容。
-     * 默认只展开第一组——全收起会让人以为页面没做完，全展开又太长。
-     */
+    // ── 六组 ───────────────────────────────────────────────
+
     private fun buildRows() {
         val host = binding.settingsContainer
         host.removeAllViews()
 
-        addSourceEntry(host)
-        addGroup(host, GROUP_READING, getString(R.string.settings_section_reading), buildReadingRows())
-        addGroup(host, GROUP_OTHER, getString(R.string.settings_section_other), buildOtherRows())
-        addGroup(host, GROUP_ABOUT, getString(R.string.settings_about), buildAboutRows())
-
-        binding.expandAll.text = getString(
-            if (expanded.size == GROUP_ALL.size) R.string.settings_collapse_all
-            else R.string.settings_expand_all
-        )
-        binding.expandAll.setOnClickListener {
-            if (expanded.size == GROUP_ALL.size) expanded.clear() else expanded.addAll(GROUP_ALL)
-            buildRows()
-        }
+        addGroup(host, R.string.settings_group_library, buildLibraryRows())
+        addGroup(host, R.string.settings_group_flip, buildFlipRows())
+        addGroup(host, R.string.settings_group_zoom, buildZoomRows())
+        addGroup(host, R.string.settings_group_layout, buildLayoutRows())
+        addGroup(host, R.string.settings_group_perf, buildPerfRows())
+        addGroup(host, R.string.settings_group_other, buildOtherRows())
     }
 
-    /**
-     * 「书源管理」入口：设置页第一个，不是抽屉，点一下进第三页。
-     * 下面那行小字报现状——本地 1 · WebDAV 1 · SMB 0。
-     */
-    private fun addSourceEntry(host: LinearLayout) {
+    /** 组头只有一行标题：没有项数，也没有展开箭头 */
+    private fun addGroup(host: LinearLayout, titleRes: Int, rows: List<View>) {
+        host.addView(TextView(this).apply {
+            text = getString(titleRes)
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(getColor(R.color.shell_ink))
+            setPadding(dp(PAGE_MARGIN), dp(18), dp(PAGE_MARGIN), dp(8))
+        })
+
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = getDrawable(R.drawable.bg_card)
             clipToOutline = true
         }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            isBaselineAligned = false
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            isClickable = true
-            setBackgroundResource(selectableBackground())
-            setOnClickListener {
-                startActivity(Intent(this@SettingsActivity, SourcesActivity::class.java))
-            }
-        }
+        rows.forEach { card.addView(it) }
+        host.addView(card, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            marginStart = dp(PAGE_MARGIN)
+            marginEnd = dp(PAGE_MARGIN)
+        })
+    }
+
+    /** 书库与仓库：书源管理（真） + 扫描规则（占位） */
+    private fun buildLibraryRows(): List<View> = collect {
+        addView(sourceEntryRow())
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_scan_rules),
+                desc = getString(R.string.settings_scan_rules_desc),
+            )
+        )
+    }
+
+    /**
+     * 「书源管理」入口：右侧那行小字报现状——本地 1 · WebDAV 1 · SMB 0。
+     */
+    private fun sourceEntryRow(): View {
+        val row = rowContainer()
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         texts.addView(TextView(this).apply {
             text = getString(R.string.settings_sources_entry)
@@ -114,17 +128,9 @@ class SettingsActivity : AppCompatActivity() {
         texts.addView(desc)
         row.addView(texts, weighted())
         row.addView(chevron())
-        card.addView(row)
-
-        host.addView(card, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            marginStart = dp(PAGE_MARGIN)
-            marginEnd = dp(PAGE_MARGIN)
-            topMargin = dp(4)
-            bottomMargin = dp(2)
-        })
+        row.setOnClickListener {
+            startActivity(Intent(this@SettingsActivity, SourcesActivity::class.java))
+        }
 
         lifecycleScope.launch {
             val list = repository.list()
@@ -139,93 +145,97 @@ class SettingsActivity : AppCompatActivity() {
                 )
             }
         }
+        return withDivider(row)
     }
 
-    private fun addGroup(host: LinearLayout, key: String, title: String, rows: List<View>) {
-        val isOpen = expanded.contains(key)
-        host.addView(groupHeader(title, rows.size, isOpen) {
-            if (isOpen) expanded.remove(key) else expanded.add(key)
-            buildRows()
-        })
-        if (!isOpen) return
-
-        // 展开的内容装进一张白卡：行与行之间一条发丝线，卡片自己收边
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = getDrawable(R.drawable.bg_card)
-            clipToOutline = true
-        }
-        rows.forEach { card.addView(it) }
-        host.addView(card, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            marginStart = dp(PAGE_MARGIN)
-            marginEnd = dp(PAGE_MARGIN)
-            topMargin = dp(2)
-            bottomMargin = dp(4)
-        })
-    }
-
-    private fun groupHeader(title: String, count: Int, isOpen: Boolean, onToggle: () -> Unit): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(PAGE_MARGIN), dp(16), dp(PAGE_MARGIN), dp(10))
-            background = getDrawable(R.drawable.bg_group_header)
-            setOnClickListener { onToggle() }
-        }
-        row.addView(TextView(this).apply {
-            text = title
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(getColor(R.color.shell_ink))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        row.addView(TextView(this).apply {
-            text = getString(R.string.settings_group_count, count)
-            textSize = 10f
-            setTextColor(getColor(R.color.shell_ink_faint))
-            setPadding(0, 0, dp(6), 0)
-        })
-        row.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_chevron_down)
-            rotation = if (isOpen) 180f else 0f
-        }, LinearLayout.LayoutParams(dp(16), dp(16)))
-        return row
-    }
-
-    /**
-     * 把一组行先塞进临时容器再取出来，避免把每种行都写成「返回 View」。
-     * 取出时必须从容器里摘掉，否则再 addView 会报「child already has a parent」。
-     */
-    private fun collect(block: LinearLayout.() -> Unit): List<View> {
-        val temp = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        temp.block()
-        val out = ArrayList<View>(temp.childCount)
-        while (temp.childCount > 0) {
-            val child = temp.getChildAt(0)
-            temp.removeViewAt(0)
-            out += child
-        }
-        return out
-    }
-
-    private fun buildReadingRows(): List<View> = collect {
-
+    /** 翻页与手势：两个真开关 + 五个占位 */
+    private fun buildFlipRows(): List<View> = collect {
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_read_direction),
+                desc = getString(R.string.settings_read_direction_desc),
+            )
+        )
 
         addView(
-            choiceRow(
-                title = getString(R.string.settings_flip_direction),
-                desc = getString(R.string.settings_flip_direction_desc),
-                options = listOf(
-                    getString(R.string.settings_flip_ltr),
-                    getString(R.string.settings_flip_rtl),
-                ),
-                selected = if (reader.flipForwardRight) 0 else 1,
-            ) { index ->
-                reader.flipForwardRight = index == 0
-            }
+            switchRow(
+                title = getString(R.string.settings_swap_zones),
+                desc = getString(R.string.settings_swap_zones_desc),
+                checked = !reader.flipForwardRight,
+            ) { checked -> reader.flipForwardRight = !checked }
+        )
+
+        addView(
+            switchRow(
+                title = getString(R.string.settings_tap_turn),
+                desc = getString(R.string.settings_tap_turn_desc),
+                checked = reader.tapToTurn,
+            ) { checked -> reader.tapToTurn = checked }
+        )
+
+        addView(
+            switchRow(
+                title = getString(R.string.settings_skip_blank),
+                desc = getString(R.string.settings_skip_blank_desc),
+                checked = reader.skipBlank,
+            ) { checked -> reader.skipBlank = checked }
+        )
+
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_jump_distance),
+                desc = getString(R.string.settings_jump_distance_desc),
+            )
+        )
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_volume_keys),
+                desc = getString(R.string.settings_volume_keys_desc),
+            )
+        )
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_zone_hint),
+                desc = getString(R.string.settings_zone_hint_desc),
+            )
+        )
+    }
+
+    /** 缩放：这一组全是还没做的 */
+    private fun buildZoomRows(): List<View> = collect {
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_double_tap_zoom),
+                desc = getString(R.string.settings_double_tap_zoom_desc),
+            )
+        )
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_double_tap_anchor),
+                desc = getString(R.string.settings_double_tap_anchor_desc),
+            )
+        )
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_long_press_zoom),
+                desc = getString(R.string.settings_long_press_zoom_desc),
+            )
+        )
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_pinch_zoom),
+                desc = getString(R.string.settings_pinch_zoom_desc),
+            )
+        )
+    }
+
+    /** 版面与显示：阅读时真正会变样子的一批参数 */
+    private fun buildLayoutRows(): List<View> = collect {
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_page_fit),
+                desc = getString(R.string.settings_page_fit_desc),
+            )
         )
 
         addView(
@@ -274,16 +284,15 @@ class SettingsActivity : AppCompatActivity() {
             ) { value -> reader.sideMarginDp = value }
         )
 
-        val canvasLabels = listOf(
-            getString(R.string.settings_canvas_light),
-            getString(R.string.settings_canvas_dark),
-            getString(R.string.settings_canvas_black),
-        )
         addView(
             choiceRow(
                 title = getString(R.string.settings_canvas),
                 desc = null,
-                options = canvasLabels,
+                options = listOf(
+                    getString(R.string.settings_canvas_light),
+                    getString(R.string.settings_canvas_dark),
+                    getString(R.string.settings_canvas_black),
+                ),
                 selected = ReaderPrefs.Canvas.of(reader.canvas).ordinal,
             ) { index ->
                 reader.canvas = ReaderPrefs.Canvas.entries[index].value
@@ -300,38 +309,11 @@ class SettingsActivity : AppCompatActivity() {
 
         addView(
             switchRow(
-                title = getString(R.string.settings_skip_blank),
-                desc = getString(R.string.settings_skip_blank_desc),
-                checked = reader.skipBlank,
-            ) { checked -> reader.skipBlank = checked }
-        )
-
-        addView(
-            sliderRow(
-                title = getString(R.string.settings_prefetch),
-                desc = getString(R.string.settings_prefetch_desc),
-                min = 0,
-                max = 12,
-                step = 1,
-                initial = reader.prefetchPages,
-                format = {
-                    if (it == 0) getString(R.string.settings_prefetch_off)
-                    else getString(R.string.settings_prefetch_value, it)
-                },
-            ) { value -> reader.prefetchPages = value }
-        )
-
-        addView(
-            switchRow(
                 title = getString(R.string.settings_keep_screen_on),
                 desc = getString(R.string.settings_keep_screen_on_desc),
                 checked = reader.keepScreenOn,
             ) { checked -> reader.keepScreenOn = checked }
         )
-    }
-
-    private fun buildOtherRows(): List<View> = collect {
-
 
         addView(
             choiceRow(
@@ -350,66 +332,114 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         addView(
+            placeholderRow(
+                title = getString(R.string.settings_native_decode),
+                desc = getString(R.string.settings_native_decode_desc),
+            )
+        )
+    }
+
+    /** 动画与性能：预载页数是这一组里唯一能调的 */
+    private fun buildPerfRows(): List<View> = collect {
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_turn_animation),
+                desc = getString(R.string.settings_turn_animation_desc),
+            )
+        )
+
+        addView(
+            sliderRow(
+                title = getString(R.string.settings_prefetch),
+                desc = getString(R.string.settings_prefetch_desc),
+                min = 0,
+                max = 12,
+                step = 1,
+                initial = reader.prefetchPages,
+                format = {
+                    if (it == 0) getString(R.string.settings_prefetch_off)
+                    else getString(R.string.settings_prefetch_value, it)
+                },
+            ) { value -> reader.prefetchPages = value }
+        )
+
+        addView(
+            placeholderRow(
+                title = getString(R.string.settings_cache_limit),
+                desc = getString(R.string.settings_cache_limit_desc),
+            )
+        )
+    }
+
+    /** 其他：跳详情、许可、关于、恢复默认 */
+    private fun buildOtherRows(): List<View> = collect {
+        addView(
             switchRow(
                 title = getString(R.string.settings_skip_detail),
                 desc = getString(R.string.settings_skip_detail_desc),
                 checked = prefs.skipDetail,
             ) { checked -> prefs.skipDetail = checked }
         )
-    }
 
-    private fun buildAboutRows(): List<View> = collect {
-
+        addView(
+            choiceRowWithValue(
+                title = getString(R.string.about_licenses),
+                desc = getString(R.string.about_licenses_desc),
+            ) { startActivity(Intent(this@SettingsActivity, LicensesActivity::class.java)) }
+        )
 
         addView(
             choiceRowWithValue(
                 title = getString(R.string.settings_about_row),
                 desc = getString(R.string.settings_about_desc),
-                value = "",
-            ) { startActivity(android.content.Intent(this@SettingsActivity, AboutActivity::class.java)) }
+            ) { startActivity(Intent(this@SettingsActivity, AboutActivity::class.java)) }
+        )
+
+        addView(
+            choiceRowWithValue(
+                title = getString(R.string.settings_reset),
+                desc = getString(R.string.settings_reset_desc),
+                destructive = true,
+            ) { confirmReset() }
         )
     }
 
-    /** 只做导航的行：右侧给一个箭头，点一下进去或弹对话框 */
-    private fun choiceRowWithValue(
-        title: String,
-        desc: String?,
-        value: String,
-        onClick: () -> Unit,
-    ): View {
-        val row = rowContainer()
-        row.addView(titleBlock(title, desc), weighted())
-        if (value.isNotEmpty()) {
-            row.addView(TextView(this).apply {
-                text = value
-                textSize = 12f
-                setTextColor(getColor(R.color.shell_ink_faint))
-                setPadding(0, 0, dp(6), 0)
-            })
+    // ── 恢复默认 ───────────────────────────────────────────
+
+    /**
+     * 只清阅读与界面偏好：书源、书架、进度、书签都在数据库里，不受影响。
+     * 清完立即重建这一页，参数要当场回到初始值，而不是等下次进来。
+     */
+    private fun confirmReset() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_reset_title)
+            .setMessage(R.string.settings_reset_message)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                getSharedPreferences(PREFS_FILE, MODE_PRIVATE).edit().clear().apply()
+                applyOrientation(prefs)
+                buildRows()
+                Toast.makeText(this, R.string.settings_reset_done, Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    // ── 五种行 ─────────────────────────────────────────────
+
+    /**
+     * 把一组行先塞进临时容器再取出来，避免把每种行都写成「返回 View」。
+     * 取出时必须从容器里摘掉，否则再 addView 会报「child already has a parent」。
+     */
+    private fun collect(block: LinearLayout.() -> Unit): List<View> {
+        val temp = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        temp.block()
+        val out = ArrayList<View>(temp.childCount)
+        while (temp.childCount > 0) {
+            val child = temp.getChildAt(0)
+            temp.removeViewAt(0)
+            out += child
         }
-        row.addView(chevron())
-        row.setOnClickListener { onClick() }
-        return withDivider(row)
-    }
-
-    // ---- 三种行 ----
-
-    private companion object {
-        const val GROUP_READING = "reading"
-        const val GROUP_OTHER = "other"
-        const val GROUP_ABOUT = "about"
-        val GROUP_ALL = listOf(GROUP_READING, GROUP_OTHER, GROUP_ABOUT)
-
-        /** 页面左右留白与行高：与书架、详情同一把尺子 */
-        const val PAGE_MARGIN = 20
-        const val ROW_PADDING = 14
-    }
-
-    private fun sectionHeader(text: String): TextView = TextView(this).apply {
-        this.text = text
-        textSize = 13f
-        setTextColor(getColor(R.color.shell_ink_muted))
-        setPadding(dp(20), dp(20), dp(20), dp(6))
+        return out
     }
 
     private fun switchRow(
@@ -419,14 +449,13 @@ class SettingsActivity : AppCompatActivity() {
         onChange: (Boolean) -> Unit,
     ): View {
         val row = rowContainer()
-        val texts = titleBlock(title, desc)
         val switch = SwitchCompat(this).apply {
             isChecked = checked
             thumbTintList = getColorStateList(R.color.switch_thumb_tint)
             trackTintList = getColorStateList(R.color.switch_track_tint)
             setOnCheckedChangeListener { _, value -> onChange(value) }
         }
-        row.addView(texts, weighted())
+        row.addView(titleBlock(title, desc), weighted())
         row.addView(switch, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -551,7 +580,59 @@ class SettingsActivity : AppCompatActivity() {
         return withDivider(block)
     }
 
-    // ---- 小工具 ----
+    /** 只做导航的行：右侧一个箭头，点一下进去或弹确认 */
+    private fun choiceRowWithValue(
+        title: String,
+        desc: String?,
+        destructive: Boolean = false,
+        onClick: () -> Unit,
+    ): View {
+        val row = rowContainer()
+        val texts = titleBlock(title, desc)
+        if (destructive) {
+            (texts.getChildAt(0) as TextView).setTextColor(getColor(R.color.brand_accent))
+        }
+        row.addView(texts, weighted())
+        if (!destructive) row.addView(chevron())
+        row.setOnClickListener { onClick() }
+        return withDivider(row)
+    }
+
+    /**
+     * 占位行：这一项界面稿里有、还没做。
+     * 灰字 + 「未实现」小标，不可点——不装成能调的开关，也不藏起来让人找不到。
+     */
+    private fun placeholderRow(title: String, desc: String?): View {
+        val row = rowContainer()
+        row.isClickable = false
+        row.isFocusable = false
+        row.background = null
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(TextView(this).apply {
+            text = title
+            textSize = 14f
+            setTextColor(getColor(R.color.shell_ink_faint))
+        })
+        if (!desc.isNullOrBlank()) {
+            texts.addView(TextView(this).apply {
+                text = desc
+                textSize = 11f
+                setTextColor(getColor(R.color.shell_ink_faint))
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+        row.addView(texts, weighted())
+        row.addView(TextView(this).apply {
+            text = getString(R.string.settings_not_implemented)
+            textSize = 9f
+            setTextColor(getColor(R.color.shell_ink_faint))
+            background = getDrawable(R.drawable.bg_badge_muted)
+            setPadding(dp(7), dp(3), dp(7), dp(3))
+        })
+        return withDivider(row)
+    }
+
+    // ── 小工具 ─────────────────────────────────────────────
 
     private fun rowContainer(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -606,4 +687,13 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        /** 与书架、详情同一把尺子 */
+        const val PAGE_MARGIN = 20
+        const val ROW_PADDING = 14
+
+        /** 阅读参数与界面开关都在这一份偏好里 */
+        const val PREFS_FILE = "reader_prefs"
+    }
 }

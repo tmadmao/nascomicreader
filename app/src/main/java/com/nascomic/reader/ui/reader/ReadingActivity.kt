@@ -459,6 +459,11 @@ class ReadingActivity : AppCompatActivity() {
             !overToolbar(ev) && !overEndButton(ev)
         ) {
             val x = ev.x / (binding.readerRoot.width.coerceAtLeast(1))
+            // 关掉点击翻页之后，点哪儿都只呼出工具栏——留给只想看不想误翻的人
+            if (!prefs.tapToTurn) {
+                setToolbarVisible(!toolbarShown)
+                return super.dispatchTouchEvent(ev)
+            }
             // 方向可切：从左往右读时点右侧翻到下一页，从右往左读时反过来
             val forwardRight = prefs.flipForwardRight
             when {

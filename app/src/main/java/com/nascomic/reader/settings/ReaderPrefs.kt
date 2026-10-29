@@ -19,6 +19,11 @@ class ReaderPrefs(context: Context) {
         get() = sp.getBoolean(KEY_FLIP_RIGHT, true)
         set(value) = sp.edit().putBoolean(KEY_FLIP_RIGHT, value).apply()
 
+    /** 点击翻页：关掉之后点屏幕只呼出工具栏，不再翻页 */
+    var tapToTurn: Boolean
+        get() = sp.getBoolean(KEY_TAP_TURN, true)
+        set(value) = sp.edit().putBoolean(KEY_TAP_TURN, value).apply()
+
     /** 双页并排：两页都是竖版时才并排 */
     var dualPage: Boolean
         get() = sp.getBoolean(KEY_DUAL_PAGE, false)
@@ -82,6 +87,7 @@ class ReaderPrefs(context: Context) {
 
     private companion object {
         const val KEY_FLIP_RIGHT = "reader.flip_forward_right"
+        const val KEY_TAP_TURN = "reader.tap_to_turn"
         const val KEY_DUAL_PAGE = "reader.dual_page"
         const val KEY_MARGIN = "reader.side_margin_dp"
         const val KEY_CANVAS = "reader.canvas"
