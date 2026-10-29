@@ -23,7 +23,7 @@ class CoverProgress @JvmOverloads constructor(
         color = ContextCompat.getColor(context, R.color.shell_divider)
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = ContextCompat.getColor(context, R.color.brand_indigo)
+        color = ContextCompat.getColor(context, R.color.brand_accent)
     }
     private val rect = RectF()
 

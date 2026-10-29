@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/reader_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -24,14 +25,16 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="20dp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="4dp"
-        android:background="#66000000"
-        android:maxWidth="300dp"
-        android:singleLine="true"
+        android:background="@drawable/bg_page_label"
         android:ellipsize="end"
-        android:textColor="#FFFFFF"
-        android:textSize="12sp" />
+        android:maxWidth="300dp"
+        android:paddingStart="11dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="11dp"
+        android:paddingBottom="5dp"
+        android:singleLine="true"
+        android:textColor="#FFFFFFFF"
+        android:textSize="11sp" />
 
     <!-- 书的尾：整本读完之后再往后翻，整屏一块空态，不再是翻不动 -->
     <LinearLayout
@@ -43,10 +46,11 @@
         android:paddingHorizontal="42dp"
         android:visibility="gone">
 
-        <View
-            android:layout_width="8dp"
-            android:layout_height="56dp"
-            android:background="@drawable/bg_end_mark" />
+        <ImageView
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_brand_mark" />
 
         <TextView
             android:id="@+id/end_title"
@@ -56,7 +60,8 @@
             android:fontFamily="serif"
             android:text="@string/reader_end_title"
             android:textColor="@color/shell_ink"
-            android:textSize="21sp" />
+            android:textSize="21sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/end_meta"
@@ -79,14 +84,14 @@
         <TextView
             android:id="@+id/end_back"
             android:layout_width="wrap_content"
-            android:layout_height="46dp"
+            android:layout_height="44dp"
             android:layout_marginTop="26dp"
-            android:background="@drawable/bg_primary"
+            android:background="@drawable/bg_pill_ink"
             android:gravity="center"
-            android:paddingHorizontal="22dp"
+            android:paddingHorizontal="24dp"
             android:text="@string/reader_end_back"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp" />
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/end_tip"
@@ -94,55 +99,99 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="@string/reader_end_tip"
-            android:textColor="@color/shell_ink_muted"
+            android:textColor="@color/shell_ink_faint"
             android:textSize="11sp" />
     </LinearLayout>
 
-    <!-- 顶部栏：点屏幕中间显隐 -->
+    <!-- 顶部栏：点屏幕中间显隐。浅色纸面，书名与话名分两行 -->
     <LinearLayout
         android:id="@+id/top_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:background="#D016181C"
-        android:orientation="horizontal"
-        android:minHeight="52dp"
-        android:paddingVertical="2dp"
+        android:background="@color/shell_surface_soft"
+        android:orientation="vertical"
         android:visibility="gone">
 
-        <ImageView
-            android:id="@+id/back"
-            android:layout_width="48dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back_arrow"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/action_back" />
-
-        <TextView
-            android:id="@+id/book_title"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
             android:gravity="center_vertical"
-            android:ellipsize="end"
-            android:singleLine="true"
-            android:paddingEnd="16dp"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp" />
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
 
+            <ImageView
+                android:id="@+id/back"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_back"
+                android:padding="8dp"
+                android:src="@drawable/ic_back_arrow" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingHorizontal="8dp">
+
+                <TextView
+                    android:id="@+id/book_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:textColor="@color/shell_ink"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/chapter_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:ellipsize="end"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:textColor="@color/shell_ink_faint"
+                    android:textSize="9sp" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/open_toc"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/reader_toolbar_toc"
+                android:padding="8dp"
+                android:src="@drawable/ic_toc" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/book_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:max="100"
+            android:progressDrawable="@drawable/reader_progress" />
     </LinearLayout>
 
-    <!-- 底栏五键：上一页 · 设置 · 书签 · 目录 · 下一页 -->
+    <!-- 底栏五键：上一页 · 目录 · 书签 · 设置 · 下一页 -->
     <LinearLayout
         android:id="@+id/bottom_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="62dp"
         android:layout_gravity="bottom"
-        android:background="#D016181C"
+        android:background="@drawable/bg_bottom_bar"
         android:gravity="center"
+        android:minHeight="58dp"
         android:orientation="horizontal"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
         android:visibility="gone">
 
         <LinearLayout
@@ -150,10 +199,10 @@
             style="@style/ReaderBarItem">
 
             <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron"
-                android:contentDescription="@null" />
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron" />
 
             <TextView
                 style="@style/ReaderBarLabel"
@@ -161,18 +210,18 @@
         </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/open_settings"
+            android:id="@+id/toc"
             style="@style/ReaderBarItem">
 
             <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_settings_line"
-                android:contentDescription="@null" />
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_toc" />
 
             <TextView
                 style="@style/ReaderBarLabel"
-                android:text="@string/action_settings" />
+                android:text="@string/reader_toolbar_toc" />
         </LinearLayout>
 
         <LinearLayout
@@ -181,10 +230,10 @@
 
             <ImageView
                 android:id="@+id/bookmark_icon"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_bookmark"
-                android:contentDescription="@string/reader_bookmark" />
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="@string/reader_bookmark"
+                android:src="@drawable/ic_bookmark" />
 
             <TextView
                 style="@style/ReaderBarLabel"
@@ -192,18 +241,18 @@
         </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/toc"
+            android:id="@+id/open_settings"
             style="@style/ReaderBarItem">
 
             <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_toc"
-                android:contentDescription="@null" />
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_settings_line" />
 
             <TextView
                 style="@style/ReaderBarLabel"
-                android:text="@string/reader_toolbar_toc" />
+                android:text="@string/action_settings" />
         </LinearLayout>
 
         <LinearLayout
@@ -211,11 +260,11 @@
             style="@style/ReaderBarItem">
 
             <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="@null"
                 android:rotation="180"
-                android:src="@drawable/ic_chevron"
-                android:contentDescription="@null" />
+                android:src="@drawable/ic_chevron" />
 
             <TextView
                 style="@style/ReaderBarLabel"
@@ -228,8 +277,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:padding="32dp"
         android:gravity="center"
+        android:padding="32dp"
         android:textColor="#E0E0E0"
         android:textSize="14sp"
         android:visibility="gone" />

@@ -64,6 +64,11 @@ class ReaderPrefs(context: Context) {
         get() = sp.getBoolean(KEY_PAGE_LABEL, true)
         set(value) = sp.edit().putBoolean(KEY_PAGE_LABEL, value).apply()
 
+    /** 预载页数：阅读时往后预取几页，0 = 不预载 */
+    var prefetchPages: Int
+        get() = sp.getInt(KEY_PREFETCH, 3)
+        set(value) = sp.edit().putInt(KEY_PREFETCH, value.coerceIn(0, 12)).apply()
+
     enum class Canvas(val value: Int) {
         LIGHT(0),
         DARK(1),
@@ -86,5 +91,6 @@ class ReaderPrefs(context: Context) {
         const val KEY_TRIM_LEVEL = "reader.trim_level"
         const val KEY_SKIP_BLANK = "reader.skip_blank"
         const val KEY_KEEP_ON = "reader.keep_screen_on"
+        const val KEY_PREFETCH = "reader.prefetch_pages"
     }
 }

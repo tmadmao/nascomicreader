@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 卡片与控件的形状口径：一处定义，各处引用 -->
+    <dimen name="radius_card">18dp</dimen>
+    <dimen name="radius_sheet">22dp</dimen>
+    <dimen name="radius_button">16dp</dimen>
+    <dimen name="radius_cover">14dp</dimen>
+    <dimen name="radius_chip">18dp</dimen>
+
+    <!-- 页面左右留白：书架、详情、设置共用，翻页时字不会贴边 -->
+    <dimen name="page_margin">20dp</dimen>
+    <!-- 一行的高度口径，设置页与详情页共用 -->
+    <dimen name="row_padding_vertical">14dp</dimen>
+</resources>

@@ -61,6 +61,9 @@ class DetailActivity : AppCompatActivity() {
     /** 量页失败过（文件损坏、远端断开）：提示要停在失败上，不能一直说「正在统计」 */
     private var countFailed = false
 
+    /** 目录是否倒序显示：跟着偏好走，点目录头的按钮就翻 */
+    private var tocDescending = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
@@ -72,7 +75,25 @@ class DetailActivity : AppCompatActivity() {
             return
         }
         binding.back.setOnClickListener { finish() }
+        tocDescending = appPrefs.tocDescending
+        applyHeroMetrics()
         load()
+    }
+
+    /**
+     * 封面剧场按屏宽算尺寸：手机上封面约占四成宽，平板封顶 220dp。
+     * 固定 152dp 在平板上会缩成一张小卡片，四周全是深色空场。
+     */
+    private fun applyHeroMetrics() {
+        val width = resources.displayMetrics.widthPixels
+        val coverW = (width * 0.42f).toInt().coerceIn(dp(150), dp(220))
+        val coverH = coverW * 4 / 3
+        binding.coverCard.layoutParams = android.widget.FrameLayout.LayoutParams(
+            coverW, coverH, Gravity.CENTER
+        )
+        binding.hero.layoutParams = binding.hero.layoutParams.also {
+            it.height = coverH + dp(74)
+        }
     }
 
     private fun load() {
@@ -123,54 +144,67 @@ class DetailActivity : AppCompatActivity() {
         binding.meta.text = metaLine(b)
         binding.sourceLine.text = sourceLine(b)
 
+        val entries = tocEntries(b)
         val isChaptered = b.isSingleVolume == 0 && chapters.isNotEmpty()
         val p = progress
         val hasProgress = p != null && b.pageTotal > 0
 
         if (hasProgress) {
-            val chapter = chapters.getOrNull(p!!.chapterOrdinal)
-            val byChapter = isChaptered && chapter != null && chapter.pageTotal > 0
+            val entry = entries.getOrNull(p!!.chapterOrdinal)
+            val byChapter = isChaptered && entry != null && entry.pageTotal > 0
+            val percent = readPercent(p.pageGlobal, b.pageTotal, p.finished)
 
-            binding.percent.visibility = View.VISIBLE
-            binding.readInfo.visibility = View.VISIBLE
-            binding.percent.text = getString(
-                R.string.shelf_percent,
-                readPercent(p.pageGlobal, b.pageTotal, p.finished)
-            )
-            binding.readInfo.text = if (p.finished) {
-                getString(R.string.progress_finished)
-            } else {
-                getString(R.string.detail_read_line, p.pageGlobal + 1, b.pageTotal)
-            }
-
-            binding.primary.text = if (byChapter) {
-                getString(
-                    R.string.detail_continue_reading_chapter, chapter.title, p.pageInChapter + 1
+            binding.percent.text = getString(R.string.shelf_percent, percent)
+            binding.progressBar.progress = percent
+            binding.readInfo.text = when {
+                p.finished -> getString(R.string.progress_finished)
+                byChapter -> getString(
+                    R.string.detail_read_position_chapter, entry!!.ordinal + 1, entry.title
                 )
-            } else {
-                getString(R.string.detail_continue_reading, p.pageGlobal + 1)
+                else -> getString(
+                    R.string.detail_read_position_pages, p.pageGlobal + 1, b.pageTotal
+                )
             }
-            binding.secondary.visibility = View.VISIBLE
+
+            binding.primary.text = if (p.finished) {
+                getString(R.string.detail_reread)
+            } else {
+                getString(R.string.detail_continue_reading_short)
+            }
         } else {
-            binding.percent.visibility = View.GONE
-            binding.readInfo.visibility = View.GONE
+            binding.percent.text = getString(R.string.shelf_percent, 0)
+            binding.progressBar.progress = 0
+            binding.readInfo.text = getString(R.string.detail_not_started)
             binding.primary.text = getString(R.string.detail_start_reading)
-            binding.secondary.visibility = View.GONE
         }
 
-        binding.primary.setOnClickListener { openReader(p?.pageGlobal ?: 0) }
-        binding.secondary.setOnClickListener { openReader(0) }
+        // 一个按钮管三种情形：没读过 / 读到一半 / 读完了重来
+        val startPage = if (p == null || p.finished) 0 else p.pageGlobal
+        binding.primary.setOnClickListener { openReader(startPage) }
 
         // 各章起始页：靠每章页数累加，读不到页数时退化为 0（点了也从章首开始）
-        chapterStarts = IntArray(chapters.size)
+        chapterStarts = IntArray(entries.size)
         var acc = 0
-        chapters.forEachIndexed { i, ch ->
+        entries.forEachIndexed { i, entry ->
             chapterStarts[i] = acc
-            acc += ch.pageTotal
+            acc += entry.pageTotal
         }
 
-        renderToc(b, isChaptered)
-        renderBookmarks(isChaptered)
+        renderToc(entries)
+        renderBookmarks(entries)
+    }
+
+    /**
+     * 目录里的一行。单行本在库里没有章记录，但它本身就是一章——
+     * 补一条占位，「有一章就列一章、有多章按顺序排」在两种书型上走同一套逻辑。
+     */
+    private data class TocEntry(val ordinal: Int, val title: String, val pageTotal: Int)
+
+    private fun tocEntries(b: BookEntity): List<TocEntry> = when {
+        chapters.isNotEmpty() -> chapters.map { TocEntry(it.ordinal, it.title, it.pageTotal) }
+        // 单行本这一章的标题就是这本书的标题（扫描时从文件名取的）
+        b.isSingleVolume == 1 -> listOf(TocEntry(0, b.title, b.pageTotal))
+        else -> emptyList()
     }
 
     /** 第一行：格式 · 体积 · 还剩多少 */
@@ -216,51 +250,75 @@ class DetailActivity : AppCompatActivity() {
     }
 
     /**
-     * 目录：序号 · 话名 · 页数 三栏。
-     * 已读的话在页数前打 ✓ 并把字降到次要色；当前话整行铺靛蓝浅底、右侧改写成「读到 N 页」。
+     * 目录：序号 · 话名 · 页数 三栏。单行本列一行（它就是一章），多章按顺序排。
+     * 已读的话在页数前打 ✓ 并把字降到次要色；当前话整行铺橙调浅底、右侧改写成「当前」。
      */
-    private fun renderToc(b: BookEntity, isChaptered: Boolean) {
+    private fun renderToc(entries: List<TocEntry>) {
         binding.tocList.removeAllViews()
 
-        if (!isChaptered) {
-            binding.tocHeader.isVisible = false
+        binding.tocHeader.isVisible = true
+        binding.tocHeader.text = getString(R.string.detail_toc_with_count)
+
+        if (entries.isEmpty()) {
+            // 页数还没数出来（或被判定打不开）：标题留着，下面说一句为什么空
             binding.tocCount.isVisible = false
             binding.tocHint.isVisible = true
-            binding.tocHint.text = when {
-                b.pageTotal > 0 -> getString(R.string.detail_no_toc)
-                countFailed -> getString(R.string.detail_count_failed)
-                else -> getString(R.string.detail_counting)
+            binding.tocHint.text = if (countFailed) {
+                getString(R.string.detail_count_failed)
+            } else {
+                getString(R.string.detail_counting)
             }
+            renderOrderToggle(emptyList())
             return
         }
 
-        binding.tocHeader.isVisible = true
         binding.tocCount.isVisible = true
-        binding.tocHeader.text = getString(R.string.detail_toc_with_count)
-        binding.tocCount.text = getString(R.string.detail_toc_chapters, chapters.size)
+        binding.tocCount.text = getString(R.string.detail_toc_chapters, entries.size)
         binding.tocHint.isVisible = false
+        renderOrderToggle(entries)
 
         val currentChapter = progress?.chapterOrdinal ?: -1
-        for (ch in chapters) {
-            val isCurrent = ch.ordinal == currentChapter
-            val isRead = ch.ordinal < currentChapter || (isCurrent && (progress?.pageInChapter == ch.pageTotal - 1))
-            binding.tocList.addView(tocRow(ch, isCurrent, isRead))
+        val ordered = if (tocDescending) entries.asReversed() else entries
+        for (entry in ordered) {
+            val isCurrent = entry.ordinal == currentChapter
+            val isRead = entry.ordinal < currentChapter ||
+                (isCurrent && (progress?.pageInChapter == entry.pageTotal - 1))
+            binding.tocList.addView(tocRow(entry, isCurrent, isRead))
+        }
+    }
+
+    /** 目录头的排序钮：只有一个章的书写「正序 / 倒序」没有意义，直接不出现 */
+    private fun renderOrderToggle(entries: List<TocEntry>) {
+        if (entries.size <= 1) {
+            binding.tocOrder.visibility = View.GONE
+            return
+        }
+        binding.tocOrder.visibility = View.VISIBLE
+        // 按钮写的是「现在是什么序」，不是「点一下会变成什么」——后者读起来正好相反
+        binding.tocOrderLabel.text = getString(
+            if (tocDescending) R.string.detail_order_desc else R.string.detail_order_asc
+        )
+        binding.tocOrder.setOnClickListener {
+            tocDescending = !tocDescending
+            appPrefs.tocDescending = tocDescending
+            render()
         }
     }
 
     private fun tocRow(
-        ch: com.nascomic.reader.library.data.ChapterEntity,
+        entry: TocEntry,
         isCurrent: Boolean,
         isRead: Boolean,
     ): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(14), dp(8), dp(14))
+            isBaselineAligned = false
+            setPadding(dp(12), dp(13), dp(12), dp(13))
             background = if (isCurrent) {
                 android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = dp(6).toFloat()
-                    setColor(getColor(R.color.brand_indigo_tint))
+                    cornerRadius = dp(12).toFloat()
+                    setColor(getColor(R.color.brand_accent_tint))
                 }
             } else {
                 null
@@ -268,53 +326,68 @@ class DetailActivity : AppCompatActivity() {
         }
 
         val titleColor = when {
-            isCurrent -> getColor(R.color.brand_indigo)
+            isCurrent -> getColor(R.color.shell_ink)
             isRead -> getColor(R.color.shell_ink_muted)
             else -> getColor(R.color.shell_ink)
         }
 
         row.addView(TextView(this).apply {
-            text = "%02d".format(ch.ordinal + 1)
-            textSize = 12f
+            text = "%02d".format(entry.ordinal + 1)
+            textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
-            setTextColor(getColor(R.color.shell_ink_muted))
-            width = dp(28)
+            setTextColor(getColor(R.color.shell_ink_faint))
+            width = dp(26)
         })
 
         row.addView(TextView(this).apply {
-            text = ch.title
+            text = entry.title
             textSize = 14f
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(titleColor)
+            setTypeface(typeface, if (isCurrent) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
         if (isRead) {
             row.addView(TextView(this).apply {
                 text = "✓"
-                textSize = 12f
-                setTextColor(getColor(R.color.shell_ink_muted))
+                textSize = 11f
+                setTextColor(getColor(R.color.shell_ink_faint))
                 setPadding(0, 0, dp(6), 0)
             })
         }
 
-        val right = if (isCurrent) {
-            getString(R.string.detail_current_chapter_pages, (progress?.pageInChapter ?: 0) + 1)
+        if (isCurrent) {
+            row.addView(TextView(this).apply {
+                text = getString(R.string.detail_current_badge)
+                textSize = 10f
+                setTextColor(getColor(android.R.color.white))
+                background = getDrawable(R.drawable.bg_badge_accent)
+                setPadding(dp(8), dp(3), dp(8), dp(3))
+            })
         } else {
-            getString(R.string.detail_chapter_pages, ch.pageTotal)
+            row.addView(TextView(this).apply {
+                text = getString(R.string.detail_chapter_pages, entry.pageTotal)
+                textSize = 11f
+                setTextColor(getColor(R.color.shell_ink_faint))
+            })
         }
-        row.addView(TextView(this).apply {
-            text = right
-            textSize = 12f
-            setTextColor(if (isCurrent) getColor(R.color.brand_indigo) else getColor(R.color.shell_ink_muted))
-        })
 
-        row.setOnClickListener { openReader(chapterStarts.getOrElse(ch.ordinal) { 0 }) }
-        return row
+        row.setOnClickListener { openReader(chapterStarts.getOrElse(entry.ordinal) { 0 }) }
+
+        val wrapper = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        wrapper.addView(row)
+        wrapper.addView(
+            View(this).apply { setBackgroundColor(getColor(R.color.shell_divider)) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply {
+                marginStart = dp(12)
+            },
+        )
+        return wrapper
     }
 
-    private fun renderBookmarks(isChaptered: Boolean) {
+    private fun renderBookmarks(entries: List<TocEntry>) {
         binding.bmList.removeAllViews()
         if (bookmarks.isEmpty()) {
             binding.bmHeader.isVisible = false
@@ -324,9 +397,10 @@ class DetailActivity : AppCompatActivity() {
 
         val pad = dp(6)
         for (bm in bookmarks) {
-            val chapter = chapters.getOrNull(bm.chapterOrdinal)
+            // 书签只在真有多章时带上话名；单行本那条占位章名不必重复
+            val chapter = if (chapters.isEmpty()) null else entries.getOrNull(bm.chapterOrdinal)
             val row = TextView(this).apply {
-                text = if (isChaptered && chapter != null) {
+                text = if (chapter != null) {
                     getString(
                         R.string.detail_bookmark_row_chapter, chapter.title, bm.pageInChapter + 1
                     )
@@ -363,7 +437,7 @@ class DetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             db.bookmarkDao().deleteAt(bookId, bm.chapterOrdinal, bm.pageInChapter)
             bookmarks = db.bookmarkDao().forBookNow(bookId)
-            renderBookmarks(book!!.isSingleVolume == 0 && chapters.isNotEmpty())
+            renderBookmarks(book?.let { tocEntries(it) }.orEmpty())
         }
     }
 

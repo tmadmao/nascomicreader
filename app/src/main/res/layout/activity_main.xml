@@ -1,156 +1,271 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/shell_background">
+    android:background="@color/shell_background"
+    android:orientation="vertical">
 
+    <!-- 顶部：品牌一行、大标题一行 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="20dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="16dp"
-        android:paddingBottom="8dp">
+        android:orientation="vertical"
+        android:paddingStart="@dimen/page_margin"
+        android:paddingTop="14dp"
+        android:paddingEnd="@dimen/page_margin"
+        android:paddingBottom="4dp">
 
-        <TextView
-            android:id="@+id/shelf_title"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:fontFamily="serif"
-            android:text="@string/shelf_title"
-            android:textColor="@color/shell_ink"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <ImageView
-            android:id="@+id/add_folder"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_add"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/action_add_folder" />
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_brand_mark" />
 
-        <ImageView
-            android:id="@+id/settings"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_settings_line"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/action_settings" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:letterSpacing="0.14"
+                android:text="@string/app_name"
+                android:textColor="@color/shell_ink_muted"
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
-        <ImageView
-            android:id="@+id/rescan"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_refresh"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/action_rescan_short" />
+            <ImageView
+                android:id="@+id/rescan"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_rescan_short"
+                android:padding="7dp"
+                android:src="@drawable/ic_refresh" />
 
+            <ImageView
+                android:id="@+id/add_folder"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginStart="2dp"
+                android:background="@drawable/bg_circle_white"
+                android:contentDescription="@string/action_add_folder"
+                android:padding="8dp"
+                android:src="@drawable/ic_add" />
+
+            <ImageView
+                android:id="@+id/settings"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_accent_circle"
+                android:contentDescription="@string/action_settings"
+                android:padding="8dp"
+                android:src="@drawable/ic_settings_line"
+                app:tint="@android:color/white" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:baselineAligned="false"
+            android:gravity="bottom"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/shelf_title"
+                style="@style/PageTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/shelf_title" />
+
+            <TextView
+                android:id="@+id/shelf_count"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="3dp"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:lineSpacingExtra="3dp"
+                android:textColor="@color/shell_ink_faint"
+                android:textSize="10sp" />
+        </LinearLayout>
     </LinearLayout>
 
+    <!-- 接着读：最近读过的那本，深色卡上压一层星球 -->
+    <FrameLayout
+        android:id="@+id/resume_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/page_margin"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="@dimen/page_margin"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="132dp"
+            android:background="@drawable/bg_night_card" />
+
+        <com.nascomic.reader.ui.widget.PlanetArt
+            android:layout_width="match_parent"
+            android:layout_height="132dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingTop="14dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="14dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_pill_frost"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="9dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="4dp">
+
+                <View
+                    android:layout_width="5dp"
+                    android:layout_height="5dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_dot_accent" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/shelf_resume_label"
+                    android:textColor="#FFF7D5B8"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/resume_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="9dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#FFFFFFFF"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/resume_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#FFF7D5B8"
+                android:textSize="11sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/resume_percent"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="10sp" />
+
+                <ProgressBar
+                    android:id="@+id/resume_bar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="0dp"
+                    android:layout_height="3dp"
+                    android:layout_marginStart="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:layout_weight="1"
+                    android:max="100"
+                    android:progressDrawable="@drawable/cover_progress" />
+
+                <TextView
+                    android:id="@+id/resume_action"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="10sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/resume_play"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/bg_play_circle"
+            android:contentDescription="@string/shelf_resume_action">
+
+            <ImageView
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_play" />
+        </FrameLayout>
+    </FrameLayout>
+
+    <!-- 书源标签：全部 / 最近阅读 / 每个来源一个 -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:scrollbars="none"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp">
+        android:paddingStart="@dimen/page_margin"
+        android:paddingEnd="@dimen/page_margin"
+        android:paddingTop="12dp"
+        android:scrollbars="none">
 
         <LinearLayout
             android:id="@+id/tab_row"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal" />
-
     </HorizontalScrollView>
 
-    <!-- 接着读：最近读过的那本，封面 + 书名 + 已读百分比 -->
+    <!-- 列表上方的分段标题：当前标签名 + 本数 -->
     <LinearLayout
-        android:id="@+id/resume_card"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="14dp"
-        android:layout_marginBottom="10dp"
-        android:background="@drawable/bg_card"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="10dp"
-        android:visibility="gone">
+        android:paddingStart="@dimen/page_margin"
+        android:paddingEnd="@dimen/page_margin">
 
-        <com.nascomic.reader.ui.widget.AspectImageView
-            android:id="@+id/resume_cover"
-            android:layout_width="56dp"
-            android:layout_height="wrap_content"
-            android:background="@color/cover_placeholder"
-            android:scaleType="centerCrop"
-            android:contentDescription="@null" />
-
-        <LinearLayout
+        <TextView
+            android:id="@+id/section_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:orientation="vertical">
+            android:textColor="@color/shell_ink"
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/shelf_resume_label"
-                android:textColor="@color/brand_indigo"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/resume_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:ellipsize="end"
-                android:fontFamily="serif"
-                android:maxLines="1"
-                android:textColor="@color/shell_ink"
-                android:textSize="17sp" />
-
-            <TextView
-                android:id="@+id/resume_meta"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/shell_ink_muted"
-                android:textSize="12sp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:gravity="bottom"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:id="@+id/resume_percent"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:fontFamily="serif"
-                    android:textColor="@color/shell_ink"
-                    android:textSize="26sp" />
-
-                <TextView
-                    android:id="@+id/resume_action"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="@string/shelf_resume_action"
-                    android:textColor="@color/brand_indigo"
-                    android:textSize="12sp" />
-            </LinearLayout>
-        </LinearLayout>
+        <TextView
+            android:id="@+id/section_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/shell_ink_faint"
+            android:textSize="10sp" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -158,9 +273,10 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:paddingHorizontal="8dp"
-        android:paddingTop="2dp"
-        android:clipToPadding="false" />
+        android:clipToPadding="false"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
 
     <!-- 空书架时的引导：本地与远端各给一个入口，别让人去找右上角 -->
     <LinearLayout
@@ -168,46 +284,70 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="vertical"
         android:gravity="center"
-        android:padding="32dp"
+        android:orientation="vertical"
+        android:paddingStart="36dp"
+        android:paddingEnd="36dp"
+        android:paddingBottom="40dp"
         android:visibility="gone">
+
+        <ImageView
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_brand_mark" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
             android:gravity="center"
+            android:text="@string/shelf_empty_title"
+            android:textColor="@color/shell_ink"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:lineSpacingExtra="4dp"
             android:text="@string/shelf_empty"
             android:textColor="@color/shell_ink_muted"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
 
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:layout_marginTop="22dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
             <TextView
                 android:id="@+id/empty_local"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:padding="12dp"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_pill_ink"
+                android:gravity="center"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
                 android:text="@string/shelf_empty_local"
-                android:textColor="@color/brand_indigo"
-                android:textSize="14sp"
-                android:background="?attr/selectableItemBackground" />
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
 
             <TextView
                 android:id="@+id/empty_remote"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:padding="12dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_pill_outline"
+                android:gravity="center"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
                 android:text="@string/shelf_empty_remote"
-                android:textColor="@color/brand_indigo"
-                android:textSize="14sp"
-                android:background="?attr/selectableItemBackground" />
+                android:textColor="@color/shell_ink"
+                android:textSize="13sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -215,9 +355,12 @@
         android:id="@+id/status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="8dp"
         android:gravity="center"
-        android:textColor="@color/shell_ink_muted"
-        android:textSize="11sp" />
+        android:paddingStart="16dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:textColor="@color/shell_ink_faint"
+        android:textSize="10sp" />
 
 </LinearLayout>

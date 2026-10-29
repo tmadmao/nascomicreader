@@ -2,61 +2,66 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/shell_background">
+    android:background="@color/shell_background"
+    android:orientation="vertical">
 
+    <!-- 顶栏：返回圆钮 + 页名；右侧一个「全部展开 / 收起」 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="8dp"
-        android:paddingEnd="20dp"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
         android:paddingTop="12dp"
-        android:paddingBottom="8dp">
+        android:paddingEnd="16dp"
+        android:paddingBottom="6dp">
 
         <ImageView
             android:id="@+id/back"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back_arrow"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/action_back" />
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_circle_white"
+            android:contentDescription="@string/action_back"
+            android:padding="8dp"
+            android:src="@drawable/ic_back_arrow" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:fontFamily="serif"
-            android:text="@string/action_settings"
+            android:text="@string/settings_title"
             android:textColor="@color/shell_ink"
-            android:textSize="24sp"
+            android:textSize="19sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/expand_all"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:padding="10dp"
-            android:textColor="@color/brand_indigo"
-            android:textSize="13sp"
-            android:background="?attr/selectableItemBackground" />
+            android:background="?attr/selectableItemBackground"
+            android:paddingStart="10dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="2dp"
+            android:paddingBottom="8dp"
+            android:textColor="@color/brand_accent"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:scrollbars="none">
 
         <LinearLayout
             android:id="@+id/settings_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingBottom="24dp" />
+            android:paddingTop="6dp"
+            android:paddingBottom="28dp" />
     </ScrollView>
 
 </LinearLayout>

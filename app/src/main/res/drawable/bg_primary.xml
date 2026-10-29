@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 主按钮：墨色实底，按下去深一档 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/brand_indigo_press" />
-            <corners android:radius="6dp" />
+            <solid android:color="#FF000000" />
+            <corners android:radius="@dimen/radius_button" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/brand_indigo" />
-            <corners android:radius="6dp" />
+            <solid android:color="@color/shell_ink" />
+            <corners android:radius="@dimen/radius_button" />
         </shape>
     </item>
 </selector>

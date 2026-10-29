@@ -1,23 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="6dp">
 
-    <com.nascomic.reader.ui.widget.AspectImageView
-        android:id="@+id/cover"
+    <!-- 封面裁成圆角，已读进度压在底边上 -->
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/cover_placeholder"
-        android:scaleType="centerCrop"
-        android:contentDescription="@null" />
+        app:cardBackgroundColor="@color/cover_placeholder"
+        app:cardCornerRadius="@dimen/radius_cover"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp">
 
-    <!-- 已读进度：贴着封面底边的一条横线，没读过的不画 -->
-    <com.nascomic.reader.ui.widget.CoverProgress
-        android:id="@+id/progress"
-        android:layout_width="match_parent"
-        android:layout_height="3dp" />
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <com.nascomic.reader.ui.widget.AspectImageView
+                android:id="@+id/cover"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:contentDescription="@null"
+                android:scaleType="centerCrop" />
+
+            <!-- 已读进度：贴着封面底边的一条横线，没读过的不画 -->
+            <com.nascomic.reader.ui.widget.CoverProgress
+                android:id="@+id/progress"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_gravity="bottom" />
+        </FrameLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <TextView
         android:id="@+id/title"
@@ -25,11 +41,11 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:ellipsize="end"
-        android:fontFamily="serif"
         android:lineSpacingExtra="2dp"
-        android:maxLines="2"
+        android:maxLines="1"
         android:textColor="@color/shell_ink"
-        android:textSize="13sp" />
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
     <TextView
         android:id="@+id/meta"
@@ -38,7 +54,7 @@
         android:layout_marginTop="3dp"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textColor="@color/shell_ink_muted"
-        android:textSize="11sp" />
+        android:textColor="@color/shell_ink_faint"
+        android:textSize="10sp" />
 
 </LinearLayout>

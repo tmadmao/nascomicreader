@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="#1E2126"
+    android:background="@color/shell_surface"
     android:orientation="vertical"
     android:paddingBottom="12dp">
 
@@ -13,7 +13,7 @@
         android:paddingTop="18dp"
         android:paddingBottom="10dp"
         android:text="@string/reader_toolbar_toc"
-        android:textColor="#FFFFFF"
+        android:textColor="@color/shell_ink"
         android:textSize="16sp"
         android:textStyle="bold" />
 

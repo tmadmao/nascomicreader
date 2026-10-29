@@ -21,8 +21,8 @@ class ScanProgressDialog(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
 
     private val label = TextView(this.context).apply {
-        textSize = 14f
-        setTextColor(context.getColor(R.color.shell_ink))
+        textSize = 13f
+        setTextColor(context.getColor(R.color.shell_ink_muted))
         gravity = Gravity.CENTER
     }
 
@@ -31,6 +31,15 @@ class ScanProgressDialog(private val context: Context) {
     ).apply {
         isIndeterminate = true
         max = 100
+        indeterminateTintList = android.content.res.ColorStateList.valueOf(
+            context.getColor(R.color.brand_accent)
+        )
+        progressTintList = android.content.res.ColorStateList.valueOf(
+            context.getColor(R.color.brand_accent)
+        )
+        progressBackgroundTintList = android.content.res.ColorStateList.valueOf(
+            context.getColor(R.color.shell_divider)
+        )
     }
 
     private val dialog = AlertDialog.Builder(this.context)

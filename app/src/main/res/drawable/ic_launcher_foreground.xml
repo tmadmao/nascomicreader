@@ -1,27 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 自适应图标前景：108×108 画布，图形落在中心安全区内 -->
+<!-- 自适应图标前景：一册摊开的书。底色是橙，书页用米白 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
+    <!-- 左页 -->
     <path
-        android:pathData="M46,28 h16 a4,4 0 0 1 4,4 v48 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-48 a4,4 0 0 1 4,-4 z"
-        android:strokeColor="#22262B"
-        android:strokeWidth="3"
-        android:fillColor="#00000000" />
+        android:fillColor="#FFFFF6E8"
+        android:pathData="M37.5,43 C42,40.6 48,40.4 53.5,42 L53.5,70.5 C48,69 42,69.2 37.5,71.6 Z" />
 
+    <!-- 右页 -->
     <path
-        android:pathData="M42,64 h24 v16 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 z"
-        android:fillColor="#2F5FD0" />
+        android:fillColor="#FFFFF6E8"
+        android:pathData="M70.5,43 C66,40.6 60,40.4 54.5,42 L54.5,70.5 C60,69 66,69.2 70.5,71.6 Z" />
 
+    <!-- 右页上的小面板，透出底色 -->
     <path
-        android:pathData="M38,35 h12 v6 h-12 z"
-        android:fillColor="#F4F6F8" />
-    <path
-        android:pathData="M38.5,35.5 h11"
-        android:strokeColor="#22262B"
-        android:strokeWidth="3" />
-
+        android:fillColor="#FFF06A35"
+        android:pathData="M59,47.5 h7.4 a1.6,1.6 0 0 1 1.6,1.6 v11.4 a1.6,1.6 0 0 1 -1.6,1.6 h-7.4 z" />
 </vector>

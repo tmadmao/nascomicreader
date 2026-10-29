@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色画布上的主按钮：米白胶囊、墨色字 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/shell_divider" />
+            <corners android:radius="99dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/shell_background" />
+            <corners android:radius="99dp" />
+        </shape>
+    </item>
+</selector>

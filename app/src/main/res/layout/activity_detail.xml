@@ -1,167 +1,278 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/shell_background"
     android:orientation="vertical">
 
+    <!-- 顶栏：返回圆钮 + 居中页名。右侧留一个同宽的位，标题才真居中 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="52dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="8dp">
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
 
         <ImageView
             android:id="@+id/back"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back_arrow"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/action_back" />
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_circle_white"
+            android:contentDescription="@string/action_back"
+            android:padding="8dp"
+            android:src="@drawable/ic_back_arrow" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/detail_title"
+            android:textColor="@color/shell_ink"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="36dp"
+            android:layout_height="36dp" />
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:fillViewport="true">
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:scrollbars="none">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="20dp"
-            android:paddingBottom="24dp">
+            android:paddingBottom="20dp">
 
+            <!-- 封面剧场：深靛底上立一张书封 -->
+            <FrameLayout
+                android:id="@+id/hero"
+                android:layout_width="match_parent"
+                android:layout_height="272dp"
+                android:background="@drawable/bg_night_hero">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cover_card"
+                    android:layout_width="152dp"
+                    android:layout_height="202dp"
+                    android:layout_gravity="center"
+                    app:cardBackgroundColor="@color/night_surface"
+                    app:cardCornerRadius="13dp"
+                    app:cardElevation="14dp"
+                    app:strokeColor="#33FFFFFF"
+                    app:strokeWidth="1dp">
+
+                    <com.nascomic.reader.ui.widget.AspectImageView
+                        android:id="@+id/cover"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="@null"
+                        android:scaleType="centerCrop" />
+                </com.google.android.material.card.MaterialCardView>
+            </FrameLayout>
+
+            <!-- 信息卡：往上压住剧场下沿 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:layout_marginStart="@dimen/page_margin"
+                android:layout_marginTop="-26dp"
+                android:layout_marginEnd="@dimen/page_margin"
+                android:background="@drawable/bg_card_soft"
+                android:orientation="vertical"
+                android:paddingStart="18dp"
+                android:paddingTop="18dp"
+                android:paddingEnd="18dp"
+                android:paddingBottom="16dp">
 
-                <com.nascomic.reader.ui.widget.AspectImageView
-                    android:id="@+id/cover"
-                    android:layout_width="112dp"
+                <TextView
+                    android:id="@+id/title"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="@color/cover_placeholder"
-                    android:scaleType="centerCrop"
-                    android:contentDescription="@null" />
+                    android:fontFamily="serif"
+                    android:letterSpacing="0.02"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/shell_ink"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/meta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/shell_ink_muted"
+                    android:textSize="11sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="14dp"
+                    android:background="@color/shell_divider" />
+
+                <TextView
+                    android:id="@+id/source_line"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/shell_ink_muted"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- 阅读进度：橙调浅卡 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/page_margin"
+                android:layout_marginTop="14dp"
+                android:layout_marginEnd="@dimen/page_margin"
+                android:background="@drawable/bg_accent_tint_card"
+                android:orientation="vertical"
+                android:padding="16dp">
 
                 <LinearLayout
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/title"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="serif"
-                        android:lineSpacingExtra="3dp"
-                        android:textColor="@color/shell_ink"
-                        android:textSize="22sp" />
-
-                    <TextView
-                        android:id="@+id/meta"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:textColor="@color/shell_ink_muted"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/source_line"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:textColor="@color/shell_ink_muted"
-                        android:textSize="12sp" />
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
                     <LinearLayout
-                        android:layout_width="match_parent"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:background="@drawable/bg_icon_tile_accent"
+                        android:gravity="center">
+
+                        <ImageView
+                            android:layout_width="17dp"
+                            android:layout_height="17dp"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_bookmark"
+                            app:tint="@android:color/white" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:gravity="bottom"
-                        android:orientation="horizontal">
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
 
                         <TextView
-                            android:id="@+id/percent"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:fontFamily="serif"
-                            android:textColor="@color/shell_ink"
-                            android:textSize="26sp" />
+                            android:text="@string/detail_progress_label"
+                            android:textColor="@color/brand_accent_deep"
+                            android:textSize="10sp" />
 
                         <TextView
                             android:id="@+id/read_info"
-                            android:layout_width="0dp"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:layout_weight="1"
-                            android:textColor="@color/shell_ink_muted"
-                            android:textSize="11sp" />
+                            android:layout_marginTop="3dp"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:textColor="#FF492B20"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
                     </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/percent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/brand_accent_deep"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
+
+                <ProgressBar
+                    android:id="@+id/progress_bar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="4dp"
+                    android:layout_marginTop="12dp"
+                    android:max="100"
+                    android:progressDrawable="@drawable/progress_accent" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/primary"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="20dp"
-                android:background="@drawable/bg_primary"
-                android:gravity="center"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp" />
-
-            <TextView
-                android:id="@+id/secondary"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginTop="4dp"
-                android:gravity="center"
-                android:text="@string/detail_start_from_first"
-                android:textColor="@color/shell_ink_muted"
-                android:textSize="13sp"
-                android:background="?attr/selectableItemBackground"
-                android:visibility="gone" />
-
+            <!-- 章节目录 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginStart="@dimen/page_margin"
+                android:layout_marginTop="18dp"
+                android:layout_marginEnd="@dimen/page_margin"
+                android:baselineAligned="false"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
                 <TextView
                     android:id="@+id/toc_header"
-                    android:layout_width="0dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:fontFamily="serif"
                     android:textColor="@color/shell_ink"
-                    android:textSize="16sp" />
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/toc_count"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:textColor="@color/shell_ink_faint"
+                    android:textSize="10sp" />
+
+                <!-- 正序 / 倒序：点一下就翻，选哪边记在偏好里 -->
+                <LinearLayout
+                    android:id="@+id/toc_order"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/shell_ink_muted"
-                    android:textSize="12sp" />
+                    android:background="@drawable/bg_pill_outline"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="11dp"
+                    android:paddingTop="6dp"
+                    android:paddingEnd="9dp"
+                    android:paddingBottom="6dp">
+
+                    <TextView
+                        android:id="@+id/toc_order_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/shell_ink"
+                        android:textSize="11sp" />
+
+                    <ImageView
+                        android:id="@+id/toc_order_icon"
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_sort" />
+                </LinearLayout>
             </LinearLayout>
 
             <TextView
                 android:id="@+id/toc_hint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/page_margin"
                 android:layout_marginTop="10dp"
+                android:layout_marginEnd="@dimen/page_margin"
                 android:textColor="@color/shell_ink_muted"
                 android:textSize="12sp" />
 
@@ -169,27 +280,79 @@
                 android:id="@+id/toc_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginStart="@dimen/page_margin"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="@dimen/page_margin"
                 android:orientation="vertical" />
 
             <TextView
                 android:id="@+id/bm_header"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginStart="@dimen/page_margin"
+                android:layout_marginTop="22dp"
                 android:fontFamily="serif"
                 android:text="@string/detail_bookmarks"
                 android:textColor="@color/shell_ink"
-                android:textSize="16sp"
+                android:textSize="17sp"
+                android:textStyle="bold"
                 android:visibility="gone" />
 
             <LinearLayout
                 android:id="@+id/bm_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/page_margin"
                 android:layout_marginTop="6dp"
+                android:layout_marginEnd="@dimen/page_margin"
                 android:orientation="vertical" />
 
         </LinearLayout>
     </ScrollView>
+
+    <!-- 底部唯一主动作：墨色长条 + 播放圆钮。没读过是「开始阅读」，读到一半是「继续阅读」，读完是「重新阅读」 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_bottom_bar"
+        android:paddingStart="16dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="12dp">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="@drawable/bg_primary">
+            
+            <TextView
+                android:id="@+id/primary"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:ellipsize="end"
+                android:gravity="center_vertical"
+                android:maxLines="1"
+                android:paddingStart="20dp"
+                android:paddingEnd="48dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <FrameLayout
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/bg_play_circle">
+
+                <ImageView
+                    android:layout_width="13dp"
+                    android:layout_height="13dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_play" />
+            </FrameLayout>
+        </FrameLayout>
+    </FrameLayout>
+
 </LinearLayout>

@@ -183,8 +183,8 @@ class RemotePickerActivity : AppCompatActivity() {
         )
         item.addView(
             ImageView(this).apply {
-                setImageResource(R.drawable.ic_chevron)
-                imageTintList = ColorStateList.valueOf(getColor(R.color.shell_stroke))
+                setImageResource(R.drawable.ic_chevron_right)
+                imageTintList = ColorStateList.valueOf(getColor(R.color.shell_ink_faint))
             },
             LinearLayout.LayoutParams(dp(16), dp(16)),
         )

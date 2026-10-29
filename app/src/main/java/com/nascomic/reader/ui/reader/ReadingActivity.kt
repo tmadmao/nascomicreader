@@ -35,6 +35,8 @@ import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -86,6 +88,12 @@ class ReadingActivity : AppCompatActivity() {
     private var bookTitle: String = ""
     private var resumedOnce = false
 
+    /** 预载缓存：翻过的页留着，翻过去的页让位 */
+    private val pageCache = PageCache(PageCache.defaultBudget())
+
+    /** 正在跑的预载：翻页时掐掉重开，免得旧窗口的页还在往下解 */
+    private var prefetchJob: Job? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityReaderBinding.inflate(layoutInflater)
@@ -98,6 +106,7 @@ class ReadingActivity : AppCompatActivity() {
             return
         }
         binding.back.setOnClickListener { finish() }
+        binding.openToc.setOnClickListener { showTocSheet() }
         binding.toc.setOnClickListener { showTocSheet() }
         binding.bookmark.setOnClickListener { toggleBookmark() }
         binding.prevPage.setOnClickListener { turnBackward() }
@@ -129,10 +138,12 @@ class ReadingActivity : AppCompatActivity() {
     /** 把显示类参数应用到画面上。设置改完回来会再调一次。 */
     private fun applyDisplayPrefs() {
         val canvas = when (ReaderPrefs.Canvas.of(prefs.canvas)) {
-            ReaderPrefs.Canvas.LIGHT -> 0xFFF4F6F8.toInt()
+            ReaderPrefs.Canvas.LIGHT -> 0xFFF2EDE3.toInt()
             ReaderPrefs.Canvas.DARK -> 0xFF2A2E33.toInt()
             ReaderPrefs.Canvas.BLACK -> Color.BLACK
         }
+        // 裁边阈值、双页、拆页变了，缓存里的页已经不是同一个样子
+        pageCache.clear()
         binding.page.canvasColor = canvas
         applyEndTheme(canvas)
         binding.page.marginPx = dp(prefs.sideMarginDp)
@@ -147,12 +158,20 @@ class ReadingActivity : AppCompatActivity() {
     /** 书的尾跟着画布底色走：浅底石墨字，深底转暖白，不在深底上留一块浅色方块 */
     private fun applyEndTheme(canvas: Int) {
         val light = ReaderPrefs.Canvas.of(prefs.canvas) == ReaderPrefs.Canvas.LIGHT
-        val muted = if (light) 0xFF5F666D.toInt() else 0xFFA9AEB4.toInt()
+        val muted = if (light) 0xFF6F6A62.toInt() else 0xFFA9AEB4.toInt()
         binding.endPage.setBackgroundColor(canvas)
-        binding.endTitle.setTextColor(if (light) 0xFF22262B.toInt() else 0xFFEDEAE4.toInt())
+        binding.endTitle.setTextColor(if (light) 0xFF1B1C20.toInt() else 0xFFEDEAE4.toInt())
         binding.endMeta.setTextColor(muted)
         binding.endSay.setTextColor(muted)
         binding.endTip.setTextColor(muted)
+        // 按钮也得跟着翻：深色画布上的墨色按钮等于看不见
+        if (light) {
+            binding.endBack.setBackgroundResource(R.drawable.bg_pill_ink)
+            binding.endBack.setTextColor(0xFFFFFFFF.toInt())
+        } else {
+            binding.endBack.setBackgroundResource(R.drawable.bg_pill_paper)
+            binding.endBack.setTextColor(0xFF1B1C20.toInt())
+        }
     }
 
     private fun openBook() {
@@ -222,6 +241,8 @@ class ReadingActivity : AppCompatActivity() {
         val viewH = binding.page.height.coerceAtLeast(1)
         // 双页时每页只占半宽，解码目标也跟着减半，省一半内存
         val targetW = if (prefs.dualPage) (viewW / 2).coerceAtLeast(1) else viewW
+        // 转屏或换双页后目标尺寸变了：旧尺寸解出来的图会发虚，整份丢掉
+        pageCache.ensureGeometry(targetW, viewH)
 
         lifecycleScope.launch {
             // 跳过空白页会改页码，所以整段在 IO 线程里定下来再回来更新界面
@@ -241,6 +262,7 @@ class ReadingActivity : AppCompatActivity() {
             binding.loading.isVisible = false
             loading = false
             saveProgress()
+            startPrefetch(src, targetW, viewH)
         }
     }
 
@@ -330,11 +352,15 @@ class ReadingActivity : AppCompatActivity() {
         } else {
             getString(R.string.reader_page_format, pos.page, pos.total)
         }
-        // 顶栏一行报位置：书名 · 话名
-        binding.bookTitle.text = if (pos.chaptered) {
-            getString(R.string.reader_title_with_chapter, bookTitle, pos.chapterTitle)
+        // 顶栏两行：书名在上、话名在下；单行本没有话就只留书名
+        binding.bookTitle.text = bookTitle
+        binding.chapterLabel.isVisible = pos.chaptered
+        binding.chapterLabel.text = if (pos.chaptered) pos.chapterTitle else ""
+        // 整本读到哪：顶栏底部那条细线
+        binding.bookProgress.progress = if (total > 0) {
+            ((page + 1) * 100 / total).coerceIn(0, 100)
         } else {
-            bookTitle
+            0
         }
         refreshBookmarkState()
     }
@@ -353,9 +379,20 @@ class ReadingActivity : AppCompatActivity() {
     }
 
     /**
-     * 解一页，并按参数决定取哪一块：裁白边、跨页拆分都只改源矩形，不复制位图。
+     * 取一页：先看预载缓存，没有再解一次并留下来。
+     * 裁白边与跨页拆分都只改源矩形，不复制位图，所以缓存里放的是「解好的整页」。
      */
     private fun buildPage(src: BookSource, index: Int, targetW: Int, targetH: Int): ReaderPage? {
+        val entry = pageCache.get(index) ?: run {
+            val decoded = decodePage(src, index, targetW, targetH) ?: return null
+            pageCache.put(index, decoded)
+            decoded
+        }
+        return pageOf(entry)
+    }
+
+    /** 解一页并量出裁边范围。画当前页与后台预载都走这条路，两边存的必须是同一种东西 */
+    private fun decodePage(src: BookSource, index: Int, targetW: Int, targetH: Int): PageCache.Entry? {
         val bitmap = runCatching {
             if (src is RenderedPageSource) {
                 src.renderPage(index, targetW, targetH)
@@ -370,18 +407,43 @@ class ReadingActivity : AppCompatActivity() {
             TrimBounds.Bounds(0, 0, bitmap.width, bitmap.height)
         }
         val full = Rect(bounds.left, bounds.top, bounds.right, bounds.bottom)
-        val wide = full.width() > full.height() * 1.2f
+        return PageCache.Entry(bitmap, full, full.width() > full.height() * 1.2f)
+    }
 
-        if (wide && prefs.splitWide) {
+    /** 把缓存里的那一页摆成这一屏要的样子：跨页拆分按 [half] 取左半或右半 */
+    private fun pageOf(entry: PageCache.Entry): ReaderPage {
+        val full = entry.bounds
+        if (entry.wide && prefs.splitWide) {
             val mid = full.left + full.width() / 2
             val part = if (half == 1) {
                 Rect(mid, full.top, full.right, full.bottom)
             } else {
                 Rect(full.left, full.top, mid, full.bottom)
             }
-            return ReaderPage(bitmap, part, wide = true)
+            return ReaderPage(entry.bitmap, part, wide = true)
         }
-        return ReaderPage(bitmap, full, wide = wide)
+        return ReaderPage(entry.bitmap, full, wide = entry.wide)
+    }
+
+    /**
+     * 往后预取几页。翻页时等的是「连远端 + 解码」，先把这几页解好放进缓存，翻过去就直接出图。
+     *
+     * 每次只跑一个预载任务，翻页时把上一个掐掉；缓存里超出窗口的页同时丢掉。
+     */
+    private fun startPrefetch(src: BookSource, targetW: Int, targetH: Int) {
+        prefetchJob?.cancel()
+        val ahead = prefs.prefetchPages
+        pageCache.keepOnly(PageWindow.keep(page, ahead, total))
+        val range = PageWindow.prefetch(page, ahead, total)
+        if (range.isEmpty()) return
+        prefetchJob = lifecycleScope.launch(Dispatchers.IO) {
+            for (index in range) {
+                if (!isActive) return@launch
+                if (pageCache.get(index) != null) continue
+                runCatching { decodePage(src, index, targetW, targetH) }
+                    .getOrNull()?.let { pageCache.put(index, it) }
+            }
+        }
     }
 
     private fun showError(message: String) {
@@ -455,6 +517,7 @@ class ReadingActivity : AppCompatActivity() {
         val padV = dp(13)
 
         for (info in src.chapters) {
+            val isCurrent = info.ordinal == current
             val row = TextView(this).apply {
                 text = if (info.pageCount > 0) {
                     getString(
@@ -466,17 +529,21 @@ class ReadingActivity : AppCompatActivity() {
                 }
                 textSize = 14f
                 setPadding(padH, padV, padH, padV)
-                setTextColor(
-                    if (info.ordinal == current) getColor(R.color.brand_indigo_soft)
-                    else getColor(android.R.color.white)
-                )
+                setTextColor(getColor(if (isCurrent) R.color.brand_accent else R.color.shell_ink))
+                if (isCurrent) {
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(getColor(R.color.brand_accent_tint))
+                    }
+                }
                 setOnClickListener {
                     sheet.dismiss()
                     setToolbarVisible(false)
                     turnTo(src.firstPageOfChapter(info.ordinal))
                 }
             }
-            if (info.ordinal == current) currentRow = row
+            if (isCurrent) currentRow = row
             list.addView(row)
         }
 

@@ -25,6 +25,11 @@ class AppPrefs(context: Context) {
         get() = sp.getInt(KEY_ORIENTATION, Orientation.SYSTEM.value)
         set(value) = sp.edit().putInt(KEY_ORIENTATION, value).apply()
 
+    /** 详情页目录倒序：章多的书常从最新一话看起 */
+    var tocDescending: Boolean
+        get() = sp.getBoolean(KEY_TOC_DESCENDING, false)
+        set(value) = sp.edit().putBoolean(KEY_TOC_DESCENDING, value).apply()
+
     enum class Orientation(val value: Int) {
         SYSTEM(0),
         PORTRAIT(1),
@@ -39,5 +44,6 @@ class AppPrefs(context: Context) {
     private companion object {
         const val KEY_SKIP_DETAIL = "ui.skip_detail"
         const val KEY_ORIENTATION = "ui.orientation"
+        const val KEY_TOC_DESCENDING = "detail.toc_descending"
     }
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 单色图标：系统取这一份自己上色，只留书页剪影 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M37.5,43 C42,40.6 48,40.4 53.5,42 L53.5,70.5 C48,69 42,69.2 37.5,71.6 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M70.5,43 C66,40.6 60,40.4 54.5,42 L54.5,70.5 C60,69 66,69.2 70.5,71.6 Z" />
+</vector>

@@ -131,8 +131,12 @@ class MainActivity : AppCompatActivity() {
             val books = queryBooks()
             adapter.submit(books, progress)
 
-            binding.empty.visibility = if (books.isEmpty()) View.VISIBLE else View.GONE
-            binding.grid.visibility = if (books.isEmpty()) View.GONE else View.VISIBLE
+            val empty = books.isEmpty()
+            binding.empty.visibility = if (empty) View.VISIBLE else View.GONE
+            binding.grid.visibility = if (empty) View.GONE else View.VISIBLE
+            // 空书架时不再报「全部漫画 0 本」——上面那块引导已经把话说清了
+            binding.sectionTitle.visibility = if (empty) View.GONE else View.VISIBLE
+            binding.sectionCount.visibility = if (empty) View.GONE else View.VISIBLE
 
             renderResume(allBooks, progress)
             requestVisibleCovers()
@@ -159,12 +163,24 @@ class MainActivity : AppCompatActivity() {
         binding.resumeMeta.text = resumeMeta(book, latest)
 
         val percent = readPercent(latest.pageGlobal, book.pageTotal, latest.finished)
-        binding.resumePercent.text = getString(R.string.shelf_percent, percent)
+        binding.resumePercent.text = getString(R.string.shelf_read_percent, percent)
+        binding.resumeBar.progress = percent
+        binding.resumeAction.text = if (book.chapterTotal > 0) {
+            getString(
+                R.string.shelf_position_chapter,
+                (latest.chapterOrdinal + 1).coerceAtMost(book.chapterTotal),
+                book.chapterTotal,
+            )
+        } else {
+            getString(
+                R.string.shelf_position_pages,
+                (latest.pageGlobal + 1).coerceAtMost(book.pageTotal),
+                book.pageTotal,
+            )
+        }
 
-        val coverWidth = dp(56)
-        binding.resumeCover.setImageBitmap(thumbs.load(book.id, coverWidth, coverWidth * 4 / 3))
         binding.resumeCard.setOnClickListener { openBook(book) }
-        binding.resumeAction.setOnClickListener { openBook(book) }
+        binding.resumePlay.setOnClickListener { openBook(book) }
     }
 
     /** 「第 11 话 / 24 话 · 来源名」；单行本没有话就报页 */
@@ -190,8 +206,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 标签做成一排 chip：选中的靛蓝实底白字，其余白底一像素描边。
-     * 每个 chip 带书数；书数为 0 的来源不出现（设计说明 §10）。
+     * 标签做成一排胶囊：选中的墨色实底白字，其余白底一像素描边。
+     * 书数为 0 的来源不出现（一个来源都没扫到书时，点进去只有空书架）。
+     * 本数写在列表上方的分段标题里，胶囊上不再重复。
      */
     private fun renderTabs() {
         binding.tabRow.removeAllViews()
@@ -206,19 +223,34 @@ class MainActivity : AppCompatActivity() {
 
         for ((key, label, count) in tabs) {
             if (key.startsWith(TAB_SOURCE_PREFIX) && count == 0) continue
-            binding.tabRow.addView(chip(key, label, count))
+            binding.tabRow.addView(chip(key, label))
         }
+
+        // 分段标题跟着当前标签走：全部漫画 / 最近阅读 / 来源名
+        val current = tabs.firstOrNull { it.first == currentTab }
+        binding.sectionTitle.text = when {
+            currentTab == TAB_ALL -> getString(R.string.shelf_section_all)
+            current != null -> current.second
+            else -> getString(R.string.shelf_section_all)
+        }
+        binding.sectionCount.text =
+            getString(R.string.shelf_section_count, tabCounts[currentTab] ?: 0)
+
+        binding.shelfCount.text =
+            getString(R.string.shelf_count_meta, tabCounts[TAB_ALL] ?: 0)
     }
 
-    private fun chip(key: String, label: String, count: Int): TextView {
+    private fun chip(key: String, label: String): TextView {
         val selected = key == currentTab
         return TextView(this).apply {
-            text = if (count > 0) "$label $count" else label
-            textSize = 12f
+            text = label
+            textSize = 11f
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setPadding(dp(14), dp(7), dp(14), dp(7))
             setTextColor(getColor(if (selected) android.R.color.white else R.color.shell_ink_muted))
-            background = chipBackground(selected)
+            background = getDrawable(
+                if (selected) R.drawable.bg_chip_selected else R.drawable.bg_chip_unselected
+            )
             isClickable = true
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -231,19 +263,6 @@ class MainActivity : AppCompatActivity() {
                     currentTab = key
                     refresh()
                 }
-            }
-        }
-    }
-
-    private fun chipBackground(selected: Boolean): android.graphics.drawable.GradientDrawable {
-        val radius = dp(14).toFloat()
-        return android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = radius
-            if (selected) {
-                setColor(getColor(R.color.brand_indigo))
-            } else {
-                setColor(getColor(R.color.shell_surface))
-                setStroke(dp(1), getColor(R.color.shell_stroke))
             }
         }
     }

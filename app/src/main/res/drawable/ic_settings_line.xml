@@ -1,33 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 设置：一个齿轮。一圈轮体 + 一圈短齿 + 中心轴孔，缩到 18dp 还认得出 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:strokeColor="#5F666D"
-        android:strokeWidth="1.6"
+        android:fillColor="#00000000"
+        android:pathData="M7,12 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
+        android:strokeColor="#FF1B1C20"
+        android:strokeWidth="2" />
+    <path
+        android:strokeColor="#FF1B1C20"
+        android:strokeWidth="2.2"
         android:strokeLineCap="round"
-        android:pathData="M4,7.5 L20,7.5 M4,12 L20,12 M4,16.5 L20,16.5" />
+        android:pathData="M18.4,12 L20.2,12 M16.53,7.47 L17.8,6.2 M12,5.6 L12,3.8 M7.47,7.47 L6.2,6.2 M5.6,12 L3.8,12 M7.47,16.53 L6.2,17.8 M12,18.4 L12,20.2 M16.53,16.53 L17.8,17.8" />
     <path
-        android:fillColor="#EEF0F2"
-        android:pathData="M9.2,7.5 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
-    <path
-        android:strokeColor="#5F666D"
-        android:strokeWidth="1.6"
-        android:pathData="M9.2,7.5 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
-    <path
-        android:fillColor="#EEF0F2"
-        android:pathData="M15,12 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
-    <path
-        android:strokeColor="#5F666D"
-        android:strokeWidth="1.6"
-        android:pathData="M15,12 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
-    <path
-        android:fillColor="#EEF0F2"
-        android:pathData="M11.4,16.5 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
-    <path
-        android:strokeColor="#5F666D"
-        android:strokeWidth="1.6"
-        android:pathData="M11.4,16.5 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0" />
+        android:fillColor="#FF1B1C20"
+        android:pathData="M10.9,12 a1.1,1.1 0 1,0 2.2,0 a1.1,1.1 0 1,0 -2.2,0" />
 </vector>

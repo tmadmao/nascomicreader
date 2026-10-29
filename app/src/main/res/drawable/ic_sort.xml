@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 排序：一上一下两个箭头，跟着「正序 / 倒序」一起出现在目录头右上 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="#FF6F6A62"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8,18 L8,7 M5.4,9.6 L8,7 L10.6,9.6 M16,6 L16,17 M13.4,14.4 L16,17 L18.6,14.4" />
+</vector>

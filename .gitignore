@@ -22,6 +22,10 @@ _local/
 _m5/
 _refactor/
 .workbuddy/
+# 界面稿导出（墨刀 HTML + 截图），属于设计过程材料
+ui/
+# 合规扫描门的报告
+guard-report.txt
 
 # 测试用的真实漫画文件不进仓库
 *.rar

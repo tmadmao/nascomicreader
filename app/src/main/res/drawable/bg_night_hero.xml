@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 详情页封面剧场的底：一整块深靛，从上到下压深一档 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:endColor="@color/night_surface_soft"
+        android:startColor="@color/night_surface_deep"
+        android:type="linear" />
+</shape>

@@ -6,13 +6,38 @@
       所以这里锁浅色；深色主题等有一套配色再做。
     -->
     <style name="Theme.NasComic" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">@color/brand_indigo</item>
+        <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">@color/brand_accent</item>
         <item name="colorSurface">@color/shell_background</item>
         <item name="colorOnSurface">@color/shell_ink</item>
+        <item name="colorSurfaceVariant">@color/shell_surface_soft</item>
+        <item name="colorOnSurfaceVariant">@color/shell_ink_muted</item>
+        <item name="colorOutline">@color/shell_stroke</item>
+        <!-- 开关、滑杆、单选点都跟着这一支橙走 -->
+        <item name="colorControlActivated">@color/brand_accent</item>
+        <item name="colorControlNormal">@color/shell_ink_faint</item>
+        <item name="colorSwitchThumbNormal">#FFFFFF</item>
         <item name="android:windowBackground">@color/shell_background</item>
         <item name="android:statusBarColor">@color/shell_background</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/shell_background</item>
+        <item name="android:textColorPrimary">@color/shell_ink</item>
+        <item name="alertDialogTheme">@style/Theme.NasComic.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.NasComic.Dialog</item>
+    </style>
+
+    <!-- 对话框：白面、圆角、橙按钮，别从 Material 默认里带出一套别的灰 -->
+    <style name="Theme.NasComic.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+        <item name="colorPrimary">@color/brand_accent</item>
+        <item name="colorSurface">@color/shell_surface</item>
+        <item name="colorOnSurface">@color/shell_ink</item>
+        <item name="shapeAppearanceOverlay">@style/Shape.Dialog</item>
+    </style>
+
+    <style name="Shape.Dialog" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">22dp</item>
     </style>
 
     <!-- 关于页那种「点一下进去」的行：整行可点，带按压反馈 -->
@@ -21,21 +46,21 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">horizontal</item>
         <item name="android:gravity">center_vertical</item>
-        <item name="android:paddingHorizontal">20dp</item>
+        <item name="android:paddingHorizontal">16dp</item>
         <item name="android:paddingVertical">14dp</item>
         <item name="android:background">?attr/selectableItemBackground</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
     </style>
 
-    <!-- 阅读页底栏的单个按钮：图标在上、字在下 -->
+    <!-- 阅读页工具栏的单个按钮：图标在上、字在下 -->
     <style name="ReaderBarItem">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">match_parent</item>
         <item name="android:layout_weight">1</item>
         <item name="android:orientation">vertical</item>
         <item name="android:gravity">center</item>
-        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
     </style>
@@ -43,8 +68,16 @@
     <style name="ReaderBarLabel">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">3dp</item>
-        <item name="android:textColor">#D8DDE2</item>
-        <item name="android:textSize">10sp</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textColor">@color/shell_ink_muted</item>
+        <item name="android:textSize">9sp</item>
+    </style>
+
+    <!-- 页面标题：书架那一句大标题的样式 -->
+    <style name="PageTitle">
+        <item name="android:textColor">@color/shell_ink</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.03</item>
     </style>
 </resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色卡上的半透明白胶囊：接着读的标签 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#26FFFFFF" />
+    <corners android:radius="99dp" />
+</shape>
