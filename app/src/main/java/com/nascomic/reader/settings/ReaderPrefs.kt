@@ -74,6 +74,24 @@ class ReaderPrefs(context: Context) {
         get() = sp.getInt(KEY_PREFETCH, 3)
         set(value) = sp.edit().putInt(KEY_PREFETCH, value.coerceIn(0, 12)).apply()
 
+    /** 内存缓存上限（MB）。0 = 自动，按堆的四分之一 */
+    var cacheMb: Int
+        get() = sp.getInt(KEY_CACHE_MB, 0)
+        set(value) = sp.edit().putInt(KEY_CACHE_MB, value.coerceAtLeast(0)).apply()
+
+    /** 内存缓存实际可用字节数：自动档取堆的四分之一，手选的档位夹在堆的 1/8 到 1/2 之间 */
+    fun cacheBudgetBytes(): Long {
+        val heap = Runtime.getRuntime().maxMemory()
+        val mb = cacheMb
+        if (mb <= 0) return heap / 4
+        return (mb * 1024L * 1024L).coerceIn(heap / 8, heap / 2)
+    }
+
+    /** 翻页时页面淡入，默认关闭 */
+    var turnAnimation: Boolean
+        get() = sp.getBoolean(KEY_TURN_ANIM, false)
+        set(value) = sp.edit().putBoolean(KEY_TURN_ANIM, value).apply()
+
     enum class Canvas(val value: Int) {
         LIGHT(0),
         DARK(1),
@@ -98,5 +116,7 @@ class ReaderPrefs(context: Context) {
         const val KEY_SKIP_BLANK = "reader.skip_blank"
         const val KEY_KEEP_ON = "reader.keep_screen_on"
         const val KEY_PREFETCH = "reader.prefetch_pages"
+        const val KEY_CACHE_MB = "reader.cache_mb"
+        const val KEY_TURN_ANIM = "reader.turn_animation"
     }
 }

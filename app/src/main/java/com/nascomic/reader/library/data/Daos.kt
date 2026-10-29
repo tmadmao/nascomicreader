@@ -101,6 +101,9 @@ interface BookDao {
     @Query("SELECT COUNT(*) FROM books")
     suspend fun count(): Int
 
+    @Query("SELECT id FROM books WHERE source_id = :sourceId")
+    suspend fun idsBySource(sourceId: Long): List<Long>
+
     @Query("SELECT COUNT(*) FROM books WHERE source_id = :sourceId")
     suspend fun countBySource(sourceId: Long): Int
 

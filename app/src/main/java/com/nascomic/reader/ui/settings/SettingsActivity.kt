@@ -346,13 +346,14 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    /** 动画与性能：预载页数是这一组里唯一能调的 */
+    /** 动画与性能：预载页数、内存上限、翻页动画 */
     private fun buildPerfRows(): List<View> = collect {
         addView(
-            placeholderRow(
+            switchRow(
                 title = getString(R.string.settings_turn_animation),
                 desc = getString(R.string.settings_turn_animation_desc),
-            )
+                checked = reader.turnAnimation,
+            ) { checked -> reader.turnAnimation = checked }
         )
 
         addView(
@@ -370,11 +371,18 @@ class SettingsActivity : AppCompatActivity() {
             ) { value -> reader.prefetchPages = value }
         )
 
+        // 内存缓存上限：自动档跟堆走，手选档位在 ReaderPrefs 里夹到堆的 1/8–1/2
+        val cacheOptions = listOf(0, 64, 128, 256, 512)
         addView(
-            placeholderRow(
+            choiceRow(
                 title = getString(R.string.settings_cache_limit),
                 desc = getString(R.string.settings_cache_limit_desc),
-            )
+                options = cacheOptions.map {
+                    if (it == 0) getString(R.string.settings_cache_auto)
+                    else getString(R.string.settings_cache_value, it)
+                },
+                selected = cacheOptions.indexOfFirst { it == reader.cacheMb }.coerceAtLeast(0),
+            ) { index -> reader.cacheMb = cacheOptions[index] }
         )
     }
 

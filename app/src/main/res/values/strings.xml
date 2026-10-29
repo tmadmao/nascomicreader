@@ -189,9 +189,11 @@
     <string name="settings_native_decode">原尺寸解码</string>
     <string name="settings_native_decode_desc">更清晰，占用内存更多</string>
     <string name="settings_turn_animation">翻页动画</string>
-    <string name="settings_turn_animation_desc">默认关闭</string>
+    <string name="settings_turn_animation_desc">翻页时页面淡入；默认关闭</string>
     <string name="settings_cache_limit">内存缓存上限</string>
-    <string name="settings_cache_limit_desc">超出后先丢最久没看的页</string>
+    <string name="settings_cache_limit_desc">超出后先丢最久没看的页；自动按内存四分之一，下次进阅读生效</string>
+    <string name="settings_cache_auto">自动</string>
+    <string name="settings_cache_value">%1$d MB</string>
     <string name="settings_reset">恢复默认设置</string>
     <string name="settings_reset_desc">把上面所有参数还原成初始值</string>
     <string name="settings_reset_title">恢复默认设置</string>

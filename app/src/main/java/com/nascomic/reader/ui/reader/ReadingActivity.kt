@@ -88,8 +88,15 @@ class ReadingActivity : AppCompatActivity() {
     private var bookTitle: String = ""
     private var resumedOnce = false
 
-    /** 预载缓存：翻过的页留着，翻过去的页让位 */
-    private val pageCache = PageCache(PageCache.defaultBudget())
+    /** 内存缓存：上限按偏好在进来时定，翻过去的页让位 */
+    private val pageCache by lazy { PageCache(prefs.cacheBudgetBytes()) }
+
+    /** 磁盘缓存：只有远程书值得落盘，本地文件再读一遍本来就快 */
+    private val diskCache by lazy { DiskPageCache(this) }
+    private var cacheToDisk = false
+
+    /** 首屏不淡入：刚进来就闪一下容易被当成加载失败 */
+    private var drawnOnce = false
 
     /** 正在跑的预载：翻页时掐掉重开，免得旧窗口的页还在往下解 */
     private var prefetchJob: Job? = null
@@ -186,6 +193,9 @@ class ReadingActivity : AppCompatActivity() {
                     opener.open(book, src, chapters)
                 }
 
+                // 远程书每页都要连一次网络，值得留一份；本地文件解码本来就快
+                cacheToDisk = src.kind != com.nascomic.reader.library.data.SourceEntity.KIND_LOCAL
+
                 source = opened
                 total = opened.pageCount
                 if (total == 0) {
@@ -258,6 +268,11 @@ class ReadingActivity : AppCompatActivity() {
                 // 这一屏已经含最后一页，往后翻就是书的尾
                 if (page + shownPages >= total) finishedOnce = true
                 binding.page.setPages(spread.pages)
+                if (prefs.turnAnimation && drawnOnce) {
+                    binding.page.alpha = 0.35f
+                    binding.page.animate().alpha(1f).setDuration(140).start()
+                }
+                drawnOnce = true
             }
             binding.loading.isVisible = false
             loading = false
@@ -379,16 +394,41 @@ class ReadingActivity : AppCompatActivity() {
     }
 
     /**
-     * 取一页：先看预载缓存，没有再解一次并留下来。
+     * 取一页：内存 → 磁盘 → 解一次并写回两处。
      * 裁白边与跨页拆分都只改源矩形，不复制位图，所以缓存里放的是「解好的整页」。
      */
     private fun buildPage(src: BookSource, index: Int, targetW: Int, targetH: Int): ReaderPage? {
         val entry = pageCache.get(index) ?: run {
-            val decoded = decodePage(src, index, targetW, targetH) ?: return null
-            pageCache.put(index, decoded)
-            decoded
+            val loaded = loadPage(src, index, targetW, targetH) ?: return null
+            pageCache.put(index, loaded)
+            loaded
         }
         return pageOf(entry)
+    }
+
+    /**
+     * 拿一页解好的样子：内存里没有就去磁盘翻，磁盘也没有才真去读源。
+     * 键里带着目标尺寸与裁边参数，所以换尺寸 / 改阈值自然落到新文件上，旧图不会被误用。
+     */
+    private fun loadPage(src: BookSource, index: Int, targetW: Int, targetH: Int): PageCache.Entry? {
+        val key = PageCacheKey.of(index, targetW, targetH, prefs.trimBorder, prefs.trimLevel)
+        if (cacheToDisk) {
+            diskCache.load(bookId, key)?.let { bitmap ->
+                return PageCache.Entry(bitmap, boundsOf(bitmap), bitmap.width > bitmap.height * 1.2f)
+            }
+        }
+        val decoded = decodePage(src, index, targetW, targetH) ?: return null
+        if (cacheToDisk) diskCache.save(bookId, key, decoded.bitmap)
+        return decoded
+    }
+
+    private fun boundsOf(bitmap: Bitmap): Rect {
+        val bounds = if (prefs.trimBorder) {
+            TrimBounds.detect(bitmap, prefs.trimLevel)
+        } else {
+            TrimBounds.Bounds(0, 0, bitmap.width, bitmap.height)
+        }
+        return Rect(bounds.left, bounds.top, bounds.right, bounds.bottom)
     }
 
     /** 解一页并量出裁边范围。画当前页与后台预载都走这条路，两边存的必须是同一种东西 */
@@ -401,12 +441,7 @@ class ReadingActivity : AppCompatActivity() {
             }
         }.getOrNull() ?: return null
 
-        val bounds = if (prefs.trimBorder) {
-            TrimBounds.detect(bitmap, prefs.trimLevel)
-        } else {
-            TrimBounds.Bounds(0, 0, bitmap.width, bitmap.height)
-        }
-        val full = Rect(bounds.left, bounds.top, bounds.right, bounds.bottom)
+        val full = boundsOf(bitmap)
         return PageCache.Entry(bitmap, full, full.width() > full.height() * 1.2f)
     }
 
@@ -440,9 +475,11 @@ class ReadingActivity : AppCompatActivity() {
             for (index in range) {
                 if (!isActive) return@launch
                 if (pageCache.get(index) != null) continue
-                runCatching { decodePage(src, index, targetW, targetH) }
+                runCatching { loadPage(src, index, targetW, targetH) }
                     .getOrNull()?.let { pageCache.put(index, it) }
             }
+            // 一轮预载写完再看要不要清盘，比每写一页都扫一遍目录省事
+            if (cacheToDisk) diskCache.trim(bookId)
         }
     }
 
