@@ -115,6 +115,44 @@
     <string name="detail_chapter_row">%1$d. %2$s</string>
     <string name="detail_chapter_pages">%1$d 页</string>
 
+    <!-- 书源管理 -->
+    <string name="sources_title">书源管理</string>
+    <string name="sources_subtitle">管理你的漫画来源</string>
+    <string name="sources_banner_badge">本地优先 · 隐私安全</string>
+    <string name="sources_banner_title">统一管理\n你的漫画书源</string>
+    <string name="sources_banner_desc">本地与远端书源统一入库，文件始终保存在原始位置。</string>
+    <string name="sources_new_section">新增书源</string>
+    <string name="sources_new_section_desc">连接文件夹、局域网共享或 WebDAV 目录</string>
+    <string name="sources_type_local">本机文件夹</string>
+    <string name="sources_type_local_desc">存储 / 下载目录</string>
+    <string name="sources_type_webdav">WebDAV</string>
+    <string name="sources_type_webdav_desc">NAS / 私有云</string>
+    <string name="sources_type_smb">SMB</string>
+    <string name="sources_type_smb_desc">局域网共享</string>
+    <string name="sources_format">支持 ZIP / CBZ / PDF / 图片文件夹</string>
+    <string name="sources_format_desc">自动识别章节与封面，新增书源时自动入库</string>
+    <string name="sources_mine">我的书源</string>
+    <string name="sources_summary">共 %1$d 个书源 · %2$d 本漫画</string>
+    <string name="sources_hint">点一下选中，长按改名或删掉</string>
+    <string name="sources_row_books">已入库 %1$d 本</string>
+    <string name="sources_row_meta">已入库 %1$d 本 · %2$s</string>
+    <string name="sources_empty">还没有书源。选上面的类型，从这里加第一个。</string>
+    <string name="sources_action_local">扫描本机文件夹</string>
+    <string name="sources_action_webdav">连接 WebDAV</string>
+    <string name="sources_action_smb">连接 SMB 共享</string>
+    <string name="sources_action_update">更新选中书源</string>
+    <string name="sources_hint_local">文件留在原处，应用只记索引</string>
+    <string name="sources_hint_webdav">填服务器地址与账号，下一步在远端选目录</string>
+    <string name="sources_hint_smb">局域网共享（SMB2/3），填地址与账号</string>
+    <string name="sources_hint_update">增量同步，只补新增与变动的书</string>
+    <string name="sources_scanning">正在更新「%1$s」</string>
+    <string name="sources_scan_listing">正在读取目录，识别新增漫画…</string>
+    <string name="sources_scan_done">更新完成「%1$s」，共 %2$d 本</string>
+    <string name="sources_scan_failed">更新失败：%1$s</string>
+    <string name="settings_sources_entry">书源管理</string>
+    <string name="settings_sources_entry_empty">还没有书源</string>
+    <string name="settings_sources_entry_desc">本地 %1$d · WebDAV %2$d · SMB %3$d</string>
+
     <string name="settings_title">设置</string>
     <string name="settings_skip_detail">跳过详情页</string>
     <string name="settings_skip_detail_desc">打开书时直接继续阅读，不显示详情页</string>
@@ -151,7 +189,6 @@
     <string name="source_state_failed_auth">失败 · 账号或权限</string>
     <string name="source_state_failed_unreachable">失败 · 连不上</string>
     <string name="source_row_desc">%1$s · %2$s</string>
-    <string name="source_empty">还没有来源。选一个本地目录，或添加 WebDAV / SMB。</string>
     <string name="source_rescan_done">已重扫「%1$s」，%2$d 本</string>
     <string name="source_rescan_failed">扫描失败：%1$s</string>
     <string name="source_delete_title">删除来源</string>
@@ -161,14 +198,7 @@
     <string name="time_minutes_ago">%1$d 分钟前</string>
     <string name="time_hours_ago">%1$d 小时前</string>
     <string name="time_days_ago">%1$d 天前</string>
-    <string name="settings_section_source">书库来源</string>
-    <string name="settings_add_local">添加本地目录</string>
-    <string name="settings_add_local_desc">手机或存储卡里放漫画的文件夹，选一次就记住</string>
 
-    <string name="settings_add_dav">添加 WebDAV 服务器</string>
-    <string name="settings_add_dav_desc">填服务器与账号，下一步在远端选书库目录</string>
-    <string name="settings_add_smb">添加 SMB 共享</string>
-    <string name="settings_add_smb_desc">局域网共享（SMB2/3），填地址与账号，下一步选目录</string>
 
     <string name="dav_dialog_title">添加 WebDAV</string>
     <string name="smb_dialog_title">添加 SMB 共享</string>

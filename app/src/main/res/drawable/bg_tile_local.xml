@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 来源卡片与图标块：三种来源各一套底色 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/tile_local_bg" />
+    <corners android:radius="10dp" />
+</shape>

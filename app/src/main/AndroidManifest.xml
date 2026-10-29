@@ -49,6 +49,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.sources.SourcesActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.remote.RemotePickerActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />

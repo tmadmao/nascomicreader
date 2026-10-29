@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 盾牌 + 勾：横幅里「本地优先」那句的小标 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12,3.4 L19,6.2 v5.6 c0,4.6 -3.2,7.6 -7,8.8 c-3.8,-1.2 -7,-4.2 -7,-8.8 V6.2 z"
+        android:strokeColor="#FF5D8766"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.7" />
+    <path
+        android:strokeColor="#FF5D8766"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.7"
+        android:pathData="M8.9,11.8 L11.2,14.1 L15.3,9.7" />
+</vector>

@@ -3,36 +3,27 @@ package com.nascomic.reader.ui.settings
 import android.content.Intent
 import android.os.Bundle
 import android.util.TypedValue
-import android.widget.EditText
 import android.widget.ImageView
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.SeekBar
-import android.widget.Toast
 import kotlinx.coroutines.launch
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivitySettingsBinding
 import androidx.lifecycle.lifecycleScope
-import com.nascomic.reader.library.DavAddress
-import com.nascomic.reader.smb.SmbTarget
-import com.nascomic.reader.ui.remote.RemotePickerActivity
-import com.nascomic.reader.ui.widget.ScanProgressDialog
-import com.nascomic.reader.ui.remote.remoteErrorText
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
-import com.nascomic.reader.library.RelativeTime
-import com.nascomic.reader.library.scan.LibraryScanner
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.about.AboutActivity
+import com.nascomic.reader.ui.sources.SourcesActivity
 
 /**
  * 设置。按组排列，改动立即写入（读取端在 [ReaderPrefs] / [AppPrefs]）。
@@ -47,15 +38,6 @@ class SettingsActivity : AppCompatActivity() {
     private val reader by lazy { ReaderPrefs(this) }
     private val db by lazy { ReaderDatabase.get(this) }
     private val repository by lazy { SourceRepository(this, db) }
-    private val scanner by lazy { LibraryScanner(this, db) }
-
-    /** 本地目录用系统的目录选择器：授权一次，之后一直能用 */
-    private val pickLocalFolder = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
-    ) { uri: android.net.Uri? -> if (uri != null) addLocalFolder(uri) }
-
-    /** 来源列表的代次：界面重建后旧查询的结果要丢掉 */
-    private var sourceGeneration = 0
 
     /** 展开着哪几组。默认只开「阅读」 */
     private val expanded = mutableSetOf(GROUP_READING)
@@ -77,8 +59,8 @@ class SettingsActivity : AppCompatActivity() {
         val host = binding.settingsContainer
         host.removeAllViews()
 
+        addSourceEntry(host)
         addGroup(host, GROUP_READING, getString(R.string.settings_section_reading), buildReadingRows())
-        addGroup(host, GROUP_SOURCE, getString(R.string.settings_section_source), buildSourceRows())
         addGroup(host, GROUP_OTHER, getString(R.string.settings_section_other), buildOtherRows())
         addGroup(host, GROUP_ABOUT, getString(R.string.settings_about), buildAboutRows())
 
@@ -89,6 +71,70 @@ class SettingsActivity : AppCompatActivity() {
         binding.expandAll.setOnClickListener {
             if (expanded.size == GROUP_ALL.size) expanded.clear() else expanded.addAll(GROUP_ALL)
             buildRows()
+        }
+    }
+
+    /**
+     * 「书源管理」入口：设置页第一个，不是抽屉，点一下进第三页。
+     * 下面那行小字报现状——本地 1 · WebDAV 1 · SMB 0。
+     */
+    private fun addSourceEntry(host: LinearLayout) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = getDrawable(R.drawable.bg_card)
+            clipToOutline = true
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isBaselineAligned = false
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            isClickable = true
+            setBackgroundResource(selectableBackground())
+            setOnClickListener {
+                startActivity(Intent(this@SettingsActivity, SourcesActivity::class.java))
+            }
+        }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(TextView(this).apply {
+            text = getString(R.string.settings_sources_entry)
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(getColor(R.color.shell_ink))
+        })
+        val desc = TextView(this).apply {
+            text = getString(R.string.settings_sources_entry_empty)
+            textSize = 11f
+            setTextColor(getColor(R.color.shell_ink_faint))
+            setPadding(0, dp(3), 0, 0)
+        }
+        texts.addView(desc)
+        row.addView(texts, weighted())
+        row.addView(chevron())
+        card.addView(row)
+
+        host.addView(card, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            marginStart = dp(PAGE_MARGIN)
+            marginEnd = dp(PAGE_MARGIN)
+            topMargin = dp(4)
+            bottomMargin = dp(2)
+        })
+
+        lifecycleScope.launch {
+            val list = repository.list()
+            desc.text = if (list.isEmpty()) {
+                getString(R.string.settings_sources_entry_empty)
+            } else {
+                getString(
+                    R.string.settings_sources_entry_desc,
+                    list.count { it.kind == SourceEntity.KIND_LOCAL },
+                    list.count { it.kind == SourceEntity.KIND_WEBDAV },
+                    list.count { it.kind == SourceEntity.KIND_SMB },
+                )
+            }
         }
     }
 
@@ -281,39 +327,6 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    private fun buildSourceRows(): List<View> = collect {
-
-
-        addView(
-            choiceRowWithValue(
-                title = getString(R.string.settings_add_local),
-                desc = getString(R.string.settings_add_local_desc),
-                value = "",
-            ) { pickLocalFolder.launch(null) }
-        )
-
-        addView(
-            choiceRowWithValue(
-                title = getString(R.string.settings_add_dav),
-                desc = getString(R.string.settings_add_dav_desc),
-                value = "",
-            ) { showRemoteDialog(SourceEntity.KIND_WEBDAV) }
-        )
-
-        addView(
-            choiceRowWithValue(
-                title = getString(R.string.settings_add_smb),
-                desc = getString(R.string.settings_add_smb_desc),
-                value = "",
-            ) { showRemoteDialog(SourceEntity.KIND_SMB) }
-        )
-
-        // 已添加的来源：点一下重扫，长按删除
-        val sourceList = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
-        addView(sourceList)
-        loadSources(sourceList)
-    }
-
     private fun buildOtherRows(): List<View> = collect {
 
 
@@ -354,188 +367,6 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    /**
-     * 本地目录选完后先问名字。系统选择器只给路径，名字得留给用户——
-     * 一柜子「Download」「漫画」分不清谁是谁。
-     */
-    private fun addLocalFolder(uri: android.net.Uri) {
-        val suggested = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':').orEmpty()
-        val input = EditText(this).apply {
-            hint = getString(R.string.source_local_label_hint)
-            setText(suggested)
-            setSelection(text.length)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.source_local_label_hint)
-            .setView(input)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                scanLocalFolder(uri, input.text.toString().trim())
-            }
-            .show()
-    }
-
-    private fun scanLocalFolder(uri: android.net.Uri, label: String) {
-        lifecycleScope.launch {
-            val toast = try {
-                val id = repository.addLocalFolder(uri, label.ifBlank { null })
-                val source = db.sourceDao().get(id)
-                val found = source?.let { scanner.scan(it).found } ?: 0
-                getString(R.string.source_added, source?.label.orEmpty(), found)
-            } catch (e: Exception) {
-                getString(R.string.source_failed, e.message ?: "")
-            }
-            Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
-            buildRows()
-        }
-    }
-
-    /**
-     * 列出已有来源。点重扫、长按删除。
-     *
-     * 每次都重新查库：新增或删除之后 [buildRows] 会再走一遍，这里用代次丢掉旧结果，
-     * 免得慢的查询把行加到已经废弃的容器里。
-     */
-    private fun loadSources(container: LinearLayout) {
-        val generation = ++sourceGeneration
-        lifecycleScope.launch {
-            val list = repository.list()
-            if (generation != sourceGeneration) return@launch
-
-            if (list.isEmpty()) {
-                container.addView(
-                    TextView(this@SettingsActivity).apply {
-                        text = getString(R.string.source_empty)
-                        textSize = 12f
-                        setTextColor(getColor(R.color.shell_ink_faint))
-                        setPadding(dp(16), dp(14), dp(16), dp(14))
-                    }
-                )
-                return@launch
-            }
-            for (source in list) container.addView(sourceRow(source))
-        }
-    }
-
-    private fun sourceRow(source: SourceEntity): View {
-        val row = rowContainer()
-        row.addView(titleBlock(source.label, describe(source)), weighted())
-        row.addView(chevron())
-        row.setOnClickListener { rescan(source) }
-        row.setOnLongClickListener {
-            showSourceActions(source)
-            true
-        }
-        return withDivider(row)
-    }
-
-    /** 「类型 · 状态」，状态里带上次扫描的相对时间 */
-    private fun describe(source: SourceEntity): String {
-        val kind = when (source.kind) {
-            SourceEntity.KIND_WEBDAV -> R.string.source_kind_webdav
-            SourceEntity.KIND_SMB -> R.string.source_kind_smb
-            else -> R.string.source_kind_local
-        }
-        val state = when (source.scanState) {
-            SourceEntity.STATE_SCANNING -> getString(R.string.source_state_scanning)
-            SourceEntity.STATE_DONE -> {
-                val at = source.lastScanAt
-                if (at == null || at <= 0) {
-                    getString(R.string.source_state_done)
-                } else {
-                    val shown = RelativeTime.of(System.currentTimeMillis(), at)
-                    when (shown.kind) {
-                        RelativeTime.Kind.JUST_NOW -> getString(R.string.time_just_now)
-                        RelativeTime.Kind.MINUTES -> getString(R.string.time_minutes_ago, shown.amount)
-                        RelativeTime.Kind.HOURS -> getString(R.string.time_hours_ago, shown.amount)
-                        RelativeTime.Kind.DAYS -> getString(R.string.time_days_ago, shown.amount)
-                        RelativeTime.Kind.DATE -> RelativeTime.dateOf(at)
-                    }
-                }
-            }
-            SourceEntity.STATE_FAILED -> when (source.errorCode) {
-                SourceEntity.ERROR_AUTH -> getString(R.string.source_state_failed_auth)
-                SourceEntity.ERROR_UNREACHABLE -> getString(R.string.source_state_failed_unreachable)
-                else -> getString(R.string.source_state_failed)
-            }
-            else -> getString(R.string.source_state_idle)
-        }
-        return getString(R.string.source_row_desc, getString(kind), state)
-    }
-
-    private fun rescan(source: SourceEntity) {
-        val progress = ScanProgressDialog(this)
-        lifecycleScope.launch {
-            progress.showListing(source.label)
-            val listener = object : LibraryScanner.Listener {
-                override fun onListing() = progress.showListing(source.label)
-                override fun onProgress(done: Int, total: Int) = progress.progress(done, total)
-            }
-            val toast = try {
-                val result = scanner.scan(source, listener)
-                getString(R.string.source_rescan_done, source.label, result.found)
-            } catch (e: Exception) {
-                getString(R.string.source_rescan_failed, remoteErrorText(this@SettingsActivity, e))
-            } finally {
-                progress.dismiss()
-            }
-            Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
-            buildRows()
-        }
-    }
-
-    /** 长按来源：改名或删掉 */
-    private fun showSourceActions(source: SourceEntity) {
-        AlertDialog.Builder(this)
-            .setItems(
-                arrayOf(
-                    getString(R.string.source_rename),
-                    getString(R.string.action_delete),
-                )
-            ) { _, which ->
-                if (which == 0) renameSource(source) else confirmRemove(source)
-            }
-            .show()
-    }
-
-    private fun renameSource(source: SourceEntity) {
-        val input = EditText(this).apply {
-            hint = getString(R.string.source_rename_hint)
-            setText(source.label)
-            setSelection(text.length)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.source_rename_title)
-            .setView(input)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                lifecycleScope.launch {
-                    repository.rename(source.id, input.text.toString())
-                    buildRows()
-                }
-            }
-            .show()
-    }
-
-    private fun confirmRemove(source: SourceEntity) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.source_delete_title)
-            .setMessage(getString(R.string.source_delete_message, source.label))
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.action_delete) { _, _ ->
-                lifecycleScope.launch {
-                    repository.remove(source.id)
-                    Toast.makeText(
-                        this@SettingsActivity,
-                        getString(R.string.source_deleted, source.label),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    buildRows()
-                }
-            }
-            .show()
-    }
-
     /** 只做导航的行：右侧给一个箭头，点一下进去或弹对话框 */
     private fun choiceRowWithValue(
         title: String,
@@ -558,200 +389,13 @@ class SettingsActivity : AppCompatActivity() {
         return withDivider(row)
     }
 
-    /**
-     * 添加远端来源。WebDAV 与 SMB 要填的是一组东西（地址、端口、账号、密码），
-     * 共用对话框，只有协议行与提示语按协议换。
-     *
-     * 端口单独一栏：NAS 的 WebDAV 常在 5005 / 5006 这类端口上，地址栏里只写主机名，
-     * 端口用数字键盘填，避免在地址里跟冒号较劲。
-     */
-    private fun showRemoteDialog(kind: Int) {
-        val smb = kind == SourceEntity.KIND_SMB
-        val content = layoutInflater.inflate(R.layout.dialog_remote, null)
-
-        val address = content.findViewById<EditText>(R.id.remote_endpoint)
-        val port = content.findViewById<EditText>(R.id.remote_port)
-        val account = content.findViewById<EditText>(R.id.remote_account)
-        val password = content.findViewById<EditText>(R.id.remote_password)
-        val label = content.findViewById<EditText>(R.id.remote_label)
-        val schemeRow = content.findViewById<View>(R.id.scheme_row)
-        val httpChip = content.findViewById<TextView>(R.id.scheme_http)
-        val httpsChip = content.findViewById<TextView>(R.id.scheme_https)
-
-        var scheme = "https"
-
-        fun renderScheme() {
-            styleSchemeChip(httpChip, scheme == "http")
-            styleSchemeChip(httpsChip, scheme == "https")
-            // 端口提示跟着协议走：换成 http 时把 443 的暗示消掉
-            port.hint = getString(
-                if (smb) R.string.remote_port_hint_smb else R.string.remote_port_hint,
-                if (smb) 445 else if (scheme == "http") 80 else 443,
-            )
-        }
-
-        schemeRow.visibility = if (smb) View.GONE else View.VISIBLE
-        httpChip.setOnClickListener { scheme = "http"; renderScheme() }
-        httpsChip.setOnClickListener { scheme = "https"; renderScheme() }
-
-        address.hint = getString(if (smb) R.string.smb_endpoint_hint else R.string.remote_host_hint)
-        account.hint = getString(if (smb) R.string.smb_account_hint else R.string.remote_account_hint)
-        renderScheme()
-        address.requestFocus()
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(if (smb) R.string.smb_dialog_title else R.string.dav_dialog_title)
-            .setView(content)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.action_next, null)
-            .create()
-
-        dialog.setOnShowListener {
-            // 输入不对时不关对话框，把原因说清楚，让人就地改
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val rawAddress = address.text.toString().trim()
-                val portText = port.text.toString().trim()
-                val portValue = if (portText.isEmpty()) {
-                    null
-                } else {
-                    portText.toIntOrNull()?.takeIf { it in 1..65535 }
-                }
-                if (portText.isNotEmpty() && portValue == null) {
-                    Toast.makeText(this, R.string.remote_port_error, Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                if (rawAddress.isEmpty()) {
-                    Toast.makeText(this, R.string.remote_address_error, Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-
-                val endpoint = if (smb) {
-                    rawAddress
-                } else {
-                    runCatching { DavAddress.toUrl(DavAddress.parse(scheme, rawAddress, portText)) }
-                        .getOrElse {
-                            Toast.makeText(this, it.message ?: "", Toast.LENGTH_SHORT).show()
-                            return@setOnClickListener
-                        }
-                }
-
-                // 先连上服务器、让用户自己点目录，别让人把路径打在地址里
-                pendingKind = kind
-                pendingPort = portValue
-                pendingAccount = account.text.toString().trim()
-                pendingPassword = password.text.toString()
-                pendingLabel = label.text.toString().trim()
-
-                val smbEndpoint = if (smb) {
-                    // 没写共享名先在对话框里报错，进到选目录页就没法列了
-                    val target = runCatching { SmbTarget.parse(rawAddress, portValue) }
-                        .getOrElse {
-                            Toast.makeText(this, it.message ?: "", Toast.LENGTH_SHORT).show()
-                            return@setOnClickListener
-                        }
-                    buildString {
-                        append("smb://").append(target.host).append(':').append(target.port)
-                        append('/').append(target.share)
-                        if (target.path.isNotEmpty()) append('/').append(target.path)
-                    }
-                } else {
-                    endpoint
-                }
-
-                dialog.dismiss()
-                pickDirectory.launch(
-                    Intent(this, RemotePickerActivity::class.java)
-                        .putExtra(RemotePickerActivity.EXTRA_KIND, kind)
-                        .putExtra(RemotePickerActivity.EXTRA_ENDPOINT, smbEndpoint)
-                        .putExtra(RemotePickerActivity.EXTRA_ACCOUNT, pendingAccount)
-                        .putExtra(RemotePickerActivity.EXTRA_PASSWORD, pendingPassword)
-                )
-            }
-        }
-        dialog.show()
-        // 键盘弹出来时把对话框顶上去，别把密码框挡住
-        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-    }
-
-    /** 协议的两个小圆角块：选中的墨色实底白字，未选白底描边 */
-    private fun styleSchemeChip(chip: TextView, selected: Boolean) {
-        chip.setTextColor(getColor(if (selected) android.R.color.white else R.color.shell_ink_muted))
-        chip.background = getDrawable(
-            if (selected) R.drawable.bg_chip_selected else R.drawable.bg_chip_unselected
-        )
-    }
-
-    private var pendingKind = SourceEntity.KIND_WEBDAV
-    private var pendingAccount = ""
-    private var pendingPassword = ""
-    private var pendingLabel = ""
-    private var pendingPort: Int? = null
-
-    /** 选完目录才真正登记来源：目录是用户在远端点的，不靠地址里手打 */
-    private val pickDirectory = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val picked = result.data?.getStringExtra(RemotePickerActivity.EXTRA_PICKED).orEmpty()
-        if (result.resultCode == RESULT_OK && picked.isNotEmpty()) {
-            addRemote(
-                kind = pendingKind,
-                endpoint = picked,
-                account = pendingAccount,
-                password = pendingPassword,
-                label = pendingLabel,
-                port = pendingPort,
-            )
-        }
-        pendingPassword = ""
-    }
-
-    private fun addRemote(
-        kind: Int,
-        endpoint: String,
-        account: String,
-        password: String,
-        label: String,
-        port: Int? = null,
-    ) {
-        val progress = ScanProgressDialog(this)
-        lifecycleScope.launch {
-            progress.showListing(label.ifBlank { endpoint })
-            val listener = object : LibraryScanner.Listener {
-                override fun onListing() = progress.showListing(label.ifBlank { endpoint })
-                override fun onProgress(done: Int, total: Int) = progress.progress(done, total)
-            }
-            val toast = try {
-                val id = if (kind == SourceEntity.KIND_SMB) {
-                    repository.addSmb(endpoint, account, password, label.ifBlank { null }, port)
-                } else {
-                    repository.addWebDav(endpoint, account, password, label.ifBlank { null })
-                }
-                val source = db.sourceDao().get(id)
-                val result = source?.let { scanner.scan(it, listener) }
-                // 远程只认这一层里的单文件，子文件夹不递归；扫到 0 本时说清是为什么
-                if ((result?.found ?: 0) == 0) {
-                    getString(R.string.source_added_empty, source?.label.orEmpty())
-                } else {
-                    getString(R.string.source_added, source?.label.orEmpty(), result?.found ?: 0)
-                }
-            } catch (e: Exception) {
-                getString(R.string.source_rescan_failed, remoteErrorText(this@SettingsActivity, e))
-            } finally {
-                progress.dismiss()
-            }
-            Toast.makeText(this@SettingsActivity, toast, Toast.LENGTH_LONG).show()
-            buildRows()
-        }
-    }
-
     // ---- 三种行 ----
 
     private companion object {
         const val GROUP_READING = "reading"
-        const val GROUP_SOURCE = "source"
         const val GROUP_OTHER = "other"
         const val GROUP_ABOUT = "about"
-        val GROUP_ALL = listOf(GROUP_READING, GROUP_SOURCE, GROUP_OTHER, GROUP_ABOUT)
+        val GROUP_ALL = listOf(GROUP_READING, GROUP_OTHER, GROUP_ABOUT)
 
         /** 页面左右留白与行高：与书架、详情同一把尺子 */
         const val PAGE_MARGIN = 20

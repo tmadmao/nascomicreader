@@ -104,6 +104,10 @@ interface BookDao {
     @Query("SELECT COUNT(*) FROM books WHERE source_id = :sourceId")
     suspend fun countBySource(sourceId: Long): Int
 
+    /** 每个来源下有几本：书源管理一屏要列出所有来源，别一条一条去数 */
+    @Query("SELECT source_id AS sourceId, COUNT(*) AS total FROM books GROUP BY source_id")
+    suspend fun countsBySource(): List<SourceCount>
+
     @Query("UPDATE books SET scan_state = :state, error_code = :errorCode WHERE id = :id")
     suspend fun setScanState(id: Long, state: Int, errorCode: Int?)
 
@@ -201,3 +205,6 @@ interface BookmarkDao {
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun delete(id: Long)
 }
+
+/** 分组计数的投影：来源 id 与该来源下的书数 */
+data class SourceCount(val sourceId: Long, val total: Int)

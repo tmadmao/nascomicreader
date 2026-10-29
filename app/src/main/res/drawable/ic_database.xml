@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SMB：一只数据库筒仓 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M6,6.2 m0,0 a6,2.4 0 1,0 12,0 a6,2.4 0 1,0 -12,0"
+        android:strokeColor="#FF5D8766"
+        android:strokeWidth="1.6" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M6,6.2 v11.6 a6,2.4 0 0 0 12,0 v-11.6"
+        android:strokeColor="#FF5D8766"
+        android:strokeWidth="1.6" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M6,11.2 a6,2.4 0 0 0 12,0"
+        android:strokeColor="#FF5D8766"
+        android:strokeWidth="1.6" />
+</vector>
