@@ -1,5 +1,6 @@
 # 构建产物
 .gradle/
+.kotlin/
 build/
 local.properties
 *.apk
@@ -22,16 +23,11 @@ _local/
 _m5/
 _refactor/
 .workbuddy/
-# 界面稿导出（墨刀 HTML + 截图），属于设计过程材料。只匹配仓库根目录的 ui/，
-# 不能写成 ui/——那会把 app/src/main/java/.../ui/ 下的源码一起忽略掉
-/ui/
+
 # 合规扫描门的报告
 guard-report.txt
 
-# 测试用的真实漫画文件不进仓库
+# 压缩包格式的漫画不进仓库
 *.rar
 *.cbr
 *.cbz
-
-# 本地测试用的真实漫画样本，不进仓库。同样只匹配根目录，别把 app/src/test/ 一起吃掉
-/test/
