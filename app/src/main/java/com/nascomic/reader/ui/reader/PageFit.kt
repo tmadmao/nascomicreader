@@ -18,6 +18,8 @@ object PageFit {
      * @param margin 左右各留的边距（px）
      * @param gap 并排时图与图之间的缝隙（px）
      * @param sizes 每张图的原始像素尺寸
+     * @param fitWidth 页面适应：true = 按宽度铺满（高图可超出上下，靠拖动看），
+     *                 false = 整页可见（受容器高约束）
      */
     fun fit(
         containerW: Int,
@@ -25,6 +27,7 @@ object PageFit {
         margin: Int,
         gap: Int,
         sizes: List<Pair<Int, Int>>,
+        fitWidth: Boolean = false,
     ): List<Box> {
         if (sizes.isEmpty() || containerW <= 0 || containerH <= 0) return emptyList()
 
@@ -38,8 +41,13 @@ object PageFit {
             if (w <= 0 || h <= 0) {
                 Box(0f, 0f, 0f, 0f)
             } else {
-                // 同时受槽宽与容器高约束，取小的那个比例，保证不越界
-                val scale = minOf(slot / w, containerH / h.toFloat())
+                // 完整显示时同时受槽宽与容器高约束，取小的那个比例，保证不越界；
+                // 按宽度铺满时只看槽宽，高图上下超出是预期的
+                val scale = if (fitWidth) {
+                    slot / w
+                } else {
+                    minOf(slot / w, containerH / h.toFloat())
+                }
                 val drawW = w * scale
                 val drawH = h * scale
                 val slotLeft = m + index * (slot + gap)

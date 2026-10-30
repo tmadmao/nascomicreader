@@ -137,6 +137,16 @@ class SmbClient(
         }
     }
 
+    /** 按路径取字节流，目录书逐页读用。同一时刻只有一个打开的句柄，读完即关 */
+    fun openStream(path: String): java.io.InputStream {
+        val file = open(path)
+        return try {
+            file.inputStream
+        } catch (e: Exception) {
+            throw classify(e, "读取失败：$path")
+        }
+    }
+
     private fun open(path: String): SmbFile {
         openFile?.let { if (openPath == path) return it }
         closeOpenFile()

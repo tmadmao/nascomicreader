@@ -183,7 +183,10 @@ class DetailActivity : AppCompatActivity() {
 
         // 一个按钮管三种情形：没读过 / 读到一半 / 读完了重来
         val startPage = if (p == null || p.finished) 0 else p.pageGlobal
-        binding.primary.setOnClickListener { openReader(startPage) }
+        // 读完了再点就是从头看，这时要把「已读完」标记一起清掉：
+        // 否则读到第 6 页，详情页还写着 100%
+        val restart = p != null && p.finished
+        binding.primary.setOnClickListener { openReader(startPage, restart) }
 
         // 各章起始页：靠每章页数累加，读不到页数时退化为 0（点了也从章首开始）
         chapterStarts = IntArray(entries.size)
@@ -453,12 +456,12 @@ class DetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun openReader(startPage: Int) {
-        startActivity(
-            Intent(this, ReadingActivity::class.java)
-                .putExtra(ReadingActivity.EXTRA_BOOK_ID, bookId)
-                .putExtra(ReadingActivity.EXTRA_START_PAGE, startPage)
-        )
+    private fun openReader(startPage: Int, restart: Boolean = false) {
+        val intent = Intent(this, ReadingActivity::class.java)
+            .putExtra(ReadingActivity.EXTRA_BOOK_ID, bookId)
+            .putExtra(ReadingActivity.EXTRA_START_PAGE, startPage)
+        if (restart) intent.putExtra(ReadingActivity.EXTRA_RESTART, true)
+        startActivity(intent)
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

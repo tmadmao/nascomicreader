@@ -70,9 +70,20 @@ class WebDavClient(
                 return response.body?.bytes()
             }
             if (response.code == 200) {
-                // 服务器忽略了 Range，把整份都发来了：只有从 0 开始读才用得上
-                val all = response.body?.bytes() ?: return null
-                return if (offset == 0L) all.copyOf(minOf(length, all.size)) else null
+                // 服务器忽略了 Range，把整份都发来了。
+                // 不能 body.bytes()：几百兆的包会直接把进程撑爆，只读到需要的那一段就停
+                val body = response.body ?: return null
+                if (offset > 0L) return null
+                return body.byteStream().use { input ->
+                    val out = ByteArray(length)
+                    var filled = 0
+                    while (filled < length) {
+                        val n = input.read(out, filled, length - filled)
+                        if (n <= 0) break
+                        filled += n
+                    }
+                    out.copyOf(filled)
+                }
             }
             if (response.code == 416) return ByteArray(0)
             throw WebDavException(response.code, "读取失败：HTTP ${response.code}")
@@ -87,6 +98,29 @@ class WebDavClient(
             }
             val body = response.body ?: throw WebDavException(response.code, "响应为空")
             out.outputStream().use { sink -> body.byteStream().copyTo(sink) }
+        }
+    }
+
+    /**
+     * 按引用取字节流，目录书逐页读用。
+     * 关流时把响应一起关掉，否则连接池会被占满。
+     */
+    fun openStream(url: String): java.io.InputStream {
+        val response = client.newCall(request(url).build()).execute()
+        if (!response.isSuccessful) {
+            response.close()
+            throw WebDavException(response.code, "读取失败：HTTP ${response.code}")
+        }
+        val body = response.body
+        if (body == null) {
+            response.close()
+            throw WebDavException(response.code, "响应为空")
+        }
+        return object : java.io.FilterInputStream(body.byteStream()) {
+            override fun close() {
+                runCatching { super.close() }
+                response.close()
+            }
         }
     }
 

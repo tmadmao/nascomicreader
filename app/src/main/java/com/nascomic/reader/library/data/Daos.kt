@@ -98,8 +98,19 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE source_id = :sourceId ORDER BY title_sort ASC")
     suspend fun bySourceNow(sourceId: Long): List<BookEntity>
 
+    /** 重命名：只改书库里的显示名与排序键，源文件名不动 */
+    @Query("UPDATE books SET title = :title, title_sort = :titleSort WHERE id = :id")
+    suspend fun updateTitle(id: Long, title: String, titleSort: String)
+
+    /** 换封面：只改这一本的取图页号，下次生成缩略图就按它取 */
+    @Query("UPDATE books SET cover_page = :page WHERE id = :id")
+    suspend fun updateCoverPage(id: Long, page: Int)
+
     @Query("SELECT COUNT(*) FROM books")
     suspend fun count(): Int
+
+    @Query("SELECT id FROM books")
+    suspend fun ids(): List<Long>
 
     @Query("SELECT id FROM books WHERE source_id = :sourceId")
     suspend fun idsBySource(sourceId: Long): List<Long>
@@ -125,10 +136,6 @@ interface BookDao {
 
     @Query("DELETE FROM books WHERE source_id = :sourceId")
     suspend fun deleteBySource(sourceId: Long)
-
-    /** 扫描后清理：来源里已经不存在于磁盘的条目 */
-    @Query("DELETE FROM books WHERE source_id = :sourceId AND doc_ref NOT IN (:presentRefs)")
-    suspend fun deleteMissing(sourceId: Long, presentRefs: List<String>)
 
     /** 按 id 批量删（来源里消失的书）。列表长度要自己分段，别撞 SQLite 的变量上限 */
     @Query("DELETE FROM books WHERE id IN (:ids)")
@@ -211,3 +218,45 @@ interface BookmarkDao {
 
 /** 分组计数的投影：来源 id 与该来源下的书数 */
 data class SourceCount(val sourceId: Long, val total: Int)
+
+/**
+ * 阅读历史。同一本反复打开只保留一条「最近打开」的投影，
+ * 原始记录留着不删，方便以后做按天统计。
+ */
+@Dao
+interface HistoryDao {
+
+    @Insert
+    suspend fun insert(entry: HistoryEntity): Long
+
+    @Query("SELECT COUNT(*) FROM history")
+    suspend fun count(): Int
+
+    @Query("DELETE FROM history")
+    suspend fun clear()
+
+    @Query("DELETE FROM history WHERE book_id = :bookId")
+    suspend fun clearFor(bookId: Long)
+
+    /**
+     * 最近打开的书：按 book_id 取最大时间，再按这个时间倒序。
+     * 停在书库里没点开过的书不会出现在这里。
+     */
+    @Query(
+        """
+        SELECT b.* FROM books b
+        JOIN (SELECT book_id, MAX(opened_at) AS t FROM history GROUP BY book_id) h
+          ON b.id = h.book_id
+        ORDER BY h.t DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentBooks(limit: Int = 100): List<BookEntity>
+
+    /** 每本书最近一次打开的时间，列表里直接显示 */
+    @Query("SELECT book_id AS bookId, MAX(opened_at) AS at FROM history GROUP BY book_id")
+    suspend fun lastOpened(): List<BookOpened>
+}
+
+/** 书 id 与最近打开时间 */
+data class BookOpened(val bookId: Long, val at: Long)

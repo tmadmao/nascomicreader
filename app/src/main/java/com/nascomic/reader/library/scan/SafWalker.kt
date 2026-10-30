@@ -20,12 +20,21 @@ class SafWalker(private val context: Context, private val treeUri: Uri) {
     /** 授权目录的 URI 字符串，用于构造子文档 URI */
     val treeUriString: String get() = treeUri.toString()
 
-    /** 列出某个目录的直接子项；目录不存在或没权限时返回空表 */
-    fun list(parentDocId: String): List<ScanNode> {
+    /**
+     * 列出某个目录的直接子项。
+     *
+     * 读不到（授权被回收、目录被删或改名、外接盘掉线）返回 null，**不返回空表**——
+     * 扫描器要靠这个区别决定「这本来源空了」还是「这次没读到」，
+     * 两者混在一起会把整库的书连同进度书签一起删掉。
+     * 空目录返回空表，与读失败区分得开。
+     */
+    fun list(parentDocId: String): List<ScanNode>? {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
         val out = ArrayList<ScanNode>()
         try {
-            resolver.query(childrenUri, PROJECTION, null, null, null)?.use { c ->
+            val cursor = resolver.query(childrenUri, PROJECTION, null, null, null)
+                ?: return null
+            cursor.use { c ->
                 val idIdx = c.getColumnIndexOrThrow(Document.COLUMN_DOCUMENT_ID)
                 val nameIdx = c.getColumnIndexOrThrow(Document.COLUMN_DISPLAY_NAME)
                 val mimeIdx = c.getColumnIndexOrThrow(Document.COLUMN_MIME_TYPE)
@@ -45,8 +54,10 @@ class SafWalker(private val context: Context, private val treeUri: Uri) {
             }
         } catch (_: SecurityException) {
             // 授权被系统回收
+            return null
         } catch (_: IllegalArgumentException) {
             // 目录已被删除
+            return null
         }
         return out
     }

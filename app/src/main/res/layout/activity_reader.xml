@@ -283,4 +283,11 @@
         android:textSize="14sp"
         android:visibility="gone" />
 
+    <!-- 分区提示：进阅读时闪一下，只标分界，不接触摸 -->
+    <com.nascomic.reader.ui.reader.ZoneHintView
+        android:id="@+id/zone_hint"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
 </FrameLayout>

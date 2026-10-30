@@ -21,17 +21,40 @@ object TrimBounds {
     /** 一行里多少比例的像素够白，才算整行是白边 */
     private const val WHITE_RATIO = 0.98f
 
-    /** 单边最多裁掉的比例。整页都是白时不能把它裁成 0 像素 */
-    private const val PROTECT = 0.25f
+    /**
+     * 单边最多裁掉的比例。
+     *
+     * 规格定的是「单边裁剪量 ≤ 边长 10%」——两侧各让 10%，内容最多放大到 1.25×。
+     * 再放宽就会在极端白边样本上把内容裁掉，所以这个数不能随手调大。
+     */
+    const val PROTECT = 0.10f
 
-    fun detect(bitmap: Bitmap, level: Int = DEFAULT_LEVEL): Bounds =
-        detect(
-            w = bitmap.width,
-            h = bitmap.height,
+    /**
+     * 量一张位图的白边。
+     *
+     * 逐点 `getPixel` 是跨 JNI 调用，一页要几万次；这里按行/列一次性 `getPixels`
+     * 把整条取进复用数组再判，JNI 次数从「行数 × 64」降到「行数」。
+     */
+    fun detect(bitmap: Bitmap, level: Int = DEFAULT_LEVEL): Bounds {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w <= 0 || h <= 0) return Bounds(0, 0, w, h)
+        val row = IntArray(w)
+        val col = IntArray(h)
+        return detect(
+            w = w,
+            h = h,
             protect = PROTECT,
-            whiteRow = { y -> isWhiteLine(bitmap.width, level) { x -> bitmap.getPixel(x, y) } },
-            whiteCol = { x -> isWhiteLine(bitmap.height, level) { y -> bitmap.getPixel(x, y) } },
+            whiteRow = { y ->
+                bitmap.getPixels(row, 0, w, 0, y, w, 1)
+                isWhiteLine(w, level) { row[it] }
+            },
+            whiteCol = { x ->
+                bitmap.getPixels(col, 0, 1, x, 0, 1, h)
+                isWhiteLine(h, level) { col[it] }
+            },
         )
+    }
 
     /**
      * 整页是不是空白（用于跳过空白页）。抽样看，不逐像素扫。

@@ -68,4 +68,33 @@ class MultiChapterSourceTest {
         assertEquals(3, book.chapters.size)
         assertEquals(2, book.firstPageOfChapter(2))
     }
+
+    @Test
+    fun `库里有页数时不去打开每一章`() {
+        var opened = 0
+        val book = MultiChapterSource(
+            listOf(
+                MultiChapterSource.Part("a", 3) { opened++; throw IllegalStateException("不该打开") },
+                MultiChapterSource.Part("b", 2) { opened++; throw IllegalStateException("不该打开") },
+            )
+        )
+        // 页数、章数、章首页都只用声明值就能算出来
+        assertEquals(5, book.pageCount)
+        assertEquals(listOf(3, 2), book.chapters.map { it.pageCount })
+        assertEquals(3, book.firstPageOfChapter(1))
+        assertEquals(0, opened)
+    }
+
+    @Test
+    fun `没声明页数才逐章打开`() {
+        var opened = 0
+        val book = MultiChapterSource(
+            listOf(
+                MultiChapterSource.Part("a", -1) { opened++; FakeSource("a", 2) },
+                MultiChapterSource.Part("b", -1) { opened++; FakeSource("b", 4) },
+            )
+        )
+        assertEquals(6, book.pageCount)
+        assertEquals(2, opened)
+    }
 }

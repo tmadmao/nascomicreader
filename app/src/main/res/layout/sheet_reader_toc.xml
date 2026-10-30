@@ -6,16 +6,41 @@
     android:orientation="vertical"
     android:paddingBottom="12dp">
 
-    <TextView
+    <!-- 标题与排序钮同一行：右边这枚写的是「现在是什么序」，点一下换另一种 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="20dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
         android:paddingTop="18dp"
-        android:paddingBottom="10dp"
-        android:text="@string/reader_toolbar_toc"
-        android:textColor="@color/shell_ink"
-        android:textSize="16sp"
-        android:textStyle="bold" />
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/reader_toolbar_toc"
+            android:textColor="@color/shell_ink"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/toc_order"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_chip_unselected"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:text="@string/detail_order_asc"
+            android:textColor="@color/brand_accent"
+            android:textSize="12sp" />
+    </LinearLayout>
 
     <ScrollView
         android:id="@+id/toc_scroll"
@@ -28,6 +53,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="12dp" />
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
     </ScrollView>
 </LinearLayout>

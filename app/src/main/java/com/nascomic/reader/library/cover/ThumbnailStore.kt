@@ -39,7 +39,8 @@ class ThumbnailStore(private val context: Context) {
         targetWidth: Int = TARGET_WIDTH,
     ): File? = withContext(Dispatchers.IO) {
         runCatching {
-            val bookSource = opener.open(book, source, chapters)
+            // 只要第一页：章回体只打开第一章，别为了半张封面把整本书的每一章都连一遍
+            val bookSource = opener.openForCover(book, source, chapters)
             bookSource.use { src ->
                 if (src.pageCount == 0) return@use null
                 val index = book.coverPage.coerceIn(0, src.pageCount - 1)

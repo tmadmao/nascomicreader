@@ -48,6 +48,12 @@ data class SourceEntity(
         const val ERROR_TREE_PERMISSION_LOST = 10
         const val ERROR_UNREACHABLE = 11
         const val ERROR_AUTH = 12
+
+        /** 这次一本都没扫到，原有书库原样保留（授权或挂载多半出了问题） */
+        const val ERROR_EMPTY_SCAN = 13
+
+        /** 扫描完成，但有几个远端目录这次没读到：那一部分没更新、也没删 */
+        const val ERROR_PARTIAL = 14
     }
 }
 
@@ -145,6 +151,7 @@ data class ChapterEntity(
     companion object {
         const val KIND_FOLDER = 0
         const val KIND_ARCHIVE = 1
+        const val KIND_PDF = 2
     }
 }
 
@@ -194,4 +201,23 @@ data class BookmarkEntity(
     @ColumnInfo(name = "page_in_chapter") val pageInChapter: Int,
     @ColumnInfo(name = "note") val note: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
+/** 阅读历史：每进一次书记一笔，页面按最近打开倒序取 */
+@Entity(
+    tableName = "history",
+    foreignKeys = [
+        ForeignKey(
+            entity = BookEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["book_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["book_id"]), Index(value = ["opened_at"])]
+)
+data class HistoryEntity(
+    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
+    @ColumnInfo(name = "book_id") val bookId: Long,
+    @ColumnInfo(name = "opened_at") val openedAt: Long,
 )

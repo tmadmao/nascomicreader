@@ -14,6 +14,8 @@
     <!-- 只给计数、单位这类不必读的附注用 -->
     <color name="shell_ink_faint">#9A958B</color>
     <color name="shell_divider">#F0EBE2</color>
+    <!-- 滑杆未走的部分：比分割线深一点，白卡上才看得见轨道有多长 -->
+    <color name="slider_track">#3D9A958B</color>
     <color name="shell_stroke">#ECE7DE</color>
 
     <color name="brand_accent">#F06A35</color>

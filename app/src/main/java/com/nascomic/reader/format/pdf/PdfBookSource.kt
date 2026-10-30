@@ -14,12 +14,20 @@ import java.io.InputStream
  *
  * PDF 没有「图片字节」，页面是按尺寸现画的，所以同时实现 [RenderedPageSource]；
  * 上层看到这个接口就直接取位图，不去碰 [openPage]。
+ *
+ * [PdfRenderer] 不是线程安全的，而阅读页会从当前页与两个预载 worker 同时进来，
+ * 所以渲染与关闭都串行化——并发它的后果是随机抛异常甚至 native 崩溃。
  */
 class PdfBookSource(private val pfd: ParcelFileDescriptor) : BookSource, RenderedPageSource {
 
     private val renderer = PdfRenderer(pfd)
 
-    override val pageCount: Int get() = renderer.pageCount
+    private val lock = Any()
+    private var closed = false
+
+    override val pageCount: Int get() = synchronized(lock) {
+        if (closed) 0 else renderer.pageCount
+    }
 
     override val chapters: List<ChapterInfo>
         get() = listOf(ChapterInfo(ordinal = 0, title = "", pageCount = pageCount))
@@ -33,27 +41,34 @@ class PdfBookSource(private val pfd: ParcelFileDescriptor) : BookSource, Rendere
 
     override fun firstPageOfChapter(chapter: Int): Int = 0
 
-    override fun renderPage(page: Int, width: Int, height: Int): Bitmap? = runCatching {
-        if (page < 0 || page >= pageCount || width <= 0 || height <= 0) return null
-        renderer.openPage(page).use { pdfPage ->
-            val pw = pdfPage.width
-            val ph = pdfPage.height
-            if (pw <= 0 || ph <= 0) return null
+    override fun renderPage(page: Int, width: Int, height: Int): Bitmap? = synchronized(lock) {
+        if (closed || width <= 0 || height <= 0) return null
+        runCatching {
+            if (page < 0 || page >= renderer.pageCount) return null
+            renderer.openPage(page).use { pdfPage ->
+                val pw = pdfPage.width
+                val ph = pdfPage.height
+                if (pw <= 0 || ph <= 0) return null
 
-            val scale = minOf(width.toFloat() / pw, height.toFloat() / ph)
-            val outW = (pw * scale).toInt().coerceAtLeast(1)
-            val outH = (ph * scale).toInt().coerceAtLeast(1)
+                val scale = minOf(width.toFloat() / pw, height.toFloat() / ph)
+                val outW = (pw * scale).toInt().coerceAtLeast(1)
+                val outH = (ph * scale).toInt().coerceAtLeast(1)
 
-            val bitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-            // PDF 的背景是透明的，不铺白底会得到一张只有字和图的透明图
-            bitmap.eraseColor(Color.WHITE)
-            pdfPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            bitmap
-        }
-    }.getOrNull()
+                val bitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+                // PDF 的背景是透明的，不铺白底会得到一张只有字和图的透明图
+                bitmap.eraseColor(Color.WHITE)
+                pdfPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                bitmap
+            }
+        }.getOrNull()
+    }
 
     override fun close() {
-        runCatching { renderer.close() }
-        runCatching { pfd.close() }
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            runCatching { renderer.close() }
+            runCatching { pfd.close() }
+        }
     }
 }

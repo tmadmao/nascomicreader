@@ -224,6 +224,43 @@
             android:orientation="horizontal" />
     </HorizontalScrollView>
 
+    <!-- 搜书名：本地即时过滤，敲一个字筛一次 -->
+    <LinearLayout
+        android:id="@+id/search_row"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginStart="@dimen/page_margin"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="@dimen/page_margin"
+        android:background="@drawable/bg_card"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_search"
+            app:tint="@color/shell_ink_faint" />
+
+        <EditText
+            android:id="@+id/search_input"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:background="@null"
+            android:hint="@string/shelf_search_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:textColor="@color/shell_ink"
+            android:textColorHint="@color/shell_ink_faint"
+            android:textSize="13sp" />
+    </LinearLayout>
+
     <!-- 列表上方的分段标题：当前标签名 + 本数 -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -249,6 +286,17 @@
             android:layout_height="wrap_content"
             android:textColor="@color/shell_ink_faint"
             android:textSize="10sp" />
+
+        <ImageView
+            android:id="@+id/sort_button"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_marginStart="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shelf_sort"
+            android:padding="3dp"
+            android:src="@drawable/ic_sort"
+            app:tint="@color/shell_ink_muted" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -260,6 +308,18 @@
         android:paddingHorizontal="14dp"
         android:paddingTop="8dp"
         android:paddingBottom="8dp" />
+
+    <!-- 搜不到时的一句话，不拿空书架的引导冒充 -->
+    <TextView
+        android:id="@+id/search_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/shelf_search_empty"
+        android:textColor="@color/shell_ink_faint"
+        android:textSize="13sp"
+        android:visibility="gone" />
 
     <!-- 空书架时的引导：本地与远端各给一个入口，别让人去找右上角 -->
     <LinearLayout

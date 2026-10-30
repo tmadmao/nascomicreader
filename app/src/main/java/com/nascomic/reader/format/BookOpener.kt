@@ -35,39 +35,206 @@ class BookOpener(private val context: Context) {
 
     private val secrets by lazy { com.nascomic.reader.settings.SecretStore(context) }
 
-    fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource =
-        when (source.kind) {
-            SourceEntity.KIND_WEBDAV -> openWebDav(book, source)
-            SourceEntity.KIND_SMB -> openSmb(book, source)
+    fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource {
+        // 落盘副本只在打开时才需要，顺手按总量收一次：进一本新书是天然的检查点
+        runCatching { LocalCopies.trim(context) }
+        return when (source.kind) {
+            SourceEntity.KIND_WEBDAV -> {
+                val client = WebDavClient(source.account, secrets.get(source.secretRef))
+                openWith(WebDavBackend(client)) { openRemote(book, chapters, it) }
+            }
+            SourceEntity.KIND_SMB -> {
+                val target = SmbTarget.parse(source.endpoint ?: error("这个来源没有地址"))
+                val client = SmbClient(target, source.account, secrets.get(source.secretRef))
+                openWith(SmbBackend(client)) { openRemote(book, chapters, it) }
+            }
             else -> openLocal(
                 book,
                 source.treeUri ?: error("这个来源没有目录授权"),
                 chapters,
             )
         }
+    }
+
+    /** 建好书源，并把 backend 的生命周期绑上去；中途失败也要把连接还掉 */
+    private inline fun openWith(backend: RemoteBackend, open: (RemoteBackend) -> BookSource): BookSource =
+        try {
+            RemoteBookSource(open(backend), backend)
+        } catch (e: Throwable) {
+            runCatching { backend.close() }
+            throw e
+        }
 
     // ---- 远程 ----
 
-    private fun openWebDav(book: BookEntity, source: SourceEntity): BookSource {
-        val client = WebDavClient(source.account, secrets.get(source.secretRef))
-        val url = book.docRef
-        return when (book.format) {
-            BookEntity.FORMAT_ZIP, BookEntity.FORMAT_EPUB ->
-                openArchiveSource(book) { HttpRandomAccess(client, url, client.size(url)) }
-            // PDF 要文件描述符、7z/RAR 要文件路径，都得先落到本地
-            else -> openLocalCopy(book) { client.download(url, it) }
+    /**
+     * 远端只需要这几件事；WebDAV 与 SMB 各实现一份，打开书的逻辑只写一遍。
+     *
+     * [close] 必须有：SMB 的每一次 open 都是一整个会话（TCP + 认证 + tree connect），
+     * 书关掉时不还回去，NAS 上就会攒下一堆没人用的连接——书架滚一圈就是几十个，
+     * 到它的会话上限就再也不让连了。
+     */
+    private interface RemoteBackend : java.io.Closeable {
+        fun list(dir: String): List<RemoteItem>
+        fun openStream(ref: String): InputStream
+        fun randomAccess(ref: String): RandomAccessData
+        fun download(ref: String, out: File)
+    }
+
+    private class RemoteItem(val ref: String, val name: String, val isDir: Boolean)
+
+    private class WebDavBackend(private val client: WebDavClient) : RemoteBackend {
+        override fun list(dir: String): List<RemoteItem> =
+            client.list(dir).map { RemoteItem(it.url, it.name, it.isDirectory) }
+
+        override fun openStream(ref: String): InputStream = client.openStream(ref)
+
+        override fun randomAccess(ref: String): RandomAccessData =
+            HttpRandomAccess(client, ref, client.size(ref))
+
+        override fun download(ref: String, out: File) = client.download(ref, out)
+
+        /** HTTP 走共享的连接池，没有需要还的东西 */
+        override fun close() = Unit
+    }
+
+    private class SmbBackend(private val client: SmbClient) : RemoteBackend {
+        override fun list(dir: String): List<RemoteItem> =
+            client.list(dir).map { RemoteItem(it.path, it.name, it.isDirectory) }
+
+        override fun openStream(ref: String): InputStream = client.openStream(ref)
+
+        override fun randomAccess(ref: String): RandomAccessData =
+            SmbRandomAccess(client, ref, client.size(ref))
+
+        override fun download(ref: String, out: File) = client.download(ref, out)
+
+        override fun close() = runCatching { client.close() }.let { }
+    }
+
+    /**
+     * 书关掉时把远端会话一并还回去。
+     *
+     * 章与页的书源自己不持有连接（目录书源的 close 是空的），连接在 backend 手里，
+     * 所以必须在这层把它们绑在一起。
+     */
+    private class RemoteBookSource(
+        private val inner: BookSource,
+        private val backend: RemoteBackend,
+    ) : BookSource by inner {
+        override fun close() {
+            runCatching { inner.close() }
+            runCatching { backend.close() }
         }
     }
 
-    private fun openSmb(book: BookEntity, source: SourceEntity): BookSource {
-        val target = SmbTarget.parse(source.endpoint ?: error("这个来源没有地址"))
-        val client = SmbClient(target, source.account, secrets.get(source.secretRef))
-        val path = book.docRef
+    /**
+     * 远程书：单文件按字节区间读，目录书逐页取流，章回体逐章拼。
+     */
+    private fun openRemote(
+        book: BookEntity,
+        chapters: List<ChapterEntity>,
+        backend: RemoteBackend,
+    ): BookSource {
+        if (book.format == BookEntity.FORMAT_FOLDER) {
+            if (chapters.isEmpty()) return remoteFolder(backend, book.docRef, book.title)
+            return openChaptered(chapters) { ch -> remoteChapter(backend, ch, book) }
+        }
         return when (book.format) {
             BookEntity.FORMAT_ZIP, BookEntity.FORMAT_EPUB ->
-                openArchiveSource(book) { SmbRandomAccess(client, path, client.size(path)) }
-            else -> openLocalCopy(book) { client.download(path, it) }
+                openArchiveSource(book) { backend.randomAccess(book.docRef) }
+            // PDF 要文件描述符、7z/RAR 要文件路径，都得先落到本地
+            else -> openLocalCopy(book) { backend.download(book.docRef, it) }
         }
+    }
+
+    /**
+     * 只打开能给出封面那一页的最少内容。
+     *
+     * 生成封面只需要第一页，但 [open] 会把每一章都打开——远程三百章的书
+     * 在书架上滚到一次就是三百次请求。章回体这里只建第一章，其余不碰。
+     */
+    fun openForCover(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource {
+        if (book.format != BookEntity.FORMAT_FOLDER || chapters.size <= 1) {
+            return open(book, source, chapters)
+        }
+        val first = chapters.sortedBy { it.ordinal }.first()
+        return when (source.kind) {
+            SourceEntity.KIND_WEBDAV -> {
+                val client = WebDavClient(source.account, secrets.get(source.secretRef))
+                openWith(WebDavBackend(client)) { remoteChapter(it, first, book) }
+            }
+            SourceEntity.KIND_SMB -> {
+                val target = SmbTarget.parse(source.endpoint ?: error("这个来源没有地址"))
+                val client = SmbClient(target, source.account, secrets.get(source.secretRef))
+                openWith(SmbBackend(client)) { remoteChapter(it, first, book) }
+            }
+            else -> openLocalChapter(
+                SafWalker(context, Uri.parse(source.treeUri ?: error("这个来源没有目录授权"))),
+                first,
+            )
+        }
+    }
+
+    /** 一章可以是目录、压缩包，也可以是一份 PDF */
+    private fun remoteChapter(
+        backend: RemoteBackend,
+        ch: ChapterEntity,
+        book: BookEntity,
+    ): BookSource = when (ch.chapterKind) {
+        ChapterEntity.KIND_FOLDER -> remoteFolder(backend, ch.chapterRef, ch.title)
+        ChapterEntity.KIND_PDF -> openPdfCopy(book.id, ch.chapterRef) { backend.download(ch.chapterRef, it) }
+        else -> openRemoteArchive(backend, ch.chapterRef)
+    }
+
+    /** 远程压缩包：先按 zip 试，再按 tar 头；都不成再整份下回本地交给 libarchive */
+    private fun openRemoteArchive(backend: RemoteBackend, ref: String): BookSource {
+        runCatching { ZipBookSource(ZipCatalog.open(backend.randomAccess(ref))) }
+            .getOrNull()?.let { return it }
+
+        runCatching { TarBookSource(TarCatalog.open(backend.randomAccess(ref))) }
+            .getOrNull()?.let { return it }
+
+        val dir = LocalCopies.remoteDir(context)
+        val local = File(dir, "a" + ref.hashCode().toUInt().toString(16))
+        if (!local.exists() || local.length() == 0L) backend.download(ref, local)
+        return LibArchiveBookSource(LibArchiveCatalog.open(local))
+    }
+
+    /** 远程目录书：递归收集图片，按文件名自然序由 [FolderBookSource] 排好 */
+    private fun remoteFolder(backend: RemoteBackend, dir: String, title: String): BookSource {
+        val entries = ArrayList<Pair<String, String>>()
+        collectRemoteImages(backend, dir, "", entries, 0)
+        return FolderBookSource.from(entries, title) { ref ->
+            backend.openStream(ref)
+        }
+    }
+
+    private fun collectRemoteImages(
+        backend: RemoteBackend,
+        dir: String,
+        prefix: String,
+        out: MutableList<Pair<String, String>>,
+        depth: Int,
+    ) {
+        if (depth > 2) return
+        for (item in backend.list(dir)) {
+            val path = if (prefix.isEmpty()) item.name else "$prefix/${item.name}"
+            when {
+                item.isDir -> collectRemoteImages(backend, item.ref, path, out, depth + 1)
+                ImageNames.isImage(item.name) -> out += path to item.ref
+            }
+        }
+    }
+
+    /** 远程 PDF 章：下一份到本地再交给系统渲染 */
+    private fun openPdfCopy(bookId: Long, ref: String, save: (File) -> Unit): BookSource {
+        val dir = LocalCopies.remoteDir(context)
+        val local = File(dir, "p${bookId}_" + ref.hashCode().toUInt().toString(16))
+        if (!local.exists() || local.length() == 0L) save(local)
+        return PdfBookSource(
+            ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY)
+        )
     }
 
     /**
@@ -100,7 +267,7 @@ class BookOpener(private val context: Context) {
     }
 
     private fun cachedCopy(book: BookEntity, save: (File) -> Unit): File {
-        val dir = File(context.cacheDir, "remote").apply { mkdirs() }
+        val dir = LocalCopies.remoteDir(context)
         val name = "b${book.id}_" + book.byteSize.takeIf { it > 0 }
         val out = File(dir, name)
         if (out.exists() && out.length() > 0) return out
@@ -150,7 +317,7 @@ class BookOpener(private val context: Context) {
      * 把 SAF 里的文件复制到 cacheDir。名字带上大小与修改时间，文件变了就换一份。
      */
     private fun copyToCache(uri: Uri, docId: String): File {
-        val dir = File(context.cacheDir, "archives").apply { mkdirs() }
+        val dir = LocalCopies.archivesDir(context)
         val stamp = runCatching {
             context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 if (!cursor.moveToFirst()) return@use "0"
@@ -205,14 +372,31 @@ class BookOpener(private val context: Context) {
         }
     }
 
-    private fun openChaptered(walker: SafWalker, chapters: List<ChapterEntity>): BookSource {
+    private fun openChaptered(walker: SafWalker, chapters: List<ChapterEntity>): BookSource =
+        openChaptered(chapters) { ch -> openLocalChapter(walker, ch) }
+
+    /** 本地的一章：目录、压缩包或 PDF */
+    private fun openLocalChapter(walker: SafWalker, ch: ChapterEntity): BookSource = when (ch.chapterKind) {
+        ChapterEntity.KIND_ARCHIVE -> openArchive(walker, ch.chapterRef)
+        ChapterEntity.KIND_PDF -> openPdf(walker, ch.chapterRef)
+        else -> openFolder(walker, ch.chapterRef, ch.title)
+    }
+
+    /**
+     * 把若干章拼成一本书。
+     *
+     * 章的书源用到才建：库里有上次数出来的页数（[ChapterEntity.pageTotal]）就先信它，
+     * 这样回来看第二遍不必把每一章都打开一次。第一次看没有页数，才会逐章打开数页。
+     */
+    private fun openChaptered(
+        chapters: List<ChapterEntity>,
+        open: (ChapterEntity) -> BookSource,
+    ): BookSource {
         val parts = chapters.sortedBy { it.ordinal }.map { ch ->
-            val source = if (ch.chapterKind == ChapterEntity.KIND_ARCHIVE) {
-                openArchive(walker, ch.chapterRef)
-            } else {
-                openFolder(walker, ch.chapterRef, ch.title)
-            }
-            MultiChapterSource.Part(ch.title, source)
+            MultiChapterSource.Part(
+                title = ch.title,
+                declaredPages = ch.pageTotal.takeIf { it > 0 } ?: -1,
+            ) { open(ch) }
         }
         return MultiChapterSource(parts)
     }
@@ -229,7 +413,9 @@ class BookOpener(private val context: Context) {
     ): List<Pair<String, String>> {
         if (depth > 2) return emptyList()
         val out = ArrayList<Pair<String, String>>()
-        for (node in walker.list(dirId)) {
+        // 读不到就当作这一层没有图：阅读路径上页少一页比整个书打不开好，
+        // 扫描路径用 SafWalker 的 null 自行判断要不要报错
+        for (node in walker.list(dirId).orEmpty()) {
             val path = if (prefix.isEmpty()) node.name else "$prefix/${node.name}"
             when {
                 node.isDir -> out += listImages(walker, node.docId, path, depth + 1)

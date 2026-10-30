@@ -9,6 +9,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
@@ -78,6 +79,21 @@ class RemotePickerActivity : AppCompatActivity() {
 
         binding.back.setOnClickListener { up() }
         binding.useThis.setOnClickListener { pick() }
+        // 返回上一层目录，走到根才退出。走 OnBackPressedDispatcher：
+        // Android 16 的预测性返回不再调用 onBackPressed，重写它等于这个键失效
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (trail.size <= 1) {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    } else {
+                        up()
+                    }
+                }
+            },
+        )
         applyInsets()
         load()
     }
@@ -212,11 +228,6 @@ class RemotePickerActivity : AppCompatActivity() {
         }
         trail.removeLast()
         load()
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        up()
     }
 
     /** 当前这一层当书库根，回传给调用方 */

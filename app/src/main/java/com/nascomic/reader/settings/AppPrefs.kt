@@ -30,6 +30,27 @@ class AppPrefs(context: Context) {
         get() = sp.getBoolean(KEY_TOC_DESCENDING, false)
         set(value) = sp.edit().putBoolean(KEY_TOC_DESCENDING, value).apply()
 
+    /** 书架排序：0 最近添加 / 1 名称升 / 2 名称降 */
+    var shelfSort: Int
+        get() = sp.getInt(KEY_SHELF_SORT, 0)
+        set(value) = sp.edit().putInt(KEY_SHELF_SORT, value.coerceIn(0, 2)).apply()
+
+    /** 书架列数：0 = 按屏宽自动，其余为固定列数 */
+    var shelfColumns: Int
+        get() = sp.getInt(KEY_SHELF_COLUMNS, 0)
+        set(value) = sp.edit().putInt(KEY_SHELF_COLUMNS, value.coerceAtLeast(0)).apply()
+
+    enum class ShelfSort(val value: Int) {
+        RECENT(0),
+        TITLE_ASC(1),
+        TITLE_DESC(2),
+        ;
+
+        companion object {
+            fun of(value: Int): ShelfSort = entries.firstOrNull { it.value == value } ?: RECENT
+        }
+    }
+
     enum class Orientation(val value: Int) {
         SYSTEM(0),
         PORTRAIT(1),
@@ -45,5 +66,7 @@ class AppPrefs(context: Context) {
         const val KEY_SKIP_DETAIL = "ui.skip_detail"
         const val KEY_ORIENTATION = "ui.orientation"
         const val KEY_TOC_DESCENDING = "detail.toc_descending"
+        const val KEY_SHELF_SORT = "ui.shelf_sort"
+        const val KEY_SHELF_COLUMNS = "ui.shelf_columns"
     }
 }

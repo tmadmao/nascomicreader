@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -26,7 +27,9 @@ import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.about.AboutActivity
 import com.nascomic.reader.ui.sources.SourcesActivity
 import com.nascomic.reader.ui.widget.padBySystemBars
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 设置。照界面稿分六组，全部默认展开——手机上滚一遍就到底，折叠反而多点一下。
@@ -41,8 +44,25 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySettingsBinding
     private val prefs by lazy { AppPrefs(this) }
-    private val reader by lazy { ReaderPrefs(this) }
+
+    /** 从阅读页进来时带书的 id：这一页的阅读参数只改这本书 */
+    private val bookId by lazy { intent.getLongExtra(EXTRA_BOOK_ID, 0L) }
+    private val bookTitle by lazy { intent.getStringExtra(EXTRA_BOOK_TITLE).orEmpty() }
+
+    private val reader by lazy { ReaderPrefs(this, bookId) }
+
+    /** 书架列数可选档：0 = 自动，其余定死 */
+    private val columnChoices = listOf(0, 3, 4, 5, 6, 8)
+
+    /** 磁盘缓存上限可选档（GB）：0 = 按剩余空间自动 */
+    private val cacheGbOptions = listOf(0, 1, 2, 3, 5)
+
+    /** 内存缓存上限可选档（MB）：0 = 按堆自动 */
+    private val cacheMemOptions = listOf(0, 64, 128, 256, 512)
     private val db by lazy { ReaderDatabase.get(this) }
+
+    /** 页的磁盘缓存：缓存管理里要报占用、要清空 */
+    private val diskCache by lazy { com.nascomic.reader.ui.reader.DiskPageCache(this) }
     private val repository by lazy { SourceRepository(this, db) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,11 +82,30 @@ class SettingsActivity : AppCompatActivity() {
         val host = binding.settingsContainer
         host.removeAllViews()
 
+        // 从阅读页进来时说明白：下面这些只改当前这本，不动全局默认
+        if (bookId > 0) {
+            host.addView(TextView(this).apply {
+                text = getString(R.string.settings_book_scope, bookTitle)
+                textSize = 11f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                background = getDrawable(R.drawable.bg_card)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    marginStart = dp(PAGE_MARGIN)
+                    marginEnd = dp(PAGE_MARGIN)
+                    topMargin = dp(12)
+                }
+            })
+        }
+
         addGroup(host, R.string.settings_group_library, buildLibraryRows())
         addGroup(host, R.string.settings_group_flip, buildFlipRows())
         addGroup(host, R.string.settings_group_zoom, buildZoomRows())
         addGroup(host, R.string.settings_group_layout, buildLayoutRows())
-        addGroup(host, R.string.settings_group_perf, buildPerfRows())
+        addGroup(host, R.string.settings_group_load, buildLoadRows())
         addGroup(host, R.string.settings_group_other, buildOtherRows())
     }
 
@@ -95,15 +134,14 @@ class SettingsActivity : AppCompatActivity() {
         })
     }
 
-    /** 书库与仓库：书源管理（真） + 扫描规则（占位） */
+    /**
+     * 书库与仓库：只留「书源管理」。
+     *
+     * 扫描规则、历史、封面这些曾经堆在这里，现在各归各位：
+     * 章的正倒序在详情页的目录上，阅读历史在首页，封面改成书架长按那本书再换。
+     */
     private fun buildLibraryRows(): List<View> = collect {
         addView(sourceEntryRow())
-        addView(
-            placeholderRow(
-                title = getString(R.string.settings_scan_rules),
-                desc = getString(R.string.settings_scan_rules_desc),
-            )
-        )
     }
 
     /**
@@ -150,18 +188,16 @@ class SettingsActivity : AppCompatActivity() {
     /** 翻页与手势：两个真开关 + 五个占位 */
     private fun buildFlipRows(): List<View> = collect {
         addView(
-            placeholderRow(
+            choiceRow(
                 title = getString(R.string.settings_read_direction),
                 desc = getString(R.string.settings_read_direction_desc),
-            )
-        )
-
-        addView(
-            switchRow(
-                title = getString(R.string.settings_swap_zones),
-                desc = getString(R.string.settings_swap_zones_desc),
-                checked = !reader.flipForwardRight,
-            ) { checked -> reader.flipForwardRight = !checked }
+                options = listOf(
+                    getString(R.string.settings_direction_vertical),
+                    getString(R.string.settings_direction_right),
+                    getString(R.string.settings_direction_left),
+                ),
+                selected = reader.scrollMode,
+            ) { index -> reader.scrollMode = index }
         )
 
         addView(
@@ -181,60 +217,154 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         addView(
-            placeholderRow(
+            choiceRow(
                 title = getString(R.string.settings_jump_distance),
                 desc = getString(R.string.settings_jump_distance_desc),
-            )
+                options = listOf(
+                    getString(R.string.settings_jump_in_screen),
+                    getString(R.string.settings_jump_half),
+                    getString(R.string.settings_jump_full),
+                ),
+                selected = reader.flipStep,
+            ) { index -> reader.flipStep = index }
         )
         addView(
-            placeholderRow(
+            switchRow(
                 title = getString(R.string.settings_volume_keys),
                 desc = getString(R.string.settings_volume_keys_desc),
-            )
+                checked = reader.keyFlip,
+            ) { checked -> reader.keyFlip = checked }
         )
         addView(
-            placeholderRow(
+            choiceRowWithValue(
+                title = getString(R.string.settings_key_prev),
+                desc = keyLabel(reader.keyPrevCode),
+            ) { captureKey(R.string.settings_key_prev) { code -> reader.keyPrevCode = code } }
+        )
+        addView(
+            choiceRowWithValue(
+                title = getString(R.string.settings_key_next),
+                desc = keyLabel(reader.keyNextCode),
+            ) { captureKey(R.string.settings_key_next) { code -> reader.keyNextCode = code } }
+        )
+        addView(
+            choiceRow(
+                title = getString(R.string.settings_wheel),
+                desc = getString(R.string.settings_wheel_desc),
+                options = listOf(
+                    getString(R.string.settings_wheel_off),
+                    getString(R.string.settings_wheel_up_prev),
+                    getString(R.string.settings_wheel_up_next),
+                ),
+                selected = reader.wheelMode,
+            ) { index -> reader.wheelMode = index }
+        )
+        addView(
+            switchRow(
                 title = getString(R.string.settings_zone_hint),
                 desc = getString(R.string.settings_zone_hint_desc),
-            )
+                checked = reader.zoneHint,
+            ) { checked -> reader.zoneHint = checked }
+        )
+        addView(
+            switchRow(
+                title = getString(R.string.settings_turn_animation),
+                desc = getString(R.string.settings_turn_animation_desc),
+                checked = reader.turnAnimation,
+            ) { checked -> reader.turnAnimation = checked }
         )
     }
 
-    /** 缩放：这一组全是还没做的 */
+    /** 缩放：双击 / 双指 / 长按，以及放大后往哪一角落位 */
     private fun buildZoomRows(): List<View> = collect {
         addView(
-            placeholderRow(
+            switchRow(
                 title = getString(R.string.settings_double_tap_zoom),
                 desc = getString(R.string.settings_double_tap_zoom_desc),
-            )
+                checked = reader.doubleZoom,
+            ) { checked -> reader.doubleZoom = checked }
         )
         addView(
-            placeholderRow(
-                title = getString(R.string.settings_double_tap_anchor),
+            choiceRow(
+                title = getString(R.string.settings_double_tap_anchor_h),
                 desc = getString(R.string.settings_double_tap_anchor_desc),
-            )
+                options = focusOptions(),
+                selected = reader.doubleZoomFocusH,
+            ) { index -> reader.doubleZoomFocusH = index }
         )
         addView(
-            placeholderRow(
-                title = getString(R.string.settings_long_press_zoom),
-                desc = getString(R.string.settings_long_press_zoom_desc),
-            )
+            choiceRow(
+                title = getString(R.string.settings_double_tap_anchor_v),
+                desc = getString(R.string.settings_anchor_v_desc),
+                options = focusOptions(),
+                selected = reader.doubleZoomFocusV,
+            ) { index -> reader.doubleZoomFocusV = index }
         )
         addView(
-            placeholderRow(
+            sliderRow(
+                title = getString(R.string.settings_double_zoom_factor),
+                min = 12,
+                max = 30,
+                step = 1,
+                initial = (reader.doubleZoomFactor * 10).toInt(),
+                format = { getString(R.string.settings_zoom_factor_value, it / 10f) },
+            ) { value -> reader.doubleZoomFactor = value / 10f }
+        )
+        addView(
+            switchRow(
                 title = getString(R.string.settings_pinch_zoom),
                 desc = getString(R.string.settings_pinch_zoom_desc),
-            )
+                checked = reader.pinchZoom,
+            ) { checked -> reader.pinchZoom = checked }
+        )
+        addView(
+            switchRow(
+                title = getString(R.string.settings_long_press_zoom),
+                desc = getString(R.string.settings_long_press_zoom_desc),
+                checked = reader.holdZoom,
+            ) { checked -> reader.holdZoom = checked }
+        )
+        addView(
+            choiceRow(
+                title = getString(R.string.settings_hold_zoom_anchor),
+                desc = null,
+                options = focusOptions(),
+                selected = reader.holdZoomFocus,
+            ) { index -> reader.holdZoomFocus = index }
+        )
+        addView(
+            sliderRow(
+                title = getString(R.string.settings_hold_zoom_factor),
+                min = 12,
+                max = 30,
+                step = 1,
+                initial = (reader.holdZoomFactor * 10).toInt(),
+                format = { getString(R.string.settings_zoom_factor_value, it / 10f) },
+            ) { value -> reader.holdZoomFactor = value / 10f }
         )
     }
+
+    /** 放大后对准的五个落点，双击与长按共用 */
+    private fun focusOptions(): List<String> = listOf(
+        getString(R.string.settings_focus_tap),
+        getString(R.string.settings_focus_screen_center),
+        getString(R.string.settings_focus_page_center),
+        getString(R.string.settings_focus_top_left),
+        getString(R.string.settings_focus_top_right),
+    )
 
     /** 版面与显示：阅读时真正会变样子的一批参数 */
     private fun buildLayoutRows(): List<View> = collect {
         addView(
-            placeholderRow(
+            choiceRow(
                 title = getString(R.string.settings_page_fit),
                 desc = getString(R.string.settings_page_fit_desc),
-            )
+                options = listOf(
+                    getString(R.string.settings_page_fit_width),
+                    getString(R.string.settings_page_fit_screen),
+                ),
+                selected = if (reader.fitWidth) 0 else 1,
+            ) { index -> reader.fitWidth = index == 0 }
         )
 
         addView(
@@ -256,6 +386,7 @@ class SettingsActivity : AppCompatActivity() {
         addView(
             sliderRow(
                 title = getString(R.string.settings_trim_level),
+                desc = getString(R.string.settings_trim_level_desc),
                 min = 200,
                 max = 250,
                 step = 5,
@@ -276,7 +407,7 @@ class SettingsActivity : AppCompatActivity() {
             sliderRow(
                 title = getString(R.string.settings_margin),
                 min = 0,
-                max = 32,
+                max = 25,
                 step = 2,
                 initial = reader.sideMarginDp,
                 format = { getString(R.string.settings_margin_value, it) },
@@ -288,6 +419,7 @@ class SettingsActivity : AppCompatActivity() {
                 title = getString(R.string.settings_canvas),
                 desc = null,
                 options = listOf(
+                    getString(R.string.settings_canvas_system),
                     getString(R.string.settings_canvas_light),
                     getString(R.string.settings_canvas_dark),
                     getString(R.string.settings_canvas_black),
@@ -339,51 +471,251 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         addView(
-            placeholderRow(
-                title = getString(R.string.settings_native_decode),
-                desc = getString(R.string.settings_native_decode_desc),
-            )
+            choiceRow(
+                title = getString(R.string.settings_shelf_columns),
+                desc = getString(R.string.settings_shelf_columns_desc),
+                options = columnChoices.map {
+                    if (it == 0) getString(R.string.settings_columns_auto) else it.toString()
+                },
+                selected = columnChoices.indexOf(prefs.shelfColumns).coerceAtLeast(0),
+            ) { index -> prefs.shelfColumns = columnChoices[index] }
         )
     }
 
-    /** 动画与性能：预载页数、内存上限、翻页动画 */
-    private fun buildPerfRows(): List<View> = collect {
+    /**
+     * 加载管理：解码口径、预加载、磁盘缓存。
+     *
+     * 这一组决定「一页图怎么进内存、怎么留在磁盘」。翻页顺不顺、放大糊不糊、
+     * 读过一遍的书要不要重新下载，全在这几项上。
+     */
+    private fun buildLoadRows(): List<View> = collect {
         addView(
             switchRow(
-                title = getString(R.string.settings_turn_animation),
-                desc = getString(R.string.settings_turn_animation_desc),
-                checked = reader.turnAnimation,
-            ) { checked -> reader.turnAnimation = checked }
+                title = getString(R.string.settings_native_decode),
+                desc = getString(R.string.settings_native_decode_desc),
+                checked = reader.nativeDecode,
+            ) { checked -> reader.nativeDecode = checked }
+        )
+
+        addView(
+            switchRow(
+                title = getString(R.string.settings_argb),
+                desc = getString(R.string.settings_argb_desc),
+                checked = reader.argb8888,
+            ) { checked -> reader.argb8888 = checked }
         )
 
         addView(
             sliderRow(
-                title = getString(R.string.settings_prefetch),
-                desc = getString(R.string.settings_prefetch_desc),
+                title = getString(R.string.settings_prefetch_prev),
+                desc = getString(R.string.settings_prefetch_prev_desc),
                 min = 0,
                 max = 12,
                 step = 1,
-                initial = reader.prefetchPages,
-                format = {
-                    if (it == 0) getString(R.string.settings_prefetch_off)
-                    else getString(R.string.settings_prefetch_value, it)
-                },
-            ) { value -> reader.prefetchPages = value }
+                initial = reader.prefetchPrev,
+                format = { pagesText(it) },
+            ) { value -> reader.prefetchPrev = value }
         )
 
-        // 内存缓存上限：自动档跟堆走，手选档位在 ReaderPrefs 里夹到堆的 1/8–1/2
-        val cacheOptions = listOf(0, 64, 128, 256, 512)
+        addView(
+            sliderRow(
+                title = getString(R.string.settings_prefetch_next),
+                desc = getString(R.string.settings_prefetch_next_desc),
+                min = 0,
+                max = 12,
+                step = 1,
+                initial = reader.prefetchNext,
+                format = { pagesText(it) },
+            ) { value -> reader.prefetchNext = value }
+        )
+
+        addView(noteRow(getString(R.string.settings_prefetch_hint)))
+
+        // 内存上限：自动跟堆走；手选档位在 ReaderPrefs 里夹到堆的 1/8–1/2
         addView(
             choiceRow(
-                title = getString(R.string.settings_cache_limit),
-                desc = getString(R.string.settings_cache_limit_desc),
-                options = cacheOptions.map {
-                    if (it == 0) getString(R.string.settings_cache_auto)
-                    else getString(R.string.settings_cache_value, it)
+                title = getString(R.string.settings_cache_mem),
+                desc = getString(R.string.settings_cache_mem_desc),
+                options = cacheMemOptions.map {
+                    if (it == 0) getString(R.string.settings_cache_gb_auto)
+                    else getString(R.string.settings_cache_mem_value, it)
                 },
-                selected = cacheOptions.indexOfFirst { it == reader.cacheMb }.coerceAtLeast(0),
-            ) { index -> reader.cacheMb = cacheOptions[index] }
+                selected = cacheMemOptions.indexOfFirst { it == reader.cacheMb }.coerceAtLeast(0),
+            ) { index -> reader.cacheMb = cacheMemOptions[index] }
         )
+
+        // 磁盘缓存上限：自动跟剩余空间走（1–5 GB），也能定死
+        addView(
+            choiceRow(
+                title = getString(R.string.settings_cache_gb),
+                desc = getString(R.string.settings_cache_gb_desc),
+                options = cacheGbOptions.map {
+                    if (it == 0) getString(R.string.settings_cache_gb_auto)
+                    else getString(R.string.settings_cache_gb_value, it)
+                },
+                selected = cacheGbOptions.indexOfFirst { it == reader.cacheGb }.coerceAtLeast(0),
+                badge = cacheUsedText(),
+                onBadgeClick = { showCacheDetail() },
+            ) { index -> reader.cacheGb = cacheGbOptions[index] }
+        )
+    }
+
+    private fun pagesText(pages: Int): String =
+        if (pages == 0) getString(R.string.settings_prefetch_off)
+        else getString(R.string.settings_prefetch_value, pages)
+
+    /** 一条只有说明的灰字，用来解释上面那几项怎么算 */
+    private fun noteRow(text: String): View = TextView(this).apply {
+        this.text = text
+        textSize = 11f
+        setTextColor(getColor(R.color.shell_ink_faint))
+        // 不铺卡片底：它就在组里那张卡内部，再铺一层会看着像另起一块
+        setPadding(dp(16), dp(10), dp(16), dp(12))
+    }
+
+    /** 磁盘页缓存 + 为打开格式落下的副本，一共占多少（内存那份不进这里，它一退阅读就没了） */
+    private fun cacheUsedText(): String = getString(
+        R.string.settings_cache_used,
+        formatBytes(diskBytes()),
+    )
+
+    private fun diskBytes(): Long =
+        diskCache.totalBytes() + com.nascomic.reader.format.LocalCopies.totalBytes(this)
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes <= 0L) return getString(R.string.settings_cache_empty)
+        val gb = bytes / (1024.0 * 1024.0 * 1024.0)
+        if (gb >= 1.0) return "%.2f GB".format(gb)
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1.0) "%.1f MB".format(mb) else "${bytes / 1024} KB"
+    }
+
+    /**
+     * 缓存明细：一共占多少、上限多少，再按书库分开列。
+     *
+     * 只报一个总数看不出「哪套书库在吃空间」，删来源时也不知道能省回多少，
+     * 所以按来源分组——一页页都是那套书库的。
+     */
+    private fun showCacheDetail() {
+        lifecycleScope.launch {
+            val usage = withContext(Dispatchers.IO) { diskCache.bytesByBook() }
+            val books = db.bookDao().allSorted().associateBy { it.id }
+            val sources = repository.list().associateBy { it.id }
+
+            val bySource = HashMap<Long, LongArray>()
+            var total = 0L
+            for ((bookId, bytes) in usage) {
+                val book = books[bookId] ?: continue
+                val slot = bySource.getOrPut(book.sourceId) { LongArray(2) }
+                slot[0] += bytes
+                slot[1] += 1
+                total += bytes
+            }
+
+            val box = LinearLayout(this@SettingsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(6), dp(20), dp(2))
+            }
+            box.addView(TextView(this@SettingsActivity).apply {
+                text = getString(
+                    R.string.settings_cache_page_summary,
+                    formatBytes(total),
+                    formatBytes(reader.diskBudgetBytes(filesDir.usableSpace)),
+                )
+                textSize = 13f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                setPadding(0, 0, 0, dp(12))
+            })
+
+            if (bySource.isEmpty()) {
+                box.addView(TextView(this@SettingsActivity).apply {
+                    text = getString(R.string.settings_cache_page_empty)
+                    textSize = 12f
+                    setTextColor(getColor(R.color.shell_ink_faint))
+                    setPadding(0, 0, 0, dp(8))
+                })
+            } else {
+                for ((sourceId, slot) in bySource.entries.sortedByDescending { it.value[0] }) {
+                    val label = sources[sourceId]?.label ?: getString(R.string.settings_sources_entry)
+                    box.addView(LinearLayout(this@SettingsActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(0, dp(7), 0, dp(7))
+                        addView(TextView(this@SettingsActivity).apply {
+                            text = getString(
+                                R.string.settings_cache_page_source,
+                                label,
+                                slot[1].toInt(),
+                            )
+                            textSize = 13f
+                            setTextColor(getColor(R.color.shell_ink))
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        }, weighted())
+                        addView(TextView(this@SettingsActivity).apply {
+                            text = formatBytes(slot[0])
+                            textSize = 13f
+                            setTextColor(getColor(R.color.shell_ink_muted))
+                        })
+                    })
+                }
+            }
+
+            val content = android.widget.ScrollView(this@SettingsActivity).apply { addView(box) }
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle(R.string.settings_cache_page_title)
+                .setView(content)
+                .setPositiveButton(R.string.settings_cache_page_set) { _, _ -> showCacheLimitDialog() }
+                .setNeutralButton(R.string.settings_cache_page_clear) { _, _ -> confirmClearCache() }
+                .setNegativeButton(R.string.settings_cache_page_close, null)
+                .show()
+        }
+    }
+
+    /** 改磁盘缓存上限。改小不会立刻删，等下次写页时按新上限收 */
+    private fun showCacheLimitDialog() {
+        val labels = cacheGbOptions.map {
+            if (it == 0) getString(R.string.settings_cache_gb_auto)
+            else getString(R.string.settings_cache_gb_value, it)
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_cache_gb)
+            .setSingleChoiceItems(
+                labels,
+                cacheGbOptions.indexOfFirst { it == reader.cacheGb }.coerceAtLeast(0),
+            ) { dialog, which ->
+                reader.cacheGb = cacheGbOptions[which]
+                dialog.dismiss()
+                // 调小之后立刻按新上限收一次，不然要等下次进阅读才见效
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        com.nascomic.reader.ui.reader.DiskPageCache(
+                            this@SettingsActivity,
+                            reader.diskBudgetBytes(filesDir.usableSpace),
+                        ).trim(0L)
+                    }
+                    buildRows()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun confirmClearCache() {
+        AlertDialog.Builder(this)
+            .setMessage(R.string.settings_cache_clear_confirm)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                com.nascomic.reader.ui.reader.PageCacheHolder.current()?.clear()
+                diskCache.clearAll()
+                com.nascomic.reader.format.LocalCopies.clear(this)
+                buildRows()
+                Toast.makeText(
+                    this,
+                    R.string.settings_cache_cleared,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            .show()
     }
 
     /** 其他：关于、恢复默认。开源许可在关于页里，不在这里再摆一个 */
@@ -402,6 +734,25 @@ class SettingsActivity : AppCompatActivity() {
                 destructive = true,
             ) { confirmReset() }
         )
+
+        // 当前这本单独调过参数时，给一条路回到全局默认
+        if (bookId > 0 && reader.hasBookOverrides()) {
+            addView(
+                choiceRowWithValue(
+                    title = getString(R.string.settings_book_reset),
+                    desc = getString(R.string.settings_book_reset_desc),
+                    destructive = true,
+                ) {
+                    reader.clearBookOverrides()
+                    buildRows()
+                    Toast.makeText(
+                        this@SettingsActivity,
+                        R.string.settings_book_reset_done,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            )
+        }
     }
 
     // ── 恢复默认 ───────────────────────────────────────────
@@ -465,18 +816,57 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * 枚举行：两三档的选项直接摆在行尾做分段控件，点一下就换，
-     * 不用再弹一层对话框（原来那层单选框在小屏上盖满屏，选完还得回去看一眼）。
+     * 枚举行：选项铺在标题下方做分段控件，点一下就换，不弹对话框。
+     * 标题、说明、控件各占一行，和上面的滑杆一致——档位多了也挤不到标题，
+     * 每格按等宽均分，窄屏上不会溢出行外。
      */
     private fun choiceRow(
         title: String,
         desc: String?,
         options: List<String>,
         selected: Int,
+        badge: String? = null,
+        onBadgeClick: (() -> Unit)? = null,
         onChange: (Int) -> Unit,
     ): View {
-        val row = rowContainer()
-        row.addView(titleBlock(title, desc), weighted(if (desc.isNullOrBlank()) 1f else 1.2f))
+        val block = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(12))
+        }
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isBaselineAligned = false
+        }
+        head.addView(TextView(this).apply {
+            text = title
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(getColor(R.color.shell_ink))
+        }, weighted())
+        if (badge != null) {
+            // 右侧这枚胶囊是可以点的：缓存管理就是靠它清空
+            head.addView(TextView(this).apply {
+                text = badge
+                textSize = 11f
+                setTextColor(getColor(R.color.brand_accent))
+                background = getDrawable(R.drawable.bg_chip_unselected)
+                setPadding(dp(9), dp(4), dp(9), dp(4))
+                isClickable = onBadgeClick != null
+                if (onBadgeClick != null) {
+                    setOnClickListener { onBadgeClick() }
+                }
+            })
+        }
+        block.addView(head)
+        if (!desc.isNullOrBlank()) {
+            block.addView(TextView(this).apply {
+                text = desc
+                textSize = 11f
+                setTextColor(getColor(R.color.shell_ink_faint))
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
 
         val track = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -489,18 +879,24 @@ class SettingsActivity : AppCompatActivity() {
                 text = label
                 textSize = 11f
                 gravity = Gravity.CENTER
-                setPadding(dp(11), dp(5), dp(11), dp(5))
+                setPadding(0, dp(5), 0, dp(5))
             }
             labels += cell
-            track.addView(cell)
+            track.addView(
+                cell,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
             cell.setOnClickListener {
                 onChange(index)
                 paintSegments(labels, index)
             }
         }
         paintSegments(labels, selected)
-        row.addView(track)
-        return withDivider(row)
+        block.addView(track, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(10) })
+        return withDivider(block)
     }
 
     /** 选中的那一格铺白底、字转橙；其余只留字 */
@@ -564,7 +960,7 @@ class SettingsActivity : AppCompatActivity() {
             progressTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.brand_accent))
             thumbTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.brand_accent))
             progressBackgroundTintList =
-                android.content.res.ColorStateList.valueOf(getColor(R.color.shell_divider))
+                android.content.res.ColorStateList.valueOf(getColor(R.color.slider_track))
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                     val v = min + progress * step
@@ -599,37 +995,47 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * 占位行：这一项界面稿里有、还没做。
-     * 灰字 + 「未实现」小标，不可点——不装成能调的开关，也不藏起来让人找不到。
+     * 绑按键：弹一层只剩键盘输入的框，按下第一个非返回键就绑上。
+     * 音量键也能绑回来，改错了按音量键即可恢复。
      */
-    private fun placeholderRow(title: String, desc: String?): View {
-        val row = rowContainer()
-        row.isClickable = false
-        row.isFocusable = false
-        row.background = null
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        texts.addView(TextView(this).apply {
-            text = title
-            textSize = 14f
-            setTextColor(getColor(R.color.shell_ink_faint))
-        })
-        if (!desc.isNullOrBlank()) {
-            texts.addView(TextView(this).apply {
-                text = desc
-                textSize = 11f
-                setTextColor(getColor(R.color.shell_ink_faint))
-                setPadding(0, dp(3), 0, 0)
+    private fun captureKey(titleRes: Int, onPicked: (Int) -> Unit) {
+        val dialog = android.app.Dialog(this)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(26), dp(24), dp(16))
+            addView(TextView(this@SettingsActivity).apply {
+                text = getString(R.string.settings_key_capture_title, getString(titleRes))
+                textSize = 15f
+                setTextColor(getColor(R.color.shell_ink))
+            })
+            addView(TextView(this@SettingsActivity).apply {
+                text = getString(R.string.settings_key_capture_hint)
+                textSize = 12f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                setPadding(0, dp(8), 0, 0)
             })
         }
-        row.addView(texts, weighted())
-        row.addView(TextView(this).apply {
-            text = getString(R.string.settings_not_implemented)
-            textSize = 9f
-            setTextColor(getColor(R.color.shell_ink_faint))
-            background = getDrawable(R.drawable.bg_badge_muted)
-            setPadding(dp(7), dp(3), dp(7), dp(3))
-        })
-        return withDivider(row)
+        dialog.setContentView(box)
+        dialog.window?.setBackgroundDrawable(getDrawable(R.drawable.bg_card))
+        dialog.show()
+        box.isFocusableInTouchMode = true
+        box.requestFocus()
+        box.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && keyCode != KeyEvent.KEYCODE_BACK) {
+                onPicked(keyCode)
+                dialog.dismiss()
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    /** 键码翻成人话。屏幕上只认音量上下，其余按系统名去掉前缀 */
+    private fun keyLabel(code: Int): String = when (code) {
+        KeyEvent.KEYCODE_VOLUME_UP -> getString(R.string.key_volume_up)
+        KeyEvent.KEYCODE_VOLUME_DOWN -> getString(R.string.key_volume_down)
+        else -> KeyEvent.keyCodeToString(code).removePrefix("KEYCODE_")
     }
 
     // ── 小工具 ─────────────────────────────────────────────
@@ -688,7 +1094,11 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    private companion object {
+    companion object {
+        /** 从阅读页进来时带的书：带了就只改这一本 */
+        const val EXTRA_BOOK_ID = "book_id"
+        const val EXTRA_BOOK_TITLE = "book_title"
+
         /** 与书架、详情同一把尺子 */
         const val PAGE_MARGIN = 20
         const val ROW_PADDING = 14

@@ -7,10 +7,40 @@ import java.io.InputStream
  *
  * 一章可以是目录（散图），也可以是一个压缩包。这里只做展平与页码换算，
  * 具体怎么读由每个章自己的 [BookSource] 决定。
+ *
+ * 章的书源是**用到才建**。[Part.declaredPages] 给了页数（库里存着上次数的结果）时，
+ * 连建都不建——远端三百章的书回来看第二遍，不必再发三百次列目录。
  */
 class MultiChapterSource(private val parts: List<Part>) : BookSource {
 
-    data class Part(val title: String, val source: BookSource)
+    class Part(
+        val title: String,
+        /** 已知页数，-1 表示不知道（要打开才知道） */
+        private val declaredPages: Int = -1,
+        private val factory: () -> BookSource,
+    ) {
+
+        constructor(title: String, source: BookSource) : this(title, -1, { source })
+
+        private var opened: BookSource? = null
+
+        val source: BookSource
+            @Synchronized get() = opened ?: factory().also { opened = it }
+
+        /** 这一章的书源建过没有。关的时候只关建过的 */
+        val isOpened: Boolean
+            @Synchronized get() = opened != null
+
+        val pages: Int get() = if (declaredPages >= 0) declaredPages else source.pageCount
+
+        fun close() {
+            synchronized(this) {
+                val src = opened ?: return
+                opened = null
+                runCatching { src.close() }
+            }
+        }
+    }
 
     private val starts: IntArray
     override val chapters: List<ChapterInfo>
@@ -21,13 +51,14 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource {
         val infos = ArrayList<ChapterInfo>(parts.size)
         for ((i, part) in parts.withIndex()) {
             starts[i] = acc
-            infos += ChapterInfo(ordinal = i, title = part.title, pageCount = part.source.pageCount)
-            acc += part.source.pageCount
+            val pages = part.pages
+            infos += ChapterInfo(ordinal = i, title = part.title, pageCount = pages)
+            acc += pages
         }
         chapters = infos
     }
 
-    override val pageCount: Int get() = parts.sumOf { it.source.pageCount }
+    override val pageCount: Int get() = chapters.sumOf { it.pageCount }
 
     override fun pageName(page: Int): String {
         val (index, local) = locate(page)
@@ -44,7 +75,7 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource {
     override fun firstPageOfChapter(chapter: Int): Int = starts[chapter]
 
     override fun close() {
-        parts.forEach { runCatching { it.source.close() } }
+        parts.forEach { it.close() }
     }
 
     /** 返回（章序号, 章内页号） */

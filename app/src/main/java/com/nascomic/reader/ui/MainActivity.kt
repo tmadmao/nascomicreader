@@ -6,9 +6,12 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.Toast
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.nascomic.reader.R
@@ -26,6 +29,7 @@ import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.detail.DetailActivity
 import com.nascomic.reader.ui.reader.ReadingActivity
 import com.nascomic.reader.ui.settings.SettingsActivity
+import com.nascomic.reader.ui.shelf.CoverBitmaps
 import com.nascomic.reader.ui.shelf.ShelfAdapter
 import com.nascomic.reader.ui.shelf.ShelfGrid
 import com.nascomic.reader.ui.widget.ScanProgressDialog
@@ -36,8 +40,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 书架。顶部「书库」+ 标签 chip + 「接着读」卡 + 封面网格；列数按屏宽算（[ShelfGrid]）。
- * 搜索与排序还没做。
+ * 书架。顶部「书库」+ 标签 chip + 「接着读」卡 + 封面网格。
+ * 列数按屏宽算（[ShelfGrid]），设置里也能定死；搜书名在本地即时过滤，排序三档记在偏好里。
  */
 class MainActivity : AppCompatActivity() {
 
@@ -63,6 +67,9 @@ class MainActivity : AppCompatActivity() {
     private val MAX_COVER_QUEUE = 60
     private var coverWidth = 0
 
+    /** 搜索框里的关键字。本地过滤，不落库也不跨页保存 */
+    private var shelfQuery = ""
+
     private val pickFolder = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? -> if (uri != null) scanFolder(uri) }
@@ -74,7 +81,12 @@ class MainActivity : AppCompatActivity() {
         // Android 15 起强制边到边：自己让开状态栏与导航条
         binding.root.padBySystemBars()
 
-        adapter = ShelfAdapter(thumbs, { openBook(it) }, { id -> requestCover(id) })
+        adapter = ShelfAdapter(
+            CoverBitmaps(thumbs),
+            onClick = { openBook(it) },
+            onLongClick = { showBookMenu(it) },
+            onCoverNeeded = { id -> requestCover(id) },
+        )
         binding.grid.adapter = adapter
         applyGridMetrics()
 
@@ -91,8 +103,57 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        // 搜书名：敲字即筛，120ms 防抖，免得一千多本时每敲一个键都查一次库
+        binding.searchInput.doAfterTextChanged { text ->
+            val query = text?.toString().orEmpty()
+            if (query == shelfQuery) return@doAfterTextChanged
+            shelfQuery = query
+            searchDebounce.removeCallbacks(searchTick)
+            searchDebounce.postDelayed(searchTick, 120)
+        }
+        binding.sortButton.setOnClickListener { askSort() }
+
         startCoverWorker()
+        sweepCaches()
         refresh()
+    }
+
+    /**
+     * 收拾两处会自己长大的缓存：删掉的书的封面、以及为打开格式落到本地的副本。
+     * 只在进书架时做一次——搜索每敲一个字都扫一遍目录不值当。
+     */
+    private fun sweepCaches() {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    thumbs.prune(db.bookDao().ids().toHashSet())
+                    com.nascomic.reader.format.LocalCopies.trim(this@MainActivity)
+                    // 换过键格式的旧页永远不会命中，顺手清掉
+                    com.nascomic.reader.ui.reader.DiskPageCache(this@MainActivity).purgeLegacy()
+                }
+            }
+        }
+    }
+
+    private val searchDebounce = android.os.Handler(android.os.Looper.getMainLooper())
+    private val searchTick = Runnable { refresh() }
+
+    /** 排序三档换一种排法，点哪个立即生效并记住 */
+    private fun askSort() {
+        val labels = arrayOf(
+            getString(R.string.shelf_sort_recent),
+            getString(R.string.shelf_sort_title_asc),
+            getString(R.string.shelf_sort_title_desc),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.shelf_sort)
+            .setSingleChoiceItems(labels, prefs.shelfSort) { dialog, which ->
+                prefs.shelfSort = which
+                dialog.dismiss()
+                refresh()
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
     }
 
     /**
@@ -133,11 +194,18 @@ class MainActivity : AppCompatActivity() {
             adapter.submit(books, progress)
 
             val empty = books.isEmpty()
-            binding.empty.visibility = if (empty) View.VISIBLE else View.GONE
+            val filtering = shelfQuery.isNotBlank()
+            // 空书架的引导与「没搜到」是两件事，不能拿前者冒充后者
+            binding.empty.visibility = if (empty && !filtering) View.VISIBLE else View.GONE
+            binding.searchEmpty.visibility = if (empty && filtering) View.VISIBLE else View.GONE
             binding.grid.visibility = if (empty) View.GONE else View.VISIBLE
+            // 一本书都没有时，搜索框没有意义
+            binding.searchRow.visibility = if (allBooks.isEmpty()) View.GONE else View.VISIBLE
             // 空书架时不再报「全部漫画 0 本」——上面那块引导已经把话说清了
             binding.sectionTitle.visibility = if (empty) View.GONE else View.VISIBLE
             binding.sectionCount.visibility = if (empty) View.GONE else View.VISIBLE
+            // 计数跟着当前列表走：搜索时是筛剩下的本数，不是全量
+            binding.sectionCount.text = getString(R.string.shelf_section_count, books.size)
 
             renderResume(allBooks, progress)
             requestVisibleCovers()
@@ -154,7 +222,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         val latest = progress.values.maxByOrNull { it.updatedAt }
         val book = latest?.let { p -> allBooks.firstOrNull { it.id == p.bookId } }
-        if (book == null || latest == null || currentTab == TAB_RECENT || book.pageTotal <= 0) {
+        if (latest == null || book == null || currentTab == TAB_RECENT || book.pageTotal <= 0) {
             binding.resumeCard.visibility = View.GONE
             return
         }
@@ -199,11 +267,29 @@ class MainActivity : AppCompatActivity() {
         return if (source.isEmpty()) position else "$position · $source"
     }
 
-    private suspend fun queryBooks(): List<BookEntity> = when {
-        currentTab == TAB_RECENT -> db.bookDao().recentlyReadNow()
-        currentTab.startsWith(TAB_SOURCE_PREFIX) ->
-            db.bookDao().bySourceNow(currentTab.removePrefix(TAB_SOURCE_PREFIX).toLong())
-        else -> db.bookDao().allSorted()
+    private suspend fun queryBooks(): List<BookEntity> {
+        val base = when {
+            currentTab == TAB_RECENT -> db.bookDao().recentlyReadNow()
+            currentTab.startsWith(TAB_SOURCE_PREFIX) ->
+                db.bookDao().bySourceNow(currentTab.removePrefix(TAB_SOURCE_PREFIX).toLong())
+            else -> db.bookDao().allSorted()
+        }
+        // 「最近阅读」标签本身按读过的时间排，排序档不覆盖它——否则这个标签就没意义了
+        if (currentTab == TAB_RECENT) return filterByQuery(base)
+        val sorted = when (AppPrefs.ShelfSort.of(prefs.shelfSort)) {
+            AppPrefs.ShelfSort.TITLE_ASC -> base.sortedBy { it.titleSort }
+            AppPrefs.ShelfSort.TITLE_DESC -> base.sortedByDescending { it.titleSort }
+            AppPrefs.ShelfSort.RECENT ->
+                base.sortedWith(compareByDescending<BookEntity> { it.addedAt }.thenByDescending { it.id })
+        }
+        return filterByQuery(sorted)
+    }
+
+    /** 书名过滤，忽略大小写；空关键字就是原样返回 */
+    private fun filterByQuery(list: List<BookEntity>): List<BookEntity> {
+        val q = shelfQuery.trim()
+        if (q.isEmpty()) return list
+        return list.filter { it.title.contains(q, ignoreCase = true) }
     }
 
     /**
@@ -304,28 +390,191 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startCoverWorker() {
+    /**
+     * 长按一本书：重命名 / 换封面 / 从书库删除。
+     *
+     * 三个动作都只动「这个 App 里的这本书」——改的是库里的名字、封面页号与记录，
+     * 硬盘或 NAS 上的文件一个字节都不碰。所以措辞上写「从书库删除」。
+     */
+    private fun showBookMenu(book: BookEntity) {
+        val items = arrayOf(
+            getString(R.string.shelf_menu_rename),
+            getString(R.string.shelf_change_cover),
+            getString(R.string.shelf_menu_delete),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(book.title)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showRenameBook(book)
+                    1 -> showChangeCover(book)
+                    2 -> confirmDeleteBook(book)
+                }
+            }
+            .show()
+    }
+
+    /** 只改库里的显示名：标题与排序键一起更新，书架立刻重排 */
+    private fun showRenameBook(book: BookEntity) {
+        val input = android.widget.EditText(this).apply {
+            setText(book.title)
+            setSelection(text.length)
+            setSingleLine()
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(2), dp(20), 0)
+            addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.shelf_rename_hint)
+                textSize = 12f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                setPadding(0, 0, 0, dp(10))
+            })
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.shelf_rename_title)
+            .setView(box)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, R.string.shelf_rename_empty, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    db.bookDao().updateTitle(
+                        book.id, name, com.nascomic.reader.core.text.NaturalSort.key(name)
+                    )
+                    refresh()
+                    Toast.makeText(this@MainActivity, R.string.shelf_rename_done, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
+    /** 只从库里删：进度、书签、历史随外键级联走，磁盘上的源文件留着 */
+    private fun confirmDeleteBook(book: BookEntity) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.shelf_delete_title)
+            .setMessage(getString(R.string.shelf_delete_message, book.title))
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.shelf_delete_confirm) { _, _ ->
+                lifecycleScope.launch {
+                    db.bookDao().delete(book.id)
+                    withContext(Dispatchers.IO) {
+                        // 这本书的页缓存与缩略图也一并清掉，不然没人再用它们
+                        com.nascomic.reader.ui.reader.DiskPageCache(this@MainActivity)
+                            .clearBook(book.id)
+                        thumbs.invalidate(book.id)
+                    }
+                    adapter.invalidateCover(book.id)
+                    refresh()
+                    Toast.makeText(
+                        this@MainActivity, R.string.shelf_delete_done, Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .show()
+    }
+
+    /**
+     * 换封面：长按书架上的这一本，指定用它的第几张图。
+     *
+     * 这事只能按书做——同一套漫画里每本的第一张未必都是封面（很多是扉页），
+     * 所以不放在设置里做全局默认。
+     */
+    private fun showChangeCover(book: BookEntity) {
+        val pages = book.pageTotal
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = getString(R.string.shelf_cover_input_hint)
+            setText((book.coverPage + 1).toString())
+            setSelection(text.length)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(2), dp(20), 0)
+            addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.shelf_cover_hint, pages.coerceAtLeast(1))
+                textSize = 12f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                setPadding(0, 0, 0, dp(10))
+            })
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.shelf_cover_title, book.title))
+            .setView(box)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val n = input.text.toString().trim().toIntOrNull()
+                val upper = if (pages > 0) pages else Int.MAX_VALUE
+                if (n == null || n < 1 || n > upper) {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.shelf_cover_invalid, minOf(upper, pages.coerceAtLeast(1))),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    return@setPositiveButton
+                }
+                applyCover(book, n - 1)
+            }
+            .show()
+    }
+
+    /** 写回取图页号，删掉旧缩略图，重新生成一次再喂给书架 */
+    private fun applyCover(book: BookEntity, page: Int) {
         lifecycleScope.launch {
-            for (bookId in coverQueue) {
-                try {
-                    if (!thumbs.has(bookId)) {
-                        val book = db.bookDao().get(bookId) ?: continue
-                        val src = allSources.firstOrNull { it.id == book.sourceId } ?: continue
-                        val chapters = db.chapterDao().forBook(bookId)
-                        withContext(Dispatchers.IO) {
-                            thumbs.generate(book, src, chapters, opener)
+            db.bookDao().updateCoverPage(book.id, page)
+            val updated = book.copy(coverPage = page)
+            val src = allSources.firstOrNull { it.id == book.sourceId }
+            val chapters = db.chapterDao().forBook(book.id)
+            adapter.invalidateCover(book.id)
+            val file = if (src == null) {
+                null
+            } else {
+                withContext(Dispatchers.IO) {
+                    runCatching { thumbs.generate(updated, src, chapters, opener) }.getOrNull()
+                }
+            }
+            if (file == null) {
+                Toast.makeText(this@MainActivity, R.string.shelf_cover_failed, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val width = if (coverWidth > 0) coverWidth else dp(112)
+            val bitmap = withContext(Dispatchers.IO) { thumbs.load(book.id, width, width * 4 / 3) }
+            if (bitmap != null) adapter.showCover(book.id, bitmap)
+            Toast.makeText(this@MainActivity, R.string.shelf_cover_done, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun startCoverWorker() {
+        // 两条并发：一条在等远端连上时，另一条已经在解下一页。
+        // 会话用完就还（BookOpener 关书时关连接），两条不会把 NAS 顶到会话上限
+        repeat(COVER_WORKERS) {
+            lifecycleScope.launch {
+                for (bookId in coverQueue) {
+                    try {
+                        if (!thumbs.has(bookId)) {
+                            val book = db.bookDao().get(bookId) ?: continue
+                            val src = allSources.firstOrNull { it.id == book.sourceId } ?: continue
+                            val chapters = db.chapterDao().forBook(bookId)
+                            withContext(Dispatchers.IO) {
+                                thumbs.generate(book, src, chapters, opener)
+                            }
                         }
+                        val width = if (coverWidth > 0) coverWidth else dp(112)
+                        val bitmap = withContext(Dispatchers.IO) {
+                            thumbs.load(bookId, width, width * 4 / 3)
+                        }
+                        if (bitmap != null) adapter.showCover(bookId, bitmap)
+                    } catch (e: Exception) {
+                        // 单本失败不影响别的；缓存目录被清掉时下次滚到再试
+                        android.util.Log.d("Cover", "封面生成失败 $bookId", e)
+                    } finally {
+                        queuedCovers.remove(bookId)
                     }
-                    val width = if (coverWidth > 0) coverWidth else dp(112)
-                    val bitmap = withContext(Dispatchers.IO) {
-                        thumbs.load(bookId, width, width * 4 / 3)
-                    }
-                    if (bitmap != null) adapter.showCover(bookId, bitmap)
-                } catch (e: Exception) {
-                    // 单本失败不影响别的；缓存目录被清掉时下次滚到再试
-                    android.util.Log.d("Cover", "封面生成失败 $bookId", e)
-                } finally {
-                    queuedCovers.remove(bookId)
                 }
             }
         }
@@ -346,7 +595,17 @@ class MainActivity : AppCompatActivity() {
                 }
                 progress.showListing(source.label)
                 val r = scanner.scan(source, listenerFor(progress, source.label))
-                status(getString(R.string.status_scan_done, source.label, r.found, r.added, r.updated))
+                status(
+                    if (r.keptAll) {
+                        getString(
+                            R.string.status_scan_kept,
+                            source.label,
+                            db.bookDao().countBySource(source.id),
+                        )
+                    } else {
+                        getString(R.string.status_scan_done, source.label, r.found, r.added, r.updated)
+                    }
+                )
                 currentTab = TAB_ALL
                 refresh()
             } catch (e: Exception) {
@@ -378,10 +637,12 @@ class MainActivity : AppCompatActivity() {
     private fun applyGridMetrics() {
         val available = resources.displayMetrics.widthPixels - dp(16)
         val minCell = (ShelfGrid.MIN_CELL_DP * resources.displayMetrics.density).toInt()
-        val columns = ShelfGrid.columns(available, minCell)
+        // 设置里定死列数就照它来，否则按屏宽自动
+        val fixed = prefs.shelfColumns
+        val columns = if (fixed > 0) fixed else ShelfGrid.columns(available, minCell)
         binding.grid.layoutManager = GridLayoutManager(this, columns)
         coverWidth = ShelfGrid.cellWidth(available, columns) - dp(12)
-        adapter.setCoverWidth(coverWidth)
+        adapter.setCoverSize(coverWidth, coverWidth * 4 / 3)
     }
 
     private fun status(text: String) {
@@ -391,6 +652,9 @@ class MainActivity : AppCompatActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
+        /** 封面生成并发数：2 条够把「等网络」的时间藏起来 */
+        private const val COVER_WORKERS = 2
+
         const val TAB_ALL = "all"
         const val TAB_RECENT = "recent"
         const val TAB_SOURCE_PREFIX = "source:"

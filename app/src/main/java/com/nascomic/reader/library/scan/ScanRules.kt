@@ -45,18 +45,25 @@ object ScanRules {
         if (children.isEmpty()) return FolderKind.EMPTY
         if (hasImages(children)) return FolderKind.DIRECT_PAGES
 
-        val hasChapterUnit = children.any { it.isDir } || children.any { !it.isDir && isArchive(it.name) }
+        // 子目录、压缩包、PDF 都能当一章——章回体目录里放 PDF 当章是常见存法
+        val hasChapterUnit = children.any { it.isDir } ||
+            children.any { !it.isDir && (isArchive(it.name) || isPdf(it.name)) }
         return if (hasChapterUnit) FolderKind.BY_CHAPTER else FolderKind.EMPTY
     }
 
-    /** 章回体目录里，哪些子项构成章；按名字自然序返回 */
-    fun chapterUnitsOf(children: List<ScanNode>): List<ScanNode> =
-        children
-            .filter { it.isDir || isArchive(it.name) }
-            .sortedWith { a, b ->
-                com.nascomic.reader.core.text.NaturalSort.nameKey(a.name)
-                    .compareTo(com.nascomic.reader.core.text.NaturalSort.nameKey(b.name))
-            }
+    /**
+     * 章回体目录里，哪些子项构成章。
+     *
+     * 顺序固定按名称自然序：`第2话` 排在 `第10话` 前面。想倒着看是阅读时的事，
+     * 详情页的目录右侧有正序 / 倒序，不必在扫描阶段再定一套。
+     */
+    fun chapterUnitsOf(children: List<ScanNode>): List<ScanNode> {
+        val units = children.filter { it.isDir || isArchive(it.name) || isPdf(it.name) }
+        return units.sortedWith { a, b ->
+            com.nascomic.reader.core.text.NaturalSort.nameKey(a.name)
+                .compareTo(com.nascomic.reader.core.text.NaturalSort.nameKey(b.name))
+        }
+    }
 
     /** 目录的直接子项里，可作为「书」的条目 */
     fun bookCandidates(children: List<ScanNode>): List<ScanNode> =

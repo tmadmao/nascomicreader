@@ -14,12 +14,29 @@ class ScanRulesTest {
         assertFalse(ScanRules.isPdf("a.zip"))
         assertFalse(ScanRules.isArchive("a.pdf"))
 
-        // 章回体目录里出现 pdf 时不作为章（当前只认目录与压缩包）
+        // 章回体目录里出现 pdf 时也算一章——按话存 PDF 是常见存法
         val children = listOf(
             ScanNode(docId = "d1", name = "第1话", isDir = true),
             ScanNode(docId = "f1", name = "封面.pdf", isDir = false),
         )
-        assertEquals(listOf("第1话"), ScanRules.chapterUnitsOf(children).map { it.name })
+        assertEquals(
+            setOf("第1话", "封面.pdf"),
+            ScanRules.chapterUnitsOf(children).map { it.name }.toSet(),
+        )
+    }
+
+    @Test
+    fun `章的排序可切`() {
+        val children = listOf(
+            dir("第10话"),
+            dir("第2话"),
+            dir("第1话"),
+        )
+        // 自然序：第1话、第2话、第10话
+        assertEquals(
+            listOf("第1话", "第2话", "第10话"),
+            ScanRules.chapterUnitsOf(children).map { it.name },
+        )
     }
 
     private fun file(name: String) = ScanNode(docId = "id:$name", name = name, isDir = false)
