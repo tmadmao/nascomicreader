@@ -7,11 +7,13 @@
 
 到 [Releases](https://github.com/tmadmao/nascomicreader/releases/latest) 下最新版本的安装包。
 
-Android 7.0 及以上。当前版本 1.0.0。
+Android 7.0 及以上。当前版本 1.0.1。
 
 ## 界面
 
-<img src="design/shelf.png" width="300" alt="书架">
+| 书架 | 书源管理 |
+|:--:|:--:|
+| <img src="design/st1.png" width="300" alt="书架"> | <img src="design/st2.jpg" width="300" alt="书源管理"> |
 
 ## 能做什么
 
