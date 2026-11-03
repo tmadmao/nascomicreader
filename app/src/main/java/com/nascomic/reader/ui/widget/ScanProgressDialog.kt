@@ -16,7 +16,11 @@ import com.nascomic.reader.R
  * 远端书一本本地数，一千多本要好一会儿；没有反馈用户只会以为卡死了。
  * 弹窗不可取消——扫描中途掐断会留下半本书架。
  */
-class ScanProgressDialog(private val context: Context) {
+class ScanProgressDialog(
+    private val context: Context,
+    /** 用户点「取消扫描」；扫描会在下一批目录处停下，库不动 */
+    private val onCancel: (() -> Unit)? = null,
+) {
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -58,13 +62,28 @@ class ScanProgressDialog(private val context: Context) {
                 )
             }
         )
+        .setNegativeButton(R.string.scan_cancel, null)
         .setCancelable(false)
         .create()
+
+    /** 取消按钮：只置标记，真正的停手由扫描器在下一个检查点完成 */
+    private fun wireCancel() {
+        val button = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
+        button.setOnClickListener {
+            if (onCancel == null) return@setOnClickListener
+            button.isEnabled = false
+            label.text = context.getString(R.string.scan_cancelling)
+            onCancel.invoke()
+        }
+    }
 
     fun showListing(name: String) = onMain {
         label.text = context.getString(R.string.scan_listing, name)
         bar.isIndeterminate = true
-        if (!dialog.isShowing) dialog.show()
+        if (!dialog.isShowing) {
+            dialog.show()
+            wireCancel()
+        }
     }
 
     fun progress(done: Int, total: Int) = onMain {

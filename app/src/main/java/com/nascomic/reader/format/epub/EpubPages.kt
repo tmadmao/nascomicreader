@@ -17,7 +17,12 @@ object EpubPages {
      * @param readText 按包内路径读文本；读不到返回 null
      * @return 按阅读顺序排列的图片路径
      */
-    fun resolve(pkg: Opf.Package, opfPath: String, readText: (String) -> String?): List<String> {
+    fun resolve(
+        pkg: Opf.Package,
+        opfPath: String,
+        fast: Boolean = true,
+        readText: (String) -> String?,
+    ): List<String> {
         val base = dirOf(opfPath)
         val byId = pkg.items.associateBy { it.id }
         val pages = ArrayList<String>()
@@ -32,6 +37,17 @@ object EpubPages {
             val html = readText(path) ?: continue
             val src = firstImageSrc(html) ?: continue
             pages += join(dirOf(path), src)
+        }
+
+        // 慢档：书脊没覆盖到的图片也按文件名补在后面，宁可多几页也别漏
+        if (!fast) {
+            val known = pages.toHashSet()
+            val extra = pkg.items
+                .filter { it.mediaType.startsWith("image/") }
+                .map { join(base, it.href) }
+                .filter { it !in known }
+                .sortedWith { a, b -> NaturalSort.nameKey(a).compareTo(NaturalSort.nameKey(b)) }
+            return pages + extra
         }
 
         // 书脊里找不到图（有的 EPUB 书脊指向纯文本页），退回按文件名排清单里的图片

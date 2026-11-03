@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 搜索栏：白底、通栏、比卡片更圆的胶囊形——一眼看出能输入，不像一条静态说明 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/shell_surface" />
+    <corners android:radius="22dp" />
+    <stroke android:width="1dp" android:color="@color/shell_stroke" />
+</shape>

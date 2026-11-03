@@ -35,6 +35,12 @@ class BookOpener(private val context: Context) {
 
     private val secrets by lazy { com.nascomic.reader.settings.SecretStore(context) }
 
+    /** 格式相关的三档偏好：包内是否全加载、PDF 渲染质量、EPUB 快速解析 */
+    private val readerPrefs by lazy { com.nascomic.reader.settings.ReaderPrefs(context) }
+    private val rootOnly get() = !readerPrefs.loadAllInArchive
+    private val pdfQuality get() = readerPrefs.pdfRenderQuality
+    private val fastEpub get() = readerPrefs.fastEpub
+
     fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource {
         // 落盘副本只在打开时才需要，顺手按总量收一次：进一本新书是天然的检查点
         runCatching { LocalCopies.trim(context) }
@@ -189,16 +195,16 @@ class BookOpener(private val context: Context) {
 
     /** 远程压缩包：先按 zip 试，再按 tar 头；都不成再整份下回本地交给 libarchive */
     private fun openRemoteArchive(backend: RemoteBackend, ref: String): BookSource {
-        runCatching { ZipBookSource(ZipCatalog.open(backend.randomAccess(ref))) }
+        runCatching { ZipBookSource(ZipCatalog.open(backend.randomAccess(ref)), rootOnly = rootOnly) }
             .getOrNull()?.let { return it }
 
-        runCatching { TarBookSource(TarCatalog.open(backend.randomAccess(ref))) }
+        runCatching { TarBookSource(TarCatalog.open(backend.randomAccess(ref)), rootOnly = rootOnly) }
             .getOrNull()?.let { return it }
 
         val dir = LocalCopies.remoteDir(context)
         val local = File(dir, "a" + ref.hashCode().toUInt().toString(16))
         if (!local.exists() || local.length() == 0L) backend.download(ref, local)
-        return LibArchiveBookSource(LibArchiveCatalog.open(local))
+        return LibArchiveBookSource(LibArchiveCatalog.open(local), rootOnly = rootOnly)
     }
 
     /** 远程目录书：递归收集图片，按文件名自然序由 [FolderBookSource] 排好 */
@@ -244,12 +250,12 @@ class BookOpener(private val context: Context) {
     private fun openArchiveSource(book: BookEntity, data: () -> RandomAccessData): BookSource {
         val open = data()
         return when (book.format) {
-            BookEntity.FORMAT_EPUB -> EpubBookSource(ZipCatalog.open(open))
+            BookEntity.FORMAT_EPUB -> EpubBookSource(ZipCatalog.open(open), fastEpub)
             // 扩展名靠不住，按内容试：zip 中央目录认不出就按 tar 头读
-            else -> runCatching { ZipBookSource(ZipCatalog.open(open)) }
+            else -> runCatching { ZipBookSource(ZipCatalog.open(open), rootOnly = rootOnly) }
                 .onFailure { android.util.Log.d("BookOpener", "不是 zip，改试 tar：${book.title}") }
                 .getOrNull()
-                ?: TarBookSource(TarCatalog.open(open))
+                ?: TarBookSource(TarCatalog.open(open), rootOnly = rootOnly)
         }
     }
 
@@ -261,8 +267,8 @@ class BookOpener(private val context: Context) {
         val local = cachedCopy(book, save)
         return when (book.format) {
             BookEntity.FORMAT_PDF ->
-                PdfBookSource(ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY))
-            else -> LibArchiveBookSource(LibArchiveCatalog.open(local))
+                PdfBookSource(ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY), pdfQuality)
+            else -> LibArchiveBookSource(LibArchiveCatalog.open(local), rootOnly = rootOnly)
         }
     }
 
@@ -282,7 +288,7 @@ class BookOpener(private val context: Context) {
         return when (book.format) {
             BookEntity.FORMAT_ZIP -> openArchive(walker, book.docRef)
             BookEntity.FORMAT_PDF -> openPdf(walker, book.docRef)
-            BookEntity.FORMAT_EPUB -> EpubBookSource(openCatalog(documentUri(walker, book.docRef)))
+            BookEntity.FORMAT_EPUB -> EpubBookSource(openCatalog(documentUri(walker, book.docRef)), fastEpub)
             BookEntity.FORMAT_FOLDER ->
                 if (chapters.isEmpty()) {
                     openFolder(walker, book.docRef, book.title)
@@ -300,17 +306,17 @@ class BookOpener(private val context: Context) {
     private fun openArchive(walker: SafWalker, docId: String): BookSource {
         val uri = documentUri(walker, docId)
 
-        val zip = runCatching { ZipBookSource(openCatalog(uri)) }.getOrNull()
+        val zip = runCatching { ZipBookSource(openCatalog(uri), rootOnly = rootOnly) }.getOrNull()
         if (zip != null) return zip
 
         val pfd = openPfd(uri, docId)
-        val tar = runCatching { TarBookSource(TarCatalog.open(ChannelRandomAccess(pfd))) }.getOrNull()
+        val tar = runCatching { TarBookSource(TarCatalog.open(ChannelRandomAccess(pfd)), rootOnly = rootOnly) }.getOrNull()
         if (tar != null) return tar
         runCatching { pfd.close() }
 
         // libarchive 只能按文件名重开，先把文件放到本地缓存
         val local = copyToCache(uri, docId)
-        return LibArchiveBookSource(LibArchiveCatalog.open(local))
+        return LibArchiveBookSource(LibArchiveCatalog.open(local), rootOnly = rootOnly)
     }
 
     /**
@@ -363,7 +369,7 @@ class BookOpener(private val context: Context) {
     }
 
     private fun openPdf(walker: SafWalker, docId: String): BookSource =
-        PdfBookSource(openPfd(documentUri(walker, docId), docId))
+        PdfBookSource(openPfd(documentUri(walker, docId), docId), pdfQuality)
 
     private fun openFolder(walker: SafWalker, docId: String, title: String): BookSource {
         val entries = listImages(walker, docId, prefix = "")

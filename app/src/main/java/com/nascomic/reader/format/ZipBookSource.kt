@@ -9,6 +9,7 @@ import java.io.InputStream
 class ZipBookSource internal constructor(
     private val catalog: ZipCatalog,
     fallbackTitle: String = "",
+    private val rootOnly: Boolean = false,
 ) : BookSource {
 
     private val layout = ArchivePaging.layout(
@@ -16,6 +17,7 @@ class ZipBookSource internal constructor(
         nameOf = { it.name },
         isDirectory = { it.isDirectory },
         fallbackTitle = fallbackTitle,
+        rootOnly = rootOnly,
     )
 
     override val chapters: List<ChapterInfo> get() = layout.chapters

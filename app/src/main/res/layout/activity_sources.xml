@@ -555,6 +555,20 @@
                         android:textColor="@color/brand_accent"
                         android:textSize="10sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/progress_cancel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:paddingStart="6dp"
+                        android:paddingTop="2dp"
+                        android:paddingEnd="6dp"
+                        android:paddingBottom="2dp"
+                        android:text="@string/scan_cancel"
+                        android:textColor="@color/shell_ink_muted"
+                        android:textSize="10sp" />
                 </LinearLayout>
 
                 <ProgressBar

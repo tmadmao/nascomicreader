@@ -78,6 +78,19 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
         get() = int(KEY_MARGIN, 0)
         set(value) = putInt(KEY_MARGIN, value.coerceIn(0, 25))
 
+    /**
+     * 双页组屏：0 = 关；1 = 首张单页（第 1 页单独占右格）；2 = 末张单页；3 = 每章首张单页。
+     * 只有 [dualPage] 开着时才有意义。
+     */
+    var spreadOrder: Int
+        get() = int(KEY_SPREAD_ORDER, 0)
+        set(value) = putInt(KEY_SPREAD_ORDER, value.coerceIn(0, 3))
+
+    /** 双页左右顺序：0 左→右，1 右→左（左右互换，占位格不换） */
+    var spreadDirection: Int
+        get() = int(KEY_SPREAD_DIRECTION, 0)
+        set(value) = putInt(KEY_SPREAD_DIRECTION, value.coerceIn(0, 1))
+
     /** 画布底色，取值见 [Canvas] */
     var canvas: Int
         get() = int(KEY_CANVAS, Canvas.DARK.value)
@@ -93,20 +106,52 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
         get() = int(KEY_TRIM_LEVEL, 236)
         set(value) = putInt(KEY_TRIM_LEVEL, value.coerceIn(200, 250))
 
-    /** 跳过空白页 */
-    var skipBlank: Boolean
-        get() = bool(KEY_SKIP_BLANK, false)
-        set(value) = putBool(KEY_SKIP_BLANK, value)
+    /** 裁边算法：0 快（隔行采样）/ 1 精（逐行） */
+    var trimAlgo: Int
+        get() = int(KEY_TRIM_ALGO, 0)
+        set(value) = putInt(KEY_TRIM_ALGO, value.coerceIn(0, 1))
+
+    /** 只裁上下、不动左右——条漫裁完两侧常对不齐 */
+    var trimIgnoreSides: Boolean
+        get() = bool(KEY_TRIM_IGNORE_SIDES, false)
+        set(value) = putBool(KEY_TRIM_IGNORE_SIDES, value)
+
+    /** 识别前四边各忽略多少像素（对付扫描件的细黑边） */
+    var trimIgnorePx: Int
+        get() = int(KEY_TRIM_IGNORE_PX, 0)
+        set(value) = putInt(KEY_TRIM_IGNORE_PX, value.coerceIn(0, 30))
+
+    /** 单边裁剪量不超过边长 10% 的保护，默认开 */
+    var trimProtect: Boolean
+        get() = bool(KEY_TRIM_PROTECT, true)
+        set(value) = putBool(KEY_TRIM_PROTECT, value)
+
+    /**
+     * 跳过空白页：0 = 关；N > 0 = 从第 N 张空白页起，之后每隔一张跳过。
+     *
+     * 旧版是「一直往后跳」，清屏页多的书会一下跳过好几页。现在按规格做成间隔一张。
+     */
+    var skipBlankFrom: Int
+        get() = int(KEY_SKIP_BLANK_FROM, if (bool(KEY_SKIP_BLANK, false)) 1 else 0)
+        set(value) = putInt(KEY_SKIP_BLANK_FROM, value.coerceIn(0, 50))
+
+    val skipBlank: Boolean get() = skipBlankFrom > 0
 
     /** 阅读时屏幕常亮 */
     var keepScreenOn: Boolean
         get() = bool(KEY_KEEP_ON, true)
         set(value) = putBool(KEY_KEEP_ON, value)
 
-    /** 跨页拆分：宽图按左右两半分别显示 */
-    var splitWide: Boolean
-        get() = bool(KEY_SPLIT, false)
-        set(value) = putBool(KEY_SPLIT, value)
+    /**
+     * 跨页拆分：0 = 关（整页），1 = 拆开后先看左半，2 = 先看右半。
+     * 右开本的双页大图从右往左读，所以方向得能选。
+     */
+    var splitMode: Int
+        get() = int(KEY_SPLIT_MODE, if (bool(KEY_SPLIT, false)) 1 else 0)
+        set(value) = putInt(KEY_SPLIT_MODE, value.coerceIn(0, 2))
+
+    /** 拆分后的第一半：0 左 / 1 右 */
+    val splitFirstHalf: Int get() = if (splitMode == 2) 1 else 0
 
     /** 页面上是否显示页码与章名 */
     var showPageLabel: Boolean
@@ -158,15 +203,45 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
         return (available / 20).coerceIn(MIN_DISK_BYTES, AUTO_DISK_BYTES)
     }
 
+    /** 为打开格式落下的本地副本上限（GB）：7z / RAR / 远程 PDF 整份落地用 */
+    var copyCacheGb: Int
+        get() = int(KEY_COPY_GB, 2)
+        set(value) = putInt(KEY_COPY_GB, value.coerceIn(1, 8))
+
     /** 32 位颜色解码：更细腻，但一张图多占一倍内存 */
     var argb8888: Boolean
         get() = bool(KEY_ARGB, false)
         set(value) = putBool(KEY_ARGB, value)
 
-    /** 翻页时页面淡入，默认关闭 */
+    /** 翻页动画：默认关闭（翻页即刻到位）。打开后按阅读方向做位移过渡 */
     var turnAnimation: Boolean
         get() = bool(KEY_TURN_ANIM, false)
         set(value) = putBool(KEY_TURN_ANIM, value)
+
+    /** 翻页动画时长（ms）。0 = 用内置默认 160 */
+    var flipAnimMs: Int
+        get() = int(KEY_FLIP_ANIM_MS, 0)
+        set(value) = putInt(KEY_FLIP_ANIM_MS, value.coerceIn(0, 600))
+
+    /** 滑动翻页的方向容差（0–9）：越大越要求手势接近水平 */
+    var flingResistance: Int
+        get() = int(KEY_FLING_RESISTANCE, 0)
+        set(value) = putInt(KEY_FLING_RESISTANCE, value.coerceIn(0, 9))
+
+    /** 惯性动量（0–9）：越大同样力度滑得越远，但一次 fling 最多翻一页 */
+    var flingMomentum: Int
+        get() = int(KEY_FLING_MOMENTUM, 1)
+        set(value) = putInt(KEY_FLING_MOMENTUM, value.coerceIn(0, 9))
+
+    /** 分区点击：0 关 / 1 左右两区 / 2 对角（左下↔右上）/ 3 对角（左上↔右下） */
+    var tapFlipMode: Int
+        get() = int(KEY_TAP_FLIP_MODE, if (bool(KEY_TAP_TURN, true)) 1 else 0)
+        set(value) = putInt(KEY_TAP_FLIP_MODE, value.coerceIn(0, 3))
+
+    /** 左右两区动作互换（分区线不动，只是左右干的活对调） */
+    var tapFlipSwap: Boolean
+        get() = bool(KEY_TAP_FLIP_SWAP, false)
+        set(value) = putBool(KEY_TAP_FLIP_SWAP, value)
 
     /**
      * 双击放大。只在横向阅读时生效——竖向连贯滚动里双击只切工具栏，
@@ -225,6 +300,21 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
     var nativeDecode: Boolean
         get() = bool(KEY_NATIVE_DECODE, false)
         set(value) = putBool(KEY_NATIVE_DECODE, value)
+
+    /** EPUB 快速解析：只按书脊取页；关掉会扫全部图片兜底（不规范 EPUB 用得上，代价是慢） */
+    var fastEpub: Boolean
+        get() = bool(KEY_FAST_EPUB, true)
+        set(value) = putBool(KEY_FAST_EPUB, value)
+
+    /** PDF 渲染质量：目标宽 = 屏宽 × 值 / 8，0–30。值越大越清晰，也越吃内存 */
+    var pdfRenderQuality: Int
+        get() = int(KEY_PDF_QUALITY, 8)
+        set(value) = putInt(KEY_PDF_QUALITY, value.coerceIn(0, 30))
+
+    /** 压缩包内有子目录时是否全加载：关掉只读根目录那层图片 */
+    var loadAllInArchive: Boolean
+        get() = bool(KEY_LOAD_ALL_IN_ARCHIVE, true)
+        set(value) = putBool(KEY_LOAD_ALL_IN_ARCHIVE, value)
 
     /**
      * 跳进距离：0 = 一屏内（长图先滚一屏再看下一页）、1 = 半屏、2 = 整屏。
@@ -306,6 +396,23 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
         const val KEY_KEY_NEXT = "reader.key_next_code"
         const val KEY_WHEEL = "reader.wheel_mode"
         const val KEY_ZONE_HINT = "reader.zone_hint"
+        const val KEY_FLIP_ANIM_MS = "reader.flip_anim_ms"
+        const val KEY_FLING_RESISTANCE = "reader.fling_resistance"
+        const val KEY_FLING_MOMENTUM = "reader.fling_momentum"
+        const val KEY_TAP_FLIP_MODE = "reader.tap_flip_mode"
+        const val KEY_TAP_FLIP_SWAP = "reader.tap_flip_swap"
+        const val KEY_SPREAD_ORDER = "reader.spread_order"
+        const val KEY_SPREAD_DIRECTION = "reader.spread_direction"
+        const val KEY_SPLIT_MODE = "reader.split_mode"
+        const val KEY_TRIM_ALGO = "reader.trim_algo"
+        const val KEY_TRIM_IGNORE_SIDES = "reader.trim_ignore_sides"
+        const val KEY_TRIM_IGNORE_PX = "reader.trim_ignore_px"
+        const val KEY_TRIM_PROTECT = "reader.trim_protect"
+        const val KEY_SKIP_BLANK_FROM = "reader.skip_blank_from"
+        const val KEY_COPY_GB = "reader.copy_cache_gb"
+        const val KEY_FAST_EPUB = "reader.fast_epub"
+        const val KEY_PDF_QUALITY = "reader.pdf_quality"
+        const val KEY_LOAD_ALL_IN_ARCHIVE = "reader.load_all_in_archive"
 
         /** 默认「上一页 / 下一页」= 音量上 / 音量下 */
         const val DEFAULT_KEY_PREV = 24

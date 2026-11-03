@@ -18,7 +18,11 @@ import java.io.InputStream
  * [PdfRenderer] 不是线程安全的，而阅读页会从当前页与两个预载 worker 同时进来，
  * 所以渲染与关闭都串行化——并发它的后果是随机抛异常甚至 native 崩溃。
  */
-class PdfBookSource(private val pfd: ParcelFileDescriptor) : BookSource, RenderedPageSource {
+class PdfBookSource(
+    private val pfd: ParcelFileDescriptor,
+    /** 渲染质量：目标尺寸 = 屏尺寸 × 值 / 8。8 = 刚好一屏，更大放大后更清晰 */
+    private val quality: Int = 8,
+) : BookSource, RenderedPageSource {
 
     private val renderer = PdfRenderer(pfd)
 
@@ -50,7 +54,12 @@ class PdfBookSource(private val pfd: ParcelFileDescriptor) : BookSource, Rendere
                 val ph = pdfPage.height
                 if (pw <= 0 || ph <= 0) return null
 
-                val scale = minOf(width.toFloat() / pw, height.toFloat() / ph)
+                // 质量档直接放大渲染目标：显示时再缩回去，放大看才不糊
+                val boost = (quality.coerceIn(1, 30) / 8f)
+                val scale = minOf(
+                    width.toFloat() * boost / pw,
+                    height.toFloat() * boost / ph,
+                )
                 val outW = (pw * scale).toInt().coerceAtLeast(1)
                 val outH = (ph * scale).toInt().coerceAtLeast(1)
 

@@ -29,8 +29,11 @@ object ArchivePaging {
         nameOf: (T) -> String,
         isDirectory: (T) -> Boolean,
         fallbackTitle: String,
+        /** true = 只读根目录那层图片，不把子目录当章 */
+        rootOnly: Boolean = false,
     ): Layout<T> {
         val images = items.filter { !isDirectory(it) && ImageNames.isImage(nameOf(it)) }
+            .filter { !rootOnly || chapterKeyOf(nameOf(it)).isEmpty() }
         val grouped = images.groupBy { chapterKeyOf(nameOf(it)) }
         val order = grouped.keys.toList().sortedWith(ChapterOrder.comparator { it })
 

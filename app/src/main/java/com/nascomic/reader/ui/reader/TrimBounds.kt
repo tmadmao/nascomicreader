@@ -35,24 +35,47 @@ object TrimBounds {
      * 逐点 `getPixel` 是跨 JNI 调用，一页要几万次；这里按行/列一次性 `getPixels`
      * 把整条取进复用数组再判，JNI 次数从「行数 × 64」降到「行数」。
      */
-    fun detect(bitmap: Bitmap, level: Int = DEFAULT_LEVEL): Bounds {
+    fun detect(
+        bitmap: Bitmap,
+        level: Int = DEFAULT_LEVEL,
+        /** 只裁上下、不动左右：条漫裁完两侧常对不齐 */
+        ignoreSides: Boolean = false,
+        /** 识别前四边各忽略多少像素，对付扫描件的细黑边 */
+        ignorePx: Int = 0,
+        /** false = 关掉「单边 ≤ 10%」的保护，可以裁到贴边 */
+        protect: Boolean = true,
+        /** true = 逐行扫；false = 隔行抽样（快，边界可能差一两像素） */
+        precise: Boolean = true,
+    ): Bounds {
         val w = bitmap.width
         val h = bitmap.height
         if (w <= 0 || h <= 0) return Bounds(0, 0, w, h)
         val row = IntArray(w)
         val col = IntArray(h)
-        return detect(
-            w = w,
-            h = h,
-            protect = PROTECT,
+        // 忽略边：先整体内缩 N 像素再判，判完再把边界加回来
+        val pad = ignorePx.coerceIn(0, minOf(w, h) / 4)
+        val innerW = (w - pad * 2).coerceAtLeast(1)
+        val innerH = (h - pad * 2).coerceAtLeast(1)
+        val result = detect(
+            w = innerW,
+            h = innerH,
+            protect = if (protect) PROTECT else 1f,
+            ignoreSides = ignoreSides,
             whiteRow = { y ->
-                bitmap.getPixels(row, 0, w, 0, y, w, 1)
-                isWhiteLine(w, level) { row[it] }
+                bitmap.getPixels(row, 0, w, 0, y + pad, w, 1)
+                isWhiteLine(innerW, level, offset = pad) { row[it] }
             },
             whiteCol = { x ->
-                bitmap.getPixels(col, 0, 1, x, 0, 1, h)
-                isWhiteLine(h, level) { col[it] }
+                bitmap.getPixels(col, 0, 1, x + pad, 0, 1, h)
+                isWhiteLine(innerH, level, offset = pad) { col[it] }
             },
+            rowStep = if (precise) 1 else 2,
+        )
+        return Bounds(
+            result.left + pad,
+            result.top + pad,
+            result.right + pad,
+            result.bottom + pad,
         )
     }
 
@@ -84,23 +107,33 @@ object TrimBounds {
         protect: Float,
         whiteRow: (Int) -> Boolean,
         whiteCol: (Int) -> Boolean,
+        ignoreSides: Boolean = false,
+        /** 上下各扫多少行取一次样；2 = 隔行（快档），1 = 逐行（精档） */
+        rowStep: Int = 1,
     ): Bounds {
         if (w <= 0 || h <= 0) return Bounds(0, 0, w, h)
 
         val maxX = (w * protect).toInt()
         val maxY = (h * protect).toInt()
+        val step = rowStep.coerceAtLeast(1)
 
         var top = 0
-        while (top < maxY && whiteRow(top)) top++
+        while (top < maxY && whiteRow(top)) top += step
+        if (top > maxY) top = maxY
 
         var bottom = h
-        while (bottom > h - maxY && whiteRow(bottom - 1)) bottom--
+        while (bottom > h - maxY && whiteRow(bottom - 1)) bottom -= step
+        if (bottom < h - maxY) bottom = h - maxY
 
         var left = 0
-        while (left < maxX && whiteCol(left)) left++
-
         var right = w
-        while (right > w - maxX && whiteCol(right - 1)) right--
+        // 只裁上下时，左右一律不裁
+        if (!ignoreSides) {
+            while (left < maxX && whiteCol(left)) left += step
+            if (left > maxX) left = maxX
+            while (right > w - maxX && whiteCol(right - 1)) right -= step
+            if (right < w - maxX) right = w - maxX
+        }
 
         // 四边都顶到保护上限，说明整页几乎全白：保留原页，别裁成一条
         val hitAllLimits = top == maxY && bottom == h - maxY && left == maxX && right == w - maxX
@@ -109,14 +142,19 @@ object TrimBounds {
     }
 
     /** 逐像素采样判断一整条是不是白（按长度取步长，长边也不会太慢） */
-    private inline fun isWhiteLine(length: Int, level: Int, pixel: (Int) -> Int): Boolean {
+    private inline fun isWhiteLine(
+        length: Int,
+        level: Int,
+        offset: Int = 0,
+        pixel: (Int) -> Int,
+    ): Boolean {
         if (length <= 0) return true
         val step = (length / 64).coerceAtLeast(1)
         var total = 0
         var white = 0
         var i = 0
         while (i < length) {
-            if (isWhite(pixel(i), level)) white++
+            if (isWhite(pixel(i + offset), level)) white++
             total++
             i += step
         }

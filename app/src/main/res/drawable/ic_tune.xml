@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 高级设置：三根滑杆各带一颗旋钮，缩到 16dp 仍看得出是「可调」 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="#FF1B1C20"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M4,7 L20,7 M4,12 L20,12 M4,17 L20,17" />
+    <path
+        android:fillColor="#FFF06A35"
+        android:pathData="M9,7 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#FFF06A35"
+        android:pathData="M13,12 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#FFF06A35"
+        android:pathData="M7,17 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+</vector>

@@ -37,7 +37,6 @@ class LibraryScanner(
 
     private val secrets by lazy { SecretStore(context) }
 
-    /** 扫描规则：封面取第几页、同名书去重、章的排序 */
     private val prefs by lazy { com.nascomic.reader.settings.AppPrefs(context) }
 
     /** 写章：重建章表、带回量过的页数、把进度与书签搬到新的章号上 */
@@ -64,11 +63,23 @@ class LibraryScanner(
     /** 目录列不出来：授权被回收、目录被删或改名、外接盘掉线 */
     private class TreeGoneException : Exception("目录读不到，授权可能已失效")
 
-    suspend fun scan(source: SourceEntity, listener: Listener? = null): Result =
+    /**
+     * 扫描被用户取消。
+     *
+     * 只在「还没往库里写」的阶段抛，所以取消等于这次什么都没发生——书架、进度、书签原样不动。
+     */
+    class Cancelled : Exception("扫描已取消")
+
+    suspend fun scan(
+        source: SourceEntity,
+        listener: Listener? = null,
+        /** 每列一批目录问一次；true 就停下 */
+        isCancelled: () -> Boolean = { false },
+    ): Result =
         withContext(Dispatchers.IO) {
         when (source.kind) {
-            SourceEntity.KIND_WEBDAV -> return@withContext scanWebDav(source, listener)
-            SourceEntity.KIND_SMB -> return@withContext scanSmb(source, listener)
+            SourceEntity.KIND_WEBDAV -> return@withContext scanWebDav(source, listener, isCancelled)
+            SourceEntity.KIND_SMB -> return@withContext scanSmb(source, listener, isCancelled)
         }
         listener?.onListing()
 
@@ -82,6 +93,7 @@ class LibraryScanner(
             // 列不出来就抛：这一层失败必须让整次扫描失败，不能退化成「这个目录空了」
             val rootChildren = walker.list(walker.rootDocId) ?: throw TreeGoneException()
             for (node in rootChildren) {
+                if (isCancelled()) throw Cancelled()
                 when {
                     node.isDir -> classifyFolder(walker, node)?.let { found += it }
                     ScanRules.isArchive(node.name) -> found += archiveAsBook(node)
@@ -119,6 +131,8 @@ class LibraryScanner(
                 keptAll = true,
             )
         }
+
+        if (isCancelled()) throw Cancelled()
 
         val now = System.currentTimeMillis()
         var added = 0
@@ -224,22 +238,30 @@ class LibraryScanner(
 
     private class RemoteChapter(val title: String, val ref: String, val kind: Int)
 
-    private suspend fun scanWebDav(source: SourceEntity, listener: Listener? = null): Result {
+    private suspend fun scanWebDav(
+        source: SourceEntity,
+        listener: Listener? = null,
+        isCancelled: () -> Boolean = { false },
+    ): Result {
         val endpoint = source.endpoint ?: throw IllegalArgumentException("来源没有地址")
         val client = WebDavClient(source.account, secrets.get(source.secretRef))
         val lister: (String) -> List<RemoteEntry> = { dir ->
             client.list(dir).map { RemoteEntry(it.url, it.name, it.isDirectory, it.size) }
         }
-        return scanRemote(source, endpoint, lister, listener)
+        return scanRemote(source, endpoint, lister, listener, isCancelled)
     }
 
-    private suspend fun scanSmb(source: SourceEntity, listener: Listener? = null): Result {
+    private suspend fun scanSmb(
+        source: SourceEntity,
+        listener: Listener? = null,
+        isCancelled: () -> Boolean = { false },
+    ): Result {
         val target = SmbTarget.parse(source.endpoint ?: throw IllegalArgumentException("来源没有地址"))
         val client = SmbClient(target, source.account, secrets.get(source.secretRef))
         val lister: (String) -> List<RemoteEntry> = { dir ->
             client.list(dir).map { RemoteEntry(it.path, it.name, it.isDirectory, it.size) }
         }
-        return scanRemote(source, target.path, lister, listener)
+        return scanRemote(source, target.path, lister, listener, isCancelled)
     }
 
     /**
@@ -254,6 +276,7 @@ class LibraryScanner(
         rootRef: String,
         list: (String) -> List<RemoteEntry>,
         listener: Listener? = null,
+        isCancelled: () -> Boolean = { false },
     ): Result {
         val startedAt = System.currentTimeMillis()
         listener?.onListing()
@@ -261,7 +284,9 @@ class LibraryScanner(
 
         val broken = ArrayList<String>()
         val all = try {
-            collectRemoteBooks(rootRef, list, listener, broken)
+            collectRemoteBooks(rootRef, list, listener, broken, isCancelled)
+        } catch (e: Cancelled) {
+            throw e
         } catch (e: Exception) {
             // 原始报错留在日志里，界面只按类别说话
             android.util.Log.w("Scan", "列目录失败：${source.label}", e)
@@ -277,6 +302,8 @@ class LibraryScanner(
         }
 
         val books = all
+
+        if (isCancelled()) throw Cancelled()
 
         val now = System.currentTimeMillis()
         var added = 0
@@ -373,12 +400,14 @@ class LibraryScanner(
         list: (String) -> List<RemoteEntry>,
         listener: Listener?,
         broken: MutableList<String>,
+        isCancelled: () -> Boolean = { false },
     ): List<RemoteBook> {
         listener?.onProgress(0, 0)
         val out = ArrayList<RemoteBook>()
         for (entry in list(rootRef)) {
+            if (isCancelled()) throw Cancelled()
             when {
-                entry.isDir -> out += classifyRemoteFolder(entry.ref, entry.name, list, depth = 0, broken = broken)
+                entry.isDir -> out += classifyRemoteFolder(entry.ref, entry.name, list, depth = 0, broken = broken, isCancelled = isCancelled)
                 ScanRules.isArchive(entry.name) -> out += RemoteBook(
                     docRef = entry.ref,
                     title = ScanRules.titleOf(entry.name),
@@ -411,7 +440,9 @@ class LibraryScanner(
         list: (String) -> List<RemoteEntry>,
         depth: Int,
         broken: MutableList<String>,
+        isCancelled: () -> Boolean = { false },
     ): List<RemoteBook> {
+        if (isCancelled()) throw Cancelled()
         if (depth > MAX_REMOTE_DEPTH) return emptyList()
         val children = try {
             list(ref)
@@ -466,7 +497,7 @@ class LibraryScanner(
 
         // 都是「只装书的目录」：再往下走，每个子目录各是一本
         return units.filter { it.isDir }
-            .flatMap { classifyRemoteFolder(it.ref, it.name, list, depth + 1, broken) }
+            .flatMap { classifyRemoteFolder(it.ref, it.name, list, depth + 1, broken, isCancelled) }
     }
 
     /** 账号不对和连不上要分开报：前者提示改密码，后者提示查地址与网络 */

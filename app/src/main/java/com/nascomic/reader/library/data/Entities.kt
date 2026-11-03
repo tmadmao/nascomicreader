@@ -202,22 +202,3 @@ data class BookmarkEntity(
     @ColumnInfo(name = "note") val note: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
 )
-
-/** 阅读历史：每进一次书记一笔，页面按最近打开倒序取 */
-@Entity(
-    tableName = "history",
-    foreignKeys = [
-        ForeignKey(
-            entity = BookEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["book_id"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    indices = [Index(value = ["book_id"]), Index(value = ["opened_at"])]
-)
-data class HistoryEntity(
-    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
-    @ColumnInfo(name = "book_id") val bookId: Long,
-    @ColumnInfo(name = "opened_at") val openedAt: Long,
-)

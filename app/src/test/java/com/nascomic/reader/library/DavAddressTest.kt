@@ -17,6 +17,24 @@ class DavAddressTest {
     }
 
     @Test
+    fun `地址里带 http 前缀与结尾斜杠也能拼对`() {
+        // 用户常把整串粘进地址栏（朋友就是这么填的）：协议以前缀为准，结尾斜杠不能拼成双斜杠
+        val p = DavAddress.parse("http", "http://cfooxl.duckdns.org/", "5005")
+        assertEquals("http", p.scheme)
+        assertEquals("cfooxl.duckdns.org", p.host)
+        assertEquals(5005, p.port)
+        assertEquals("http://cfooxl.duckdns.org:5005", DavAddress.toUrl(p))
+    }
+
+    @Test
+    fun `地址里写 https 时以地址为准`() {
+        val p = DavAddress.parse("http", "https://nas.example.com/dav", "")
+        assertEquals("https", p.scheme)
+        assertEquals(443, p.port)
+        assertEquals("https://nas.example.com/dav", DavAddress.toUrl(p))
+    }
+
+    @Test
     fun `单独填的端口要生效`() {
         val p = DavAddress.parse("http", "192.168.1.10", "5005")
         assertEquals(5005, p.port)

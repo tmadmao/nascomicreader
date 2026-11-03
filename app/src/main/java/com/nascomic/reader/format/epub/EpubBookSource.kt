@@ -11,7 +11,11 @@ import java.io.InputStream
  * 章：v1 整本一章。漫画 EPUB 的目录通常是「卷」而不是「话」，
  * 按章拆要先解析 nav/ncx，等有真实需求再做。
  */
-class EpubBookSource(private val catalog: ZipCatalog) : BookSource {
+class EpubBookSource(
+    private val catalog: ZipCatalog,
+    /** true = 只按书脊取页；false = 书脊没覆盖到的图片也补进来（不规范的书用得上，代价是慢） */
+    private val fast: Boolean = true,
+) : BookSource {
 
     private val pages: List<ZipCatalog.Entry>
 
@@ -31,7 +35,7 @@ class EpubBookSource(private val catalog: ZipCatalog) : BookSource {
             ?: throw IllegalStateException("EPUB 里找不到 $opfPath")
 
         val pkg = Opf.parse(readText(opfEntry) ?: throw IllegalStateException("OPF 读不出来"))
-        val paths = EpubPages.resolve(pkg, opfPath) { path ->
+        val paths = EpubPages.resolve(pkg, opfPath, fast) { path ->
             byName[path]?.let { readText(it) }
         }
 

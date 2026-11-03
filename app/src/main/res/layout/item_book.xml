@@ -32,6 +32,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="3dp"
                 android:layout_gravity="bottom" />
+
+            <!-- 多选态：选中的右上角一枚勾 -->
+            <ImageView
+                android:id="@+id/check"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="6dp"
+                android:background="@drawable/bg_check_circle"
+                android:contentDescription="@null"
+                android:padding="4dp"
+                android:src="@drawable/ic_check"
+                android:visibility="gone" />
         </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 

@@ -11,8 +11,10 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivityMainBinding
@@ -55,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { AppPrefs(this) }
 
     private lateinit var adapter: ShelfAdapter
+    private lateinit var header: com.nascomic.reader.ui.shelf.ShelfTopAdapter
     private var currentTab: String = TAB_ALL
     private var allSources: List<SourceEntity> = emptyList()
 
@@ -70,6 +73,16 @@ class MainActivity : AppCompatActivity() {
     /** 搜索框里的关键字。本地过滤，不落库也不跨页保存 */
     private var shelfQuery = ""
 
+    /** 搜索范围：true = 整个书库，false = 只搜当前标签 */
+    private var searchWholeLibrary = true
+
+    /** 继续阅读卡指向的那本；卡不在时为空 */
+    private var resumeBook: BookEntity? = null
+
+    /** 多选：开着时点书是勾选，不是打开 */
+    private var selecting = false
+    private val selectedIds = LinkedHashSet<Long>()
+
     private val pickFolder = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? -> if (uri != null) scanFolder(uri) }
@@ -83,11 +96,23 @@ class MainActivity : AppCompatActivity() {
 
         adapter = ShelfAdapter(
             CoverBitmaps(thumbs),
-            onClick = { openBook(it) },
+            onClick = { book ->
+                if (selecting) toggleSelection(book.id) else openBook(book)
+            },
             onLongClick = { showBookMenu(it) },
             onCoverNeeded = { id -> requestCover(id) },
         )
-        binding.grid.adapter = adapter
+        header = com.nascomic.reader.ui.shelf.ShelfTopAdapter(
+            onResumeClick = { resumeBook?.let { openBook(it) } },
+            onSortClick = { askSort() },
+            onTabClick = { key ->
+                if (currentTab != key) {
+                    currentTab = key
+                    refresh()
+                }
+            },
+        )
+        binding.grid.adapter = ConcatAdapter(header, adapter)
         applyGridMetrics()
 
         binding.emptyLocal.setOnClickListener { pickFolder.launch(null) }
@@ -104,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 搜书名：敲字即筛，120ms 防抖，免得一千多本时每敲一个键都查一次库
+        binding.searchScope.setOnClickListener { askScope() }
         binding.searchInput.doAfterTextChanged { text ->
             val query = text?.toString().orEmpty()
             if (query == shelfQuery) return@doAfterTextChanged
@@ -111,7 +137,17 @@ class MainActivity : AppCompatActivity() {
             searchDebounce.removeCallbacks(searchTick)
             searchDebounce.postDelayed(searchTick, 120)
         }
-        binding.sortButton.setOnClickListener { askSort() }
+
+        binding.selectCancel.setOnClickListener { exitSelection() }
+        binding.selectDelete.setOnClickListener { confirmDeleteSelected() }
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (selecting) exitSelection() else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
 
         startCoverWorker()
         sweepCaches()
@@ -188,10 +224,10 @@ class MainActivity : AppCompatActivity() {
                     put("$TAB_SOURCE_PREFIX${source.id}", allBooks.count { it.sourceId == source.id })
                 }
             }
-            renderTabs()
 
-            val books = queryBooks()
+            val books = queryBooks(allBooks)
             adapter.submit(books, progress)
+            renderHeader(allBooks, progress)
 
             val empty = books.isEmpty()
             val filtering = shelfQuery.isNotBlank()
@@ -201,55 +237,71 @@ class MainActivity : AppCompatActivity() {
             binding.grid.visibility = if (empty) View.GONE else View.VISIBLE
             // 一本书都没有时，搜索框没有意义
             binding.searchRow.visibility = if (allBooks.isEmpty()) View.GONE else View.VISIBLE
-            // 空书架时不再报「全部漫画 0 本」——上面那块引导已经把话说清了
-            binding.sectionTitle.visibility = if (empty) View.GONE else View.VISIBLE
-            binding.sectionCount.visibility = if (empty) View.GONE else View.VISIBLE
-            // 计数跟着当前列表走：搜索时是筛剩下的本数，不是全量
-            binding.sectionCount.text = getString(R.string.shelf_section_count, books.size)
-
-            renderResume(allBooks, progress)
             requestVisibleCovers()
         }
     }
 
-    /**
-     * 「接着读」卡片：取最近读过的那本。
-     * 最近阅读标签下不再重复——那里第一本本来就是它。
-     */
-    private fun renderResume(
+    /** 列表头（继续阅读卡 + 书源胶囊 + 排序）与标题右侧的本数 */
+    private fun renderHeader(
         allBooks: List<BookEntity>,
         progress: Map<Long, com.nascomic.reader.library.data.ProgressEntity>,
     ) {
         val latest = progress.values.maxByOrNull { it.updatedAt }
         val book = latest?.let { p -> allBooks.firstOrNull { it.id == p.bookId } }
-        if (latest == null || book == null || currentTab == TAB_RECENT || book.pageTotal <= 0) {
-            binding.resumeCard.visibility = View.GONE
-            return
-        }
-
-        binding.resumeCard.visibility = View.VISIBLE
-        binding.resumeTitle.text = book.title
-        binding.resumeMeta.text = resumeMeta(book, latest)
-
-        val percent = readPercent(latest.pageGlobal, book.pageTotal, latest.finished)
-        binding.resumePercent.text = getString(R.string.shelf_read_percent, percent)
-        binding.resumeBar.progress = percent
-        binding.resumeAction.text = if (book.chapterTotal > 0) {
-            getString(
-                R.string.shelf_position_chapter,
-                (latest.chapterOrdinal + 1).coerceAtMost(book.chapterTotal),
-                book.chapterTotal,
-            )
+        // 最近阅读标签下不再重复——那里第一本本来就是它
+        val shown = if (latest == null || book == null || currentTab == TAB_RECENT || book.pageTotal <= 0) {
+            null
         } else {
-            getString(
-                R.string.shelf_position_pages,
-                (latest.pageGlobal + 1).coerceAtMost(book.pageTotal),
-                book.pageTotal,
+            book
+        }
+        resumeBook = shown
+
+        val card = if (shown == null || latest == null) {
+            null
+        } else {
+            com.nascomic.reader.ui.shelf.ShelfTopAdapter.Resume(
+                title = shown.title,
+                meta = resumeMeta(shown, latest),
+                percent = readPercent(latest.pageGlobal, shown.pageTotal, latest.finished),
+                action = if (shown.chapterTotal > 0) {
+                    getString(
+                        R.string.shelf_position_chapter,
+                        (latest.chapterOrdinal + 1).coerceAtMost(shown.chapterTotal),
+                        shown.chapterTotal,
+                    )
+                } else {
+                    getString(
+                        R.string.shelf_position_pages,
+                        (latest.pageGlobal + 1).coerceAtMost(shown.pageTotal),
+                        shown.pageTotal,
+                    )
+                },
             )
         }
+        header.update(card, tabs())
 
-        binding.resumeCard.setOnClickListener { openBook(book) }
-        binding.resumePlay.setOnClickListener { openBook(book) }
+        binding.shelfCount.text = getString(R.string.shelf_count_meta, tabCounts[TAB_ALL] ?: 0)
+    }
+
+    /**
+     * 标签胶囊：全部 / 最近阅读 / 每个来源一个。
+     * 书数为 0 的来源不出现（一个来源都没扫到书时，点进去只有空书架）。
+     */
+    private fun tabs(): List<com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab> {
+        val out = ArrayList<com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab>()
+        out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab(
+            TAB_ALL, getString(R.string.tab_all), currentTab == TAB_ALL,
+        )
+        out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab(
+            TAB_RECENT, getString(R.string.tab_recent), currentTab == TAB_RECENT,
+        )
+        allSources.forEach { source ->
+            val key = "$TAB_SOURCE_PREFIX${source.id}"
+            val count = tabCounts[key] ?: 0
+            if (count == 0 && currentTab != key) return@forEach
+            out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab(key, source.label, currentTab == key)
+        }
+        return out
     }
 
     /** 「第 11 话 / 24 话 · 来源名」；单行本没有话就报页 */
@@ -267,15 +319,23 @@ class MainActivity : AppCompatActivity() {
         return if (source.isEmpty()) position else "$position · $source"
     }
 
-    private suspend fun queryBooks(): List<BookEntity> {
+    /**
+     * 当前要显示的列表。
+     *
+     * 搜索范围为「书库」时在全部书里找，不受当前标签限制——站在某个来源标签上搜别的来源的书，
+     * 结果却是空的，这不像搜索。范围选「当前标签」时才按标签先筛后搜。
+     */
+    private suspend fun queryBooks(allBooks: List<BookEntity>): List<BookEntity> {
+        val searching = shelfQuery.isNotBlank()
         val base = when {
+            searching && searchWholeLibrary -> allBooks
             currentTab == TAB_RECENT -> db.bookDao().recentlyReadNow()
             currentTab.startsWith(TAB_SOURCE_PREFIX) ->
                 db.bookDao().bySourceNow(currentTab.removePrefix(TAB_SOURCE_PREFIX).toLong())
-            else -> db.bookDao().allSorted()
+            else -> allBooks
         }
         // 「最近阅读」标签本身按读过的时间排，排序档不覆盖它——否则这个标签就没意义了
-        if (currentTab == TAB_RECENT) return filterByQuery(base)
+        if (currentTab == TAB_RECENT && !(searching && searchWholeLibrary)) return filterByQuery(base)
         val sorted = when (AppPrefs.ShelfSort.of(prefs.shelfSort)) {
             AppPrefs.ShelfSort.TITLE_ASC -> base.sortedBy { it.titleSort }
             AppPrefs.ShelfSort.TITLE_DESC -> base.sortedByDescending { it.titleSort }
@@ -285,73 +345,39 @@ class MainActivity : AppCompatActivity() {
         return filterByQuery(sorted)
     }
 
-    /** 书名过滤，忽略大小写；空关键字就是原样返回 */
+    /** 书名或来源名过滤，忽略大小写；空关键字就是原样返回 */
     private fun filterByQuery(list: List<BookEntity>): List<BookEntity> {
         val q = shelfQuery.trim()
         if (q.isEmpty()) return list
-        return list.filter { it.title.contains(q, ignoreCase = true) }
+        val sourceNames = allSources.associate { it.id to it.label }
+        return list.filter { book ->
+            book.title.contains(q, ignoreCase = true) ||
+                sourceNames[book.sourceId]?.contains(q, ignoreCase = true) == true
+        }
     }
 
-    /**
-     * 标签做成一排胶囊：选中的墨色实底白字，其余白底一像素描边。
-     * 书数为 0 的来源不出现（一个来源都没扫到书时，点进去只有空书架）。
-     * 本数写在列表上方的分段标题里，胶囊上不再重复。
-     */
-    private fun renderTabs() {
-        binding.tabRow.removeAllViews()
-
-        val tabs = ArrayList<Triple<String, String, Int>>()
-        tabs += Triple(TAB_ALL, getString(R.string.tab_all), tabCounts[TAB_ALL] ?: 0)
-        tabs += Triple(TAB_RECENT, getString(R.string.tab_recent), tabCounts[TAB_RECENT] ?: 0)
-        allSources.forEach { source ->
-            val key = "$TAB_SOURCE_PREFIX${source.id}"
-            tabs += Triple(key, source.label, tabCounts[key] ?: 0)
-        }
-
-        for ((key, label, count) in tabs) {
-            if (key.startsWith(TAB_SOURCE_PREFIX) && count == 0) continue
-            binding.tabRow.addView(chip(key, label))
-        }
-
-        // 分段标题跟着当前标签走：全部漫画 / 最近阅读 / 来源名
-        val current = tabs.firstOrNull { it.first == currentTab }
-        binding.sectionTitle.text = when {
-            currentTab == TAB_ALL -> getString(R.string.shelf_section_all)
-            current != null -> current.second
-            else -> getString(R.string.shelf_section_all)
-        }
-        binding.sectionCount.text =
-            getString(R.string.shelf_section_count, tabCounts[currentTab] ?: 0)
-
-        binding.shelfCount.text =
-            getString(R.string.shelf_count_meta, tabCounts[TAB_ALL] ?: 0)
-    }
-
-    private fun chip(key: String, label: String): TextView {
-        val selected = key == currentTab
-        return TextView(this).apply {
-            text = label
-            textSize = 11f
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(7), dp(14), dp(7))
-            setTextColor(getColor(if (selected) android.R.color.white else R.color.shell_ink_muted))
-            background = getDrawable(
-                if (selected) R.drawable.bg_chip_selected else R.drawable.bg_chip_unselected
-            )
-            isClickable = true
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            )
-            lp.marginEnd = dp(8)
-            layoutParams = lp
-            setOnClickListener {
-                if (currentTab != key) {
-                    currentTab = key
-                    refresh()
-                }
+    /** 搜索范围：书库（全部书）还是当前标签 */
+    private fun askScope() {
+        val labels = arrayOf(
+            getString(R.string.shelf_scope_library),
+            getString(R.string.shelf_scope_tab),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.shelf_scope_title)
+            .setSingleChoiceItems(labels, if (searchWholeLibrary) 0 else 1) { dialog, which ->
+                searchWholeLibrary = which == 0
+                dialog.dismiss()
+                renderScopeChip()
+                refresh()
             }
-        }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun renderScopeChip() {
+        binding.searchScope.text = getString(
+            if (searchWholeLibrary) R.string.shelf_scope_library else R.string.shelf_scope_tab
+        )
     }
 
     /**
@@ -384,9 +410,11 @@ class MainActivity : AppCompatActivity() {
         val last = lm.findLastVisibleItemPosition()
         if (first < 0 || last < 0) return
         val screen = (last - first + 1).coerceAtLeast(lm.spanCount)
-        val until = (last + screen).coerceAtMost(adapter.itemCount - 1)
+        val until = (last + screen).coerceAtMost(adapter.itemCount)
         for (i in first..until) {
-            requestCover(adapter.bookIdAt(i) ?: continue)
+            // 合并后的第一个位置是列表头，不是书
+            if (i <= 0) continue
+            requestCover(adapter.bookIdAt(i - 1) ?: continue)
         }
     }
 
@@ -398,6 +426,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun showBookMenu(book: BookEntity) {
         val items = arrayOf(
+            getString(R.string.shelf_menu_select),
             getString(R.string.shelf_menu_rename),
             getString(R.string.shelf_change_cover),
             getString(R.string.shelf_menu_delete),
@@ -406,9 +435,69 @@ class MainActivity : AppCompatActivity() {
             .setTitle(book.title)
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> showRenameBook(book)
-                    1 -> showChangeCover(book)
-                    2 -> confirmDeleteBook(book)
+                    0 -> enterSelection(book.id)
+                    1 -> showRenameBook(book)
+                    2 -> showChangeCover(book)
+                    else -> confirmDeleteBook(book)
+                }
+            }
+            .show()
+    }
+
+    // ── 多选 ───────────────────────────────────────────────
+
+    private fun enterSelection(firstId: Long) {
+        selecting = true
+        selectedIds.clear()
+        selectedIds += firstId
+        renderSelection()
+    }
+
+    private fun exitSelection() {
+        selecting = false
+        selectedIds.clear()
+        renderSelection()
+    }
+
+    private fun toggleSelection(id: Long) {
+        if (!selectedIds.add(id)) selectedIds.remove(id)
+        renderSelection()
+    }
+
+    private fun renderSelection() {
+        adapter.setSelection(selecting, selectedIds)
+        binding.selectBar.isVisible = selecting
+        binding.selectCount.text = getString(R.string.shelf_selected_count, selectedIds.size)
+        binding.selectDelete.isEnabled = selectedIds.isNotEmpty()
+        binding.selectDelete.alpha = if (selectedIds.isEmpty()) 0.5f else 1f
+    }
+
+    /** 批量删除：只删库里的记录，源文件不动 */
+    private fun confirmDeleteSelected() {
+        if (selectedIds.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.shelf_delete_title)
+            .setMessage(getString(R.string.shelf_delete_batch_message, selectedIds.size))
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.shelf_delete_confirm) { _, _ ->
+                val doomed = selectedIds.toList()
+                lifecycleScope.launch {
+                    val cache = com.nascomic.reader.ui.reader.DiskPageCache(this@MainActivity)
+                    withContext(Dispatchers.IO) {
+                        doomed.forEach { id ->
+                            runCatching { db.bookDao().delete(id) }
+                            cache.clearBook(id)
+                            thumbs.invalidate(id)
+                        }
+                    }
+                    doomed.forEach { adapter.invalidateCover(it) }
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.shelf_delete_done),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    exitSelection()
+                    refresh()
                 }
             }
             .show()
@@ -583,7 +672,8 @@ class MainActivity : AppCompatActivity() {
     // ── 操作 ───────────────────────────────────────────────
 
     private fun scanFolder(uri: Uri) {
-        val progress = ScanProgressDialog(this)
+        var cancelled = false
+        val progress = ScanProgressDialog(this) { cancelled = true }
         lifecycleScope.launch {
             status(getString(R.string.status_scanning))
             try {
@@ -594,7 +684,7 @@ class MainActivity : AppCompatActivity() {
                     return@launch
                 }
                 progress.showListing(source.label)
-                val r = scanner.scan(source, listenerFor(progress, source.label))
+                val r = scanner.scan(source, listenerFor(progress, source.label)) { cancelled }
                 status(
                     if (r.keptAll) {
                         getString(
@@ -608,6 +698,8 @@ class MainActivity : AppCompatActivity() {
                 )
                 currentTab = TAB_ALL
                 refresh()
+            } catch (e: LibraryScanner.Cancelled) {
+                status(getString(R.string.scan_cancelled))
             } catch (e: Exception) {
                 status(getString(R.string.status_scan_failed, e.message ?: ""))
             } finally {
@@ -640,7 +732,12 @@ class MainActivity : AppCompatActivity() {
         // 设置里定死列数就照它来，否则按屏宽自动
         val fixed = prefs.shelfColumns
         val columns = if (fixed > 0) fixed else ShelfGrid.columns(available, minCell)
-        binding.grid.layoutManager = GridLayoutManager(this, columns)
+        val lm = GridLayoutManager(this, columns)
+        // 第 0 位是列表头（继续阅读卡 + 胶囊），它得占满一行，不能挤进封面网格
+        lm.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int): Int = if (position == 0) columns else 1
+        }
+        binding.grid.layoutManager = lm
         coverWidth = ShelfGrid.cellWidth(available, columns) - dp(12)
         adapter.setCoverSize(coverWidth, coverWidth * 4 / 3)
     }

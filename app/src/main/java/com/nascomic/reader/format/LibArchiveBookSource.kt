@@ -13,6 +13,7 @@ import java.io.InputStream
 class LibArchiveBookSource internal constructor(
     private val catalog: LibArchiveCatalog,
     fallbackTitle: String = "",
+    private val rootOnly: Boolean = false,
 ) : BookSource {
 
     private val layout = ArchivePaging.layout(
@@ -20,6 +21,7 @@ class LibArchiveBookSource internal constructor(
         nameOf = { it.name },
         isDirectory = { it.isDirectory },
         fallbackTitle = fallbackTitle,
+        rootOnly = rootOnly,
     )
 
     override val chapters: List<ChapterInfo> get() = layout.chapters

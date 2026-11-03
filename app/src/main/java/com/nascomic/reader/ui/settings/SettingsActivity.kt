@@ -32,9 +32,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 设置。照界面稿分六组，全部默认展开——手机上滚一遍就到底，折叠反而多点一下。
+ * 设置。照界面稿分六组，常用项直接摊开；冷门参数收在最后一组「高级设置」里，默认收起。
  *
- * 还没做的功能留着占位行（灰字 + 「未实现」小标），点不动，也不假装能调；
  * 做过的参数按语义放进最贴近的那一组。
  *
  * 行由代码拼，不用 preference 库：控件只有开关、单选、滑杆三种，
@@ -54,12 +53,21 @@ class SettingsActivity : AppCompatActivity() {
     /** 书架列数可选档：0 = 自动，其余定死 */
     private val columnChoices = listOf(0, 3, 4, 5, 6, 8)
 
+    /** 跳过空白页的起点：0 = 关，其余是「从第几张空白页起」 */
+    private val skipBlankOptions = listOf(0, 1, 3, 5)
+
+    /** 格式副本上限档位（GB） */
+    private val copyGbOptions = listOf(1, 2, 3, 5)
+
     /** 磁盘缓存上限可选档（GB）：0 = 按剩余空间自动 */
     private val cacheGbOptions = listOf(0, 1, 2, 3, 5)
 
     /** 内存缓存上限可选档（MB）：0 = 按堆自动 */
     private val cacheMemOptions = listOf(0, 64, 128, 256, 512)
     private val db by lazy { ReaderDatabase.get(this) }
+
+    /** 高级分组是否展开：同一页里来回改参数不重置，退出再进回到收起 */
+    private var advancedOpen = false
 
     /** 页的磁盘缓存：缓存管理里要报占用、要清空 */
     private val diskCache by lazy { com.nascomic.reader.ui.reader.DiskPageCache(this) }
@@ -77,6 +85,13 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ── 六组 ───────────────────────────────────────────────
+
+    override fun onResume() {
+        super.onResume()
+        // 缓存会自己长（阅读页在后台写盘），回到这一页要把数字重算一遍
+        applyOrientation(prefs)
+        buildRows()
+    }
 
     private fun buildRows() {
         val host = binding.settingsContainer
@@ -101,12 +116,22 @@ class SettingsActivity : AppCompatActivity() {
             })
         }
 
-        addGroup(host, R.string.settings_group_library, buildLibraryRows())
-        addGroup(host, R.string.settings_group_flip, buildFlipRows())
-        addGroup(host, R.string.settings_group_zoom, buildZoomRows())
-        addGroup(host, R.string.settings_group_layout, buildLayoutRows())
-        addGroup(host, R.string.settings_group_load, buildLoadRows())
+        val groups = listOf(
+            R.string.settings_group_library to buildLibraryRows(),
+            R.string.settings_group_flip to buildFlipRows(),
+            R.string.settings_group_zoom to buildZoomRows(),
+            R.string.settings_group_layout to buildLayoutRows(),
+            R.string.settings_group_load to buildLoadRows(),
+        )
+        // 冷门参数不跟常用项一起摊开：一屏放得下的是「设置」，放不下就成了说明书
+        val advanced = ArrayList<View>()
+        groups.forEach { (titleRes, rows) ->
+            val basic = ArrayList<View>(rows.size)
+            rows.forEach { row -> if (row.tag == TAG_ADVANCED) advanced += row else basic += row }
+            addGroup(host, titleRes, basic)
+        }
         addGroup(host, R.string.settings_group_other, buildOtherRows())
+        addAdvancedGroup(host, advanced)
     }
 
     /** 组头只有一行标题：没有项数，也没有展开箭头 */
@@ -132,6 +157,100 @@ class SettingsActivity : AppCompatActivity() {
             marginStart = dp(PAGE_MARGIN)
             marginEnd = dp(PAGE_MARGIN)
         })
+    }
+
+    /**
+     * 高级分组：一张能原地展开的卡片。
+     *
+     * 收起时只占一行，和别的分组一样齐——左边一枚滑杆图标、中间标题、右边箭头朝下；
+     * 点一下箭头翻上来、内容在卡片里淡入。
+     * 展开状态只留在这一页里，不写盘：下次进来仍是收起，避免误改。
+     */
+    private fun addAdvancedGroup(host: LinearLayout, rows: List<View>) {
+        if (rows.isEmpty()) return
+
+        val chevron = ImageView(this).apply {
+            setImageResource(R.drawable.ic_chevron_down)
+            setColorFilter(getColor(R.color.shell_ink_faint))
+            rotation = if (advancedOpen) 180f else 0f
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            isClickable = true
+            setBackgroundResource(selectableBackground())
+            addView(ImageView(this@SettingsActivity).apply {
+                setImageResource(R.drawable.ic_tune)
+                background = getDrawable(R.drawable.bg_tile_accent_soft)
+                setPadding(dp(6), dp(6), dp(6), dp(6))
+            }, LinearLayout.LayoutParams(dp(30), dp(30)))
+            addView(TextView(this@SettingsActivity).apply {
+                text = getString(R.string.settings_group_advanced)
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(getColor(R.color.shell_ink))
+            }, weighted().apply { marginStart = dp(12) })
+            addView(chevron, LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginStart = dp(8) })
+        }
+
+        val divider = View(this).apply {
+            setBackgroundColor(getColor(R.color.shell_divider))
+            visibility = if (advancedOpen) View.VISIBLE else View.GONE
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            rows.forEach { addView(it) }
+            visibility = if (advancedOpen) View.VISIBLE else View.GONE
+        }
+
+        header.setOnClickListener {
+            advancedOpen = !advancedOpen
+            val open = advancedOpen
+            chevron.animate().rotation(if (open) 180f else 0f).setDuration(180).start()
+            if (open) {
+                divider.visibility = View.VISIBLE
+                body.visibility = View.VISIBLE
+                body.alpha = 0f
+                body.translationY = -dp(4).toFloat()
+                body.animate().alpha(1f).translationY(0f).setDuration(170).start()
+            } else {
+                divider.visibility = View.GONE
+                body.animate().alpha(0f).translationY(-dp(4).toFloat()).setDuration(130)
+                    .withEndAction {
+                        body.visibility = View.GONE
+                        body.alpha = 1f
+                        body.translationY = 0f
+                    }
+                    .start()
+            }
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = getDrawable(R.drawable.bg_card)
+            clipToOutline = true
+            addView(header)
+            addView(divider, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1),
+            ))
+            addView(body)
+        }
+        host.addView(card, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            marginStart = dp(PAGE_MARGIN)
+            marginEnd = dp(PAGE_MARGIN)
+            topMargin = dp(14)
+        })
+    }
+
+    /** 标一行属于高级分组；不标的就是常用项 */
+    private fun LinearLayout.addAdvanced(view: View) {
+        view.tag = TAG_ADVANCED
+        addView(view)
     }
 
     /**
@@ -185,7 +304,7 @@ class SettingsActivity : AppCompatActivity() {
         return withDivider(row)
     }
 
-    /** 翻页与手势：两个真开关 + 五个占位 */
+    /** 翻页与手势：方向、分区、跳进距离、按键与滚轮 */
     private fun buildFlipRows(): List<View> = collect {
         addView(
             choiceRow(
@@ -199,21 +318,41 @@ class SettingsActivity : AppCompatActivity() {
                 selected = reader.scrollMode,
             ) { index -> reader.scrollMode = index }
         )
+        if (bookId <= 0) {
+            addView(noteRow(getString(R.string.settings_direction_note)))
+        }
 
         addView(
+            choiceRow(
+                title = getString(R.string.settings_tap_zone),
+                desc = getString(R.string.settings_tap_zone_desc),
+                options = listOf(
+                    getString(R.string.settings_tap_zone_off),
+                    getString(R.string.settings_tap_zone_sides),
+                    getString(R.string.settings_tap_zone_diag1),
+                    getString(R.string.settings_tap_zone_diag2),
+                ),
+                selected = reader.tapFlipMode,
+            ) { index -> reader.tapFlipMode = index }
+        )
+        addAdvanced(
             switchRow(
-                title = getString(R.string.settings_tap_turn),
-                desc = getString(R.string.settings_tap_turn_desc),
-                checked = reader.tapToTurn,
-            ) { checked -> reader.tapToTurn = checked }
+                title = getString(R.string.settings_tap_swap),
+                desc = getString(R.string.settings_tap_swap_desc),
+                checked = reader.tapFlipSwap,
+            ) { checked -> reader.tapFlipSwap = checked }
         )
 
         addView(
-            switchRow(
-                title = getString(R.string.settings_skip_blank),
-                desc = getString(R.string.settings_skip_blank_desc),
-                checked = reader.skipBlank,
-            ) { checked -> reader.skipBlank = checked }
+            choiceRow(
+                title = getString(R.string.settings_skip_blank_from),
+                desc = getString(R.string.settings_skip_blank_from_desc),
+                options = skipBlankOptions.map {
+                    if (it == 0) getString(R.string.settings_skip_off)
+                    else getString(R.string.settings_skip_from, it)
+                },
+                selected = skipBlankOptions.indexOf(reader.skipBlankFrom).coerceAtLeast(0),
+            ) { index -> reader.skipBlankFrom = skipBlankOptions[index] }
         )
 
         addView(
@@ -272,6 +411,39 @@ class SettingsActivity : AppCompatActivity() {
                 desc = getString(R.string.settings_turn_animation_desc),
                 checked = reader.turnAnimation,
             ) { checked -> reader.turnAnimation = checked }
+        )
+        addAdvanced(
+            sliderRow(
+                title = getString(R.string.settings_flip_anim_ms),
+                desc = getString(R.string.settings_flip_anim_ms_desc),
+                min = 0,
+                max = 600,
+                step = 20,
+                initial = reader.flipAnimMs,
+                format = { getString(R.string.settings_flip_anim_ms_value, it) },
+            ) { value -> reader.flipAnimMs = value }
+        )
+        addAdvanced(
+            sliderRow(
+                title = getString(R.string.settings_fling_resistance),
+                desc = getString(R.string.settings_fling_resistance_desc),
+                min = 0,
+                max = 9,
+                step = 1,
+                initial = reader.flingResistance,
+                format = { it.toString() },
+            ) { value -> reader.flingResistance = value }
+        )
+        addAdvanced(
+            sliderRow(
+                title = getString(R.string.settings_fling_momentum),
+                desc = getString(R.string.settings_fling_momentum_desc),
+                min = 0,
+                max = 9,
+                step = 1,
+                initial = reader.flingMomentum,
+                format = { it.toString() },
+            ) { value -> reader.flingMomentum = value }
         )
     }
 
@@ -332,6 +504,17 @@ class SettingsActivity : AppCompatActivity() {
                 selected = reader.holdZoomFocus,
             ) { index -> reader.holdZoomFocus = index }
         )
+        addAdvanced(
+            sliderRow(
+                title = getString(R.string.settings_hold_zoom_scroll),
+                desc = getString(R.string.settings_hold_zoom_scroll_desc),
+                min = 1,
+                max = 9,
+                step = 1,
+                initial = reader.holdZoomScrollFactor,
+                format = { getString(R.string.settings_hold_zoom_scroll_value, it) },
+            ) { value -> reader.holdZoomScrollFactor = value }
+        )
         addView(
             sliderRow(
                 title = getString(R.string.settings_hold_zoom_factor),
@@ -376,6 +559,34 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         addView(
+            choiceRow(
+                title = getString(R.string.settings_spread_order),
+                desc = getString(R.string.settings_spread_order_desc),
+                options = listOf(
+                    getString(R.string.settings_spread_order_off),
+                    getString(R.string.settings_spread_order_first),
+                    getString(R.string.settings_spread_order_last),
+                    getString(R.string.settings_spread_order_chapter),
+                ),
+                selected = if (reader.dualPage) reader.spreadOrder.coerceAtLeast(0) else 0,
+            ) { index ->
+                reader.dualPage = index != 0
+                reader.spreadOrder = index
+            }
+        )
+        addAdvanced(
+            choiceRow(
+                title = getString(R.string.settings_spread_direction),
+                desc = null,
+                options = listOf(
+                    getString(R.string.settings_spread_direction_lr),
+                    getString(R.string.settings_spread_direction_rl),
+                ),
+                selected = reader.spreadDirection,
+            ) { index -> reader.spreadDirection = index }
+        )
+
+        addView(
             switchRow(
                 title = getString(R.string.settings_trim_border),
                 desc = getString(R.string.settings_trim_border_desc),
@@ -383,6 +594,42 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.trimBorder = checked }
         )
 
+        addAdvanced(
+            choiceRow(
+                title = getString(R.string.settings_trim_algo),
+                desc = getString(R.string.settings_trim_algo_desc),
+                options = listOf(
+                    getString(R.string.settings_trim_algo_fast),
+                    getString(R.string.settings_trim_algo_precise),
+                ),
+                selected = reader.trimAlgo,
+            ) { index -> reader.trimAlgo = index }
+        )
+        addView(
+            switchRow(
+                title = getString(R.string.settings_trim_ignore_sides),
+                desc = getString(R.string.settings_trim_ignore_sides_desc),
+                checked = reader.trimIgnoreSides,
+            ) { checked -> reader.trimIgnoreSides = checked }
+        )
+        addAdvanced(
+            sliderRow(
+                title = getString(R.string.settings_trim_ignore_px),
+                desc = getString(R.string.settings_trim_ignore_px_desc),
+                min = 0,
+                max = 30,
+                step = 1,
+                initial = reader.trimIgnorePx,
+                format = { getString(R.string.settings_trim_ignore_px_value, it) },
+            ) { value -> reader.trimIgnorePx = value }
+        )
+        addAdvanced(
+            switchRow(
+                title = getString(R.string.settings_trim_protect),
+                desc = getString(R.string.settings_trim_protect_desc),
+                checked = reader.trimProtect,
+            ) { checked -> reader.trimProtect = checked }
+        )
         addView(
             sliderRow(
                 title = getString(R.string.settings_trim_level),
@@ -396,11 +643,16 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         addView(
-            switchRow(
-                title = getString(R.string.settings_split_wide),
-                desc = getString(R.string.settings_split_wide_desc),
-                checked = reader.splitWide,
-            ) { checked -> reader.splitWide = checked }
+            choiceRow(
+                title = getString(R.string.settings_split_mode),
+                desc = getString(R.string.settings_split_mode_desc),
+                options = listOf(
+                    getString(R.string.settings_split_off),
+                    getString(R.string.settings_split_left),
+                    getString(R.string.settings_split_right),
+                ),
+                selected = reader.splitMode,
+            ) { index -> reader.splitMode = index }
         )
 
         addView(
@@ -454,8 +706,12 @@ class SettingsActivity : AppCompatActivity() {
                     getString(R.string.settings_orientation_system),
                     getString(R.string.settings_orientation_portrait),
                     getString(R.string.settings_orientation_landscape),
+                    getString(R.string.settings_orientation_reverse_portrait),
+                    getString(R.string.settings_orientation_reverse_landscape),
                 ),
-                selected = AppPrefs.Orientation.of(prefs.orientation).ordinal,
+                selected = AppPrefs.Orientation.entries.indexOf(
+                    AppPrefs.Orientation.of(prefs.orientation)
+                ).coerceAtLeast(0),
             ) { index ->
                 prefs.orientation = AppPrefs.Orientation.entries[index].value
                 applyOrientation(prefs)
@@ -497,6 +753,31 @@ class SettingsActivity : AppCompatActivity() {
             ) { checked -> reader.nativeDecode = checked }
         )
 
+        addAdvanced(
+            switchRow(
+                title = getString(R.string.settings_fast_epub),
+                desc = getString(R.string.settings_fast_epub_desc),
+                checked = reader.fastEpub,
+            ) { checked -> reader.fastEpub = checked }
+        )
+        addAdvanced(
+            sliderRow(
+                title = getString(R.string.settings_pdf_quality),
+                desc = getString(R.string.settings_pdf_quality_desc),
+                min = 0,
+                max = 30,
+                step = 1,
+                initial = reader.pdfRenderQuality,
+                format = { getString(R.string.settings_pdf_quality_value, it) },
+            ) { value -> reader.pdfRenderQuality = value }
+        )
+        addAdvanced(
+            switchRow(
+                title = getString(R.string.settings_load_all_archive),
+                desc = getString(R.string.settings_load_all_archive_desc),
+                checked = reader.loadAllInArchive,
+            ) { checked -> reader.loadAllInArchive = checked }
+        )
         addView(
             switchRow(
                 title = getString(R.string.settings_argb),
@@ -531,8 +812,18 @@ class SettingsActivity : AppCompatActivity() {
 
         addView(noteRow(getString(R.string.settings_prefetch_hint)))
 
-        // 内存上限：自动跟堆走；手选档位在 ReaderPrefs 里夹到堆的 1/8–1/2
+        // 格式副本上限：7z / RAR / 远程 PDF 要整份落到本地才能读
         addView(
+            choiceRow(
+                title = getString(R.string.settings_copy_cache),
+                desc = getString(R.string.settings_copy_cache_desc),
+                options = copyGbOptions.map { getString(R.string.settings_cache_gb_value, it) },
+                selected = copyGbOptions.indexOf(reader.copyCacheGb).coerceAtLeast(0),
+            ) { index -> reader.copyCacheGb = copyGbOptions[index] }
+        )
+
+        // 内存上限：自动跟堆走；手选档位在 ReaderPrefs 里夹到堆的 1/8–1/2
+        addAdvanced(
             choiceRow(
                 title = getString(R.string.settings_cache_mem),
                 desc = getString(R.string.settings_cache_mem_desc),
@@ -559,6 +850,12 @@ class SettingsActivity : AppCompatActivity() {
             ) { index -> reader.cacheGb = cacheGbOptions[index] }
         )
     }
+
+    private object Tag {
+        const val ADVANCED = "advanced"
+    }
+
+    private val TAG_ADVANCED get() = Tag.ADVANCED
 
     private fun pagesText(pages: Int): String =
         if (pages == 0) getString(R.string.settings_prefetch_off)

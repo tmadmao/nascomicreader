@@ -58,7 +58,7 @@ class SourceRepository(
     ): Long {
         val url = normalizeEndpoint(endpoint)
         val display = label?.takeIf { it.isNotBlank() }
-            ?: url.removePrefix("https://").removePrefix("http://").trimEnd('/')
+            ?: decodeLabel(url.removePrefix("https://").removePrefix("http://").trimEnd('/'))
 
         val id = db.sourceDao().insert(
             SourceEntity(
@@ -99,7 +99,7 @@ class SourceRepository(
         }
 
         val display = label?.takeIf { it.isNotBlank() }
-            ?: (target.share + if (target.path.isEmpty()) "" else "/${target.path}")
+            ?: decodeLabel(target.share + if (target.path.isEmpty()) "" else "/${target.path}")
 
         val id = db.sourceDao().insert(
             SourceEntity(
@@ -129,6 +129,48 @@ class SourceRepository(
     }
 
     /**
+     * 改远端来源的地址、账号、密码。
+     *
+     * NAS 换了密码或端口时用这个，而不是删了重加——删来源会把书、进度、书签一起带走。
+     * 密码留空表示不改；地址照旧补协议与结尾斜杠。
+     */
+    suspend fun updateRemote(
+        sourceId: Long,
+        endpoint: String,
+        account: String?,
+        password: String?,
+        port: Int? = null,
+    ) {
+        val source = db.sourceDao().get(sourceId) ?: return
+        val url = when (source.kind) {
+            SourceEntity.KIND_SMB -> {
+                val target = com.nascomic.reader.smb.SmbTarget.parse(endpoint, port)
+                buildString {
+                    append("smb://").append(target.host)
+                    if (target.port != com.nascomic.reader.smb.SmbTarget.DEFAULT_PORT) {
+                        append(':').append(target.port)
+                    }
+                    append('/').append(target.share)
+                    if (target.path.isNotEmpty()) append('/').append(target.path)
+                }
+            }
+            else -> normalizeEndpoint(endpoint)
+        }
+        val cleanAccount = account?.takeIf { it.isNotBlank() }
+        db.sourceDao().upsert(
+            source.copy(endpoint = url, account = cleanAccount, scanState = SourceEntity.STATE_IDLE)
+        )
+        if (!password.isNullOrBlank()) {
+            val key = source.secretRef ?: when (source.kind) {
+                SourceEntity.KIND_SMB -> "smb_$sourceId"
+                else -> "dav_$sourceId"
+            }
+            SecretStore(context).put(key, password)
+            db.sourceDao().get(sourceId)?.let { db.sourceDao().upsert(it.copy(secretRef = key)) }
+        }
+    }
+
+    /**
      * 删掉一个来源。书、章、进度、书签由外键级联删除，密码要单独清
      * （它不在库里），本地目录还要把系统授权退回去，否则会一直挂在系统里。
      */
@@ -154,7 +196,32 @@ class SourceRepository(
         return if (url.endsWith("/")) url else "$url/"
     }
 
-    suspend fun list(): List<SourceEntity> = db.sourceDao().all()
+    /**
+     * 所有来源。
+     *
+     * 顺带把标签里残留的百分号编码解回来：从远端目录里选进来源时，路径是编码过的
+     * （`%E6%BC%AB%E7%94%BB`），照原样显示就是一串乱码。解一次、就地写回，
+     * 之后各个页面读到的都是可读的名字。
+     */
+    suspend fun list(): List<SourceEntity> {
+        val all = db.sourceDao().all()
+        var healed = false
+        val fixed = all.map { source ->
+            val decoded = decodeLabel(source.label)
+            if (decoded == source.label) {
+                source
+            } else {
+                healed = true
+                source.copy(label = decoded)
+            }
+        }
+        if (healed) fixed.forEach { db.sourceDao().upsert(it) }
+        return fixed
+    }
+
+    /** 百分号编码转可读；没有 % 就原样返回，解不开也原样返回 */
+    private fun decodeLabel(label: String): String =
+        if (label.contains('%')) runCatching { android.net.Uri.decode(label) }.getOrDefault(label) else label
 
     suspend fun delete(sourceId: Long) = db.sourceDao().delete(sourceId)
 }

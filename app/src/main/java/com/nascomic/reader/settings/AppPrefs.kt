@@ -51,10 +51,16 @@ class AppPrefs(context: Context) {
         }
     }
 
+    /**
+     * 屏幕方向。取值沿用旧库的顺序（0/1/2 不变），反向两档接在后面，
+     * 这样升级后老用户存的 2 还是横屏，不会莫名其妙变成反向竖屏。
+     */
     enum class Orientation(val value: Int) {
         SYSTEM(0),
         PORTRAIT(1),
         LANDSCAPE(2),
+        REVERSE_PORTRAIT(3),
+        REVERSE_LANDSCAPE(4),
         ;
 
         companion object {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 图标底：橙的浅调小方，用于「高级设置」这类需要一点辨识度但不抢眼的入口 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/brand_accent_tint" />
+    <corners android:radius="9dp" />
+</shape>

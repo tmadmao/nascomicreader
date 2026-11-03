@@ -20,7 +20,7 @@ object ScanRules {
 
     fun isArchive(name: String): Boolean = extensionOf(name) in ARCHIVE_EXTENSIONS
 
-    /** PDF 自成一本书，不参与章回体划分 */
+    /** PDF 自成一本书；但放在章回体目录里时，它也能当一章 */
     fun isPdf(name: String): Boolean = extensionOf(name) in PDF_EXTENSIONS
 
     /** EPUB 同样自成一本书 */

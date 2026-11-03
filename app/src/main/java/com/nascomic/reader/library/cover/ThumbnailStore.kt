@@ -84,11 +84,28 @@ class ThumbnailStore(private val context: Context) {
         runCatching { fileOf(bookId).delete() }
     }
 
-    /** 清掉不属于现存书的残留（书被删了、缓存还在） */
+    /**
+     * 清掉不属于现存书的残留，再按总体积收一遍。
+     *
+     * 以前只删「书已经不在」的图，一千多本的封面加起来照样能吃掉几百兆；
+     * 现在超过 [MAX_BYTES] 就按最久没动过的先删，下次滚到再生成。
+     */
     fun prune(aliveIds: Set<Long>) {
+        val alive = ArrayList<File>()
         dir.listFiles()?.forEach { f ->
             val id = f.name.removePrefix("b").removeSuffix(".jpg").toLongOrNull()
-            if (id != null && id !in aliveIds) runCatching { f.delete() }
+            if (id == null || id !in aliveIds) {
+                runCatching { f.delete() }
+            } else {
+                alive += f
+            }
+        }
+        var total = alive.sumOf { it.length() }
+        if (total <= MAX_BYTES) return
+        for (f in alive.sortedBy { it.lastModified() }) {
+            if (total <= MAX_BYTES) break
+            val size = f.length()
+            if (runCatching { f.delete() }.getOrDefault(false)) total -= size
         }
     }
 
@@ -111,5 +128,8 @@ class ThumbnailStore(private val context: Context) {
     private companion object {
         /** 三列网格下每格约 110dp，@3x 屏幕约 330px，留一点余量 */
         const val TARGET_WIDTH = 360
+
+        /** 封面缓存的软上限：一千多本的缩略图不该无限长 */
+        const val MAX_BYTES = 128L * 1024 * 1024
     }
 }

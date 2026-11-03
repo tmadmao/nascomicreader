@@ -14,5 +14,7 @@ fun Activity.applyOrientation(prefs: AppPrefs) {
         AppPrefs.Orientation.SYSTEM -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         AppPrefs.Orientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         AppPrefs.Orientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        AppPrefs.Orientation.REVERSE_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+        AppPrefs.Orientation.REVERSE_LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
     }
 }

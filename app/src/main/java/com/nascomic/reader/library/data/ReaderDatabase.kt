@@ -20,9 +20,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChapterEntity::class,
         ProgressEntity::class,
         BookmarkEntity::class,
-        HistoryEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class ReaderDatabase : RoomDatabase() {
@@ -32,7 +31,6 @@ abstract class ReaderDatabase : RoomDatabase() {
     abstract fun chapterDao(): ChapterDao
     abstract fun progressDao(): ProgressDao
     abstract fun bookmarkDao(): BookmarkDao
-    abstract fun historyDao(): HistoryDao
 
     companion object {
         private const val NAME = "reader.db"
@@ -70,10 +68,17 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        /** 阅读历史页已并进书架的「最近阅读」，这张表不再有人读，直接删掉 */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS history")
+            }
+        }
+
         private fun build(context: Context): ReaderDatabase =
             Room.databaseBuilder(context, ReaderDatabase::class.java, NAME)
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 // 兜底：开发期的库版本五花八门，认不出来的直接重建，别卡在启动上
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

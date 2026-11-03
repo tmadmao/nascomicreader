@@ -21,14 +21,18 @@ object LocalCopies {
      * 给得比页缓存小，但也不能小气：7z / RAR 必须整份落到本地才能读，
      * 一本单行本就是三四百兆，512 MB 连两本都放不下。
      */
-    const val TOTAL_BYTES = 2L * 1024 * 1024 * 1024
+    const val DEFAULT_BYTES = 2L * 1024 * 1024 * 1024
+
+    /** 上限由设置里的「格式副本上限」决定，默认 2 GB */
+    fun limitBytes(context: Context): Long =
+        com.nascomic.reader.settings.ReaderPrefs(context).copyCacheGb * 1024L * 1024L * 1024L
 
     fun archivesDir(context: Context): File = File(context.cacheDir, "archives").apply { mkdirs() }
 
     fun remoteDir(context: Context): File = File(context.cacheDir, "remote").apply { mkdirs() }
 
     /** 超上限就按最久没用删一批（[CacheTrim] 会一次收到上限的八成） */
-    fun trim(context: Context) {
+    fun trim(context: Context, limit: Long = limitBytes(context)) {
         runCatching {
             val items = ArrayList<CacheTrim.Item>()
             for (dir in listOf(archivesDir(context), remoteDir(context))) {
@@ -39,7 +43,7 @@ object LocalCopies {
                     }
                 }
             }
-            CacheTrim.victims(items, TOTAL_BYTES).forEach { path ->
+            CacheTrim.victims(items, limit).forEach { path ->
                 val dir = if (path.startsWith("archives/")) archivesDir(context) else remoteDir(context)
                 runCatching { File(dir, path.substringAfter('/')).delete() }
             }

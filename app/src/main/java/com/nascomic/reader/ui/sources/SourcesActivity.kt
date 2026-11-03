@@ -75,6 +75,7 @@ class SourcesActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySourcesBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        wireCancelButton()
         // Android 15 起强制边到边：自己让开状态栏与导航条
         binding.root.padBySystemBars()
 
@@ -390,9 +391,11 @@ class SourcesActivity : AppCompatActivity() {
         showProgress(source.label)
         lifecycleScope.launch {
             try {
-                val result = scanner.scan(source, scanListener())
+                val result = scanner.scan(source, scanListener()) { scanCancelled }
                 lastSync[source.id] = result
                 showSuccess(scanResultText(source, result))
+            } catch (e: LibraryScanner.Cancelled) {
+                Toast.makeText(this@SourcesActivity, R.string.scan_cancelled, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 showFailure(remoteErrorText(this@SourcesActivity, e))
             } finally {
@@ -418,7 +421,12 @@ class SourcesActivity : AppCompatActivity() {
             getString(R.string.sources_scan_unchanged, source.label, result.found)
     }
 
+    /** 用户按了取消：扫描器在下一个检查点停下，库不动 */
+    private var scanCancelled = false
+
     private fun showProgress(label: String) {
+        scanCancelled = false
+        binding.progressCancel.isEnabled = true
         scanning = true
         binding.successPanel.isVisible = false
         binding.progressPanel.isVisible = true
@@ -480,9 +488,11 @@ class SourcesActivity : AppCompatActivity() {
                 val source = db.sourceDao().get(id) ?: error("来源记录丢失")
                 sourceLabel = source.label
                 binding.progressTitle.text = getString(R.string.sources_scanning, source.label)
-                val result = scanner.scan(source, scanListener())
+                val result = scanner.scan(source, scanListener()) { scanCancelled }
                 lastSync[source.id] = result
                 showSuccess(getString(R.string.source_added, source.label, result.found))
+            } catch (e: LibraryScanner.Cancelled) {
+                Toast.makeText(this@SourcesActivity, R.string.scan_cancelled, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 showFailure(e.message ?: "")
             } finally {
@@ -490,6 +500,14 @@ class SourcesActivity : AppCompatActivity() {
                 binding.progressPanel.isVisible = false
                 loadSources()
             }
+        }
+    }
+
+    private fun wireCancelButton() {
+        binding.progressCancel.setOnClickListener {
+            scanCancelled = true
+            binding.progressCancel.isEnabled = false
+            binding.progressDetail.text = getString(R.string.scan_cancelling)
         }
     }
 
@@ -525,7 +543,9 @@ class SourcesActivity : AppCompatActivity() {
         val httpChip = content.findViewById<TextView>(R.id.scheme_http)
         val httpsChip = content.findViewById<TextView>(R.id.scheme_https)
 
-        var scheme = "https"
+        // 家用 NAS 的 WebDAV 十有八九是 http；默认 https 会让「明明地址对却连不上」成为第一体验。
+        // 真上 TLS 的（群晖反代、公网域名）点一下 HTTPS 即可。
+        var scheme = "http"
 
         fun renderScheme() {
             styleSchemeChip(httpChip, scheme == "http")
@@ -667,13 +687,15 @@ class SourcesActivity : AppCompatActivity() {
                 }
                 val source = db.sourceDao().get(id) ?: error("来源记录丢失")
                 binding.progressTitle.text = getString(R.string.sources_scanning, source.label)
-                val result = scanner.scan(source, scanListener())
+                val result = scanner.scan(source, scanListener()) { scanCancelled }
                 lastSync[source.id] = result
                 if (result.found == 0) {
                     showSuccess(getString(R.string.source_added_empty, source.label))
                 } else {
                     showSuccess(getString(R.string.source_added, source.label, result.found))
                 }
+            } catch (e: LibraryScanner.Cancelled) {
+                Toast.makeText(this@SourcesActivity, R.string.scan_cancelled, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 showFailure(remoteErrorText(this@SourcesActivity, e))
             } finally {
@@ -686,23 +708,92 @@ class SourcesActivity : AppCompatActivity() {
 
     // ── 来源操作 ───────────────────────────────────────────
 
-    /** 长按来源：重扫、改名或删掉 */
+    /** 长按来源：重扫、改名、改地址账号或删掉 */
     private fun showSourceActions(source: SourceEntity) {
+        val items = ArrayList<String>()
+        items += getString(R.string.sources_action_update)
+        if (source.kind != SourceEntity.KIND_LOCAL) items += getString(R.string.source_edit)
+        items += getString(R.string.source_rename)
+        items += getString(R.string.action_delete)
         AlertDialog.Builder(this)
-            .setItems(
-                arrayOf(
-                    getString(R.string.sources_action_update),
-                    getString(R.string.source_rename),
-                    getString(R.string.action_delete),
-                )
-            ) { _, which ->
-                when (which) {
-                    0 -> {
+            .setItems(items.toTypedArray()) { _, which ->
+                val editIndex = if (source.kind != SourceEntity.KIND_LOCAL) 1 else -1
+                when {
+                    which == 0 -> {
                         selectSource(source)
                         runScan(source)
                     }
-                    1 -> renameSource(source)
+                    which == editIndex -> editRemote(source)
+                    which == editIndex + 1 -> renameSource(source)
                     else -> confirmRemove(source)
+                }
+            }
+            .show()
+    }
+
+    /**
+     * 改远端来源的地址 / 账号 / 密码。
+     *
+     * 主作用是把「换了 NAS 密码只能删了重加」这条路堵上——删来源会连书、进度、书签一起没。
+     */
+    private fun editRemote(source: SourceEntity) {
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+
+        val address = EditText(this).apply {
+            setText(source.endpoint.orEmpty())
+            setSelection(text.length)
+            hint = getString(R.string.remote_endpoint_hint)
+        }
+        val account = EditText(this).apply {
+            setText(source.account.orEmpty())
+            setSelection(text.length)
+            hint = getString(R.string.remote_account_hint)
+        }
+        val password = EditText(this).apply {
+            hint = getString(R.string.source_edit_password_hint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(4), dp(20), 0)
+            addView(android.widget.TextView(this@SourcesActivity).apply {
+                text = getString(R.string.source_edit_hint)
+                textSize = 12f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                setPadding(0, 0, 0, dp(8))
+            })
+            addView(address)
+            addView(account)
+            addView(password)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.source_edit_title, source.label))
+            .setView(box)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val endpoint = address.text.toString().trim()
+                if (endpoint.isEmpty()) {
+                    Toast.makeText(this, R.string.remote_endpoint_empty, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    runCatching {
+                        repository.updateRemote(
+                            sourceId = source.id,
+                            endpoint = endpoint,
+                            account = account.text.toString(),
+                            password = password.text.toString(),
+                        )
+                    }.onFailure {
+                        Toast.makeText(this@SourcesActivity, R.string.source_edit_failed, Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    Toast.makeText(this@SourcesActivity, R.string.source_edit_done, Toast.LENGTH_SHORT).show()
+                    loadSources()
                 }
             }
             .show()

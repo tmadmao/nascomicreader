@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.nascomic.reader.R
@@ -34,6 +35,10 @@ class ShelfAdapter(
 
     /** 当前真正在屏幕上的格子：封面生成好时只喂给它们 */
     private val bound = HashMap<Long, Holder>()
+
+    /** 多选态；开着时点击是选中而不是打开书 */
+    private var selecting = false
+    private var selectedIds: Set<Long> = emptySet()
 
     /**
      * 只把真变了的那几行刷一遍。
@@ -67,6 +72,14 @@ class ShelfAdapter(
         diff.dispatchUpdatesTo(this)
     }
 
+    /** 进出多选态 / 勾选变化：只重绑在屏的格子 */
+    fun setSelection(selecting: Boolean, selected: Set<Long>) {
+        if (this.selecting == selecting && this.selectedIds == selected) return
+        this.selecting = selecting
+        this.selectedIds = selected
+        notifyItemRangeChanged(0, books.size)
+    }
+
     /** 封面尺寸变了（转屏、改列数）：让缓存按新尺寸重解 */
     fun setCoverSize(width: Int, height: Int) {
         covers.setTarget(width, height)
@@ -74,6 +87,7 @@ class ShelfAdapter(
 
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val cover: AspectImageView = view.findViewById(R.id.cover)
+        val check: View = view.findViewById(R.id.check)
         val progress: CoverProgress = view.findViewById(R.id.progress)
         val title: TextView = view.findViewById(R.id.title)
         val meta: TextView = view.findViewById(R.id.meta)
@@ -108,6 +122,10 @@ class ShelfAdapter(
             covers.load(book.id) { id, loaded -> showCover(id, loaded) }
             onCoverNeeded(book.id)
         }
+
+        holder.check.isVisible = selecting && book.id in selectedIds
+        // 多选态下未选中的格子压暗一点，一眼看出哪些会被删
+        holder.itemView.alpha = if (selecting && book.id !in selectedIds) 0.55f else 1f
 
         holder.itemView.setOnClickListener { onClick(book) }
         holder.itemView.setOnLongClickListener {

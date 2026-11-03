@@ -9,6 +9,7 @@ import java.io.InputStream
 class TarBookSource internal constructor(
     private val catalog: TarCatalog,
     fallbackTitle: String = "",
+    private val rootOnly: Boolean = false,
 ) : BookSource {
 
     private val layout = ArchivePaging.layout(
@@ -16,6 +17,7 @@ class TarBookSource internal constructor(
         nameOf = { it.name },
         isDirectory = { it.isDirectory },
         fallbackTitle = fallbackTitle,
+        rootOnly = rootOnly,
     )
 
     override val chapters: List<ChapterInfo> get() = layout.chapters
