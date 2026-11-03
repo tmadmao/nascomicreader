@@ -153,17 +153,53 @@ class WebDavClient(
         private val LENGTH = Regex("""<(?:[A-Za-z0-9]+:)?getcontentlength\s*>(.*?)</""", RegexOption.DOT_MATCHES_ALL)
         private val COLLECTION = Regex("""<(?:[A-Za-z0-9]+:)?collection\b""")
 
+        /** `&amp;` `&#38;` 这类实体：名字或数字 */
+        private val ENTITY = Regex("""&(#x[0-9A-Fa-f]+|#[0-9]+|[A-Za-z][A-Za-z0-9]*);""")
+
         /** 解析 207 Multi-Status。纯字符串处理，便于单测 */
         fun parseMultiStatus(xml: String, baseUrl: String): List<Entry> =
             RESPONSE.findAll(xml).mapNotNull { match ->
                 val block = match.value
                 val href = HREF.find(block)?.groupValues?.get(1)?.trim() ?: return@mapNotNull null
-                val url = absoluteUrl(baseUrl, href)
+                // href 是 XML 文本，`&` `<` 这些会被转义成实体；不还原就把 `&amp;` 当成了文件名的一部分
+                val url = absoluteUrl(baseUrl, unescapeXml(href))
                 val isDir = COLLECTION.containsMatchIn(block)
                 val size = LENGTH.find(block)?.groupValues?.get(1)?.trim()?.toLongOrNull() ?: -1L
                 val name = decodeName(url)
                 Entry(url = url, name = name, isDirectory = isDir, size = size)
             }.toList()
+
+        /**
+         * 还原 XML 文本里的字符实体。
+         *
+         * 文件名带 `&` 时（`[组A&amp;组B].zip`）服务端不会把 `&` 做百分号编码，
+         * 而是按 XML 规则转义。原样拿去请求就是另一个路径，服务端回 404。
+         */
+        internal fun unescapeXml(text: String): String {
+            if (text.indexOf('&') < 0) return text
+            return ENTITY.replace(text) { m ->
+                when (val name = m.groupValues[1]) {
+                    "amp" -> "&"
+                    "lt" -> "<"
+                    "gt" -> ">"
+                    "quot" -> "\""
+                    "apos" -> "'"
+                    else ->
+                        // 数字实体：`&#38;` / `&#x26;`
+                        if (name.startsWith("#x") || name.startsWith("#X")) {
+                            name.substring(2).toIntOrNull(16)?.let { codePoint(it) } ?: m.value
+                        } else if (name.startsWith("#")) {
+                            name.substring(1).toIntOrNull()?.let { codePoint(it) } ?: m.value
+                        } else {
+                            m.value
+                        }
+                }
+            }
+        }
+
+        private fun codePoint(value: Int): String? =
+            if (value in 0..0x10FFFF && value !in 0xD800..0xDFFF) String(Character.toChars(value))
+            else null
 
         /** href 可能是绝对路径也可能是完整 URL，统一拼成完整 URL */
         fun absoluteUrl(baseUrl: String, href: String): String {
@@ -174,7 +210,10 @@ class WebDavClient(
 
         fun decodeName(url: String): String {
             val raw = url.trimEnd('/').substringAfterLast('/')
-            return runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+            // URLDecoder 是给表单用的：会把 + 解成空格，文件名里的加号就丢了。
+            // 路径里的 + 是字面量，先把保护起来再按百分号解码
+            return runCatching { URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8") }
+                .getOrDefault(raw)
         }
 
         private fun normalize(url: String): String = url.trimEnd('/')
