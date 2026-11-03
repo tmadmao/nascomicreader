@@ -169,6 +169,7 @@
     <string name="sources_row_meta">已入库 %1$d 本 · %2$s</string>
     <string name="sources_row_added">新增 %1$d 本 · 共 %2$d 本</string>
     <string name="sources_row_changed">更新 %1$d 本 · 移除 %2$d 本 · 共 %3$d 本</string>
+    <string name="sources_row_mixed">新增 %1$d 本 · 更新 %2$d 本 · 移除 %3$d 本 · 共 %4$d 本</string>
     <string name="sources_row_unchanged">没有新书 · 共 %1$d 本</string>
     <string name="sources_empty">还没有书源。选上面的类型，从这里加第一个。</string>
     <string name="sources_action_local">扫描本机文件夹</string>
@@ -184,6 +185,7 @@
     <string name="sources_scan_done">更新完成「%1$s」，共 %2$d 本</string>
     <string name="sources_scan_added">「%1$s」新增 %2$d 本，现共 %3$d 本</string>
     <string name="sources_scan_changed">「%1$s」更新 %2$d 本、移除 %3$d 本</string>
+    <string name="sources_scan_mixed">「%1$s」新增 %2$d 本、更新 %3$d 本、移除 %4$d 本</string>
     <string name="sources_scan_unchanged">「%1$s」没有新书，共 %2$d 本</string>
     <string name="sources_scan_failed">更新失败：%1$s</string>
     <string name="sources_scan_kept">「%1$s」这次一本都没扫到，原有 %2$d 本已保留。若目录确实空了，请删除这个书源</string>

@@ -1,17 +1,22 @@
 package com.nascomic.reader.format
 
+import android.graphics.Bitmap
 import java.io.InputStream
 
 /**
  * 章回体书源：把多个「章」拼成一本。
  *
- * 一章可以是目录（散图），也可以是一个压缩包。这里只做展平与页码换算，
+ * 一章可以是目录（散图），也可以是一个压缩包或 PDF。这里只做展平与页码换算，
  * 具体怎么读由每个章自己的 [BookSource] 决定。
+ *
+ * PDF 章没有「图片字节」，页面要按尺寸现画，所以这本合集也实现 [RenderedPageSource]：
+ * 落在 PDF 章上的页转发给那一章渲染；落在图片章上的页返回 null，
+ * 调用方按约定退回 [BookSource.openPage] 的字节流路径。
  *
  * 章的书源是**用到才建**。[Part.declaredPages] 给了页数（库里存着上次数的结果）时，
  * 连建都不建——远端三百章的书回来看第二遍，不必再发三百次列目录。
  */
-class MultiChapterSource(private val parts: List<Part>) : BookSource {
+class MultiChapterSource(private val parts: List<Part>) : BookSource, RenderedPageSource {
 
     class Part(
         val title: String,
@@ -68,6 +73,11 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource {
     override fun openPage(page: Int): InputStream {
         val (index, local) = locate(page)
         return parts[index].source.openPage(local)
+    }
+
+    override fun renderPage(page: Int, width: Int, height: Int): Bitmap? {
+        val (index, local) = locate(page)
+        return (parts[index].source as? RenderedPageSource)?.renderPage(local, width, height)
     }
 
     override fun chapterOf(page: Int): Int = locate(page).first

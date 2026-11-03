@@ -321,12 +321,18 @@ class SourcesActivity : AppCompatActivity() {
 
         val delta = lastSync[source.id]
         if (delta != null && source.scanState == SourceEntity.STATE_DONE) {
+            val changed = delta.updated > 0 || delta.removed > 0
             return when {
+                // 有增有改就一样报出来：改名的书是「删一本加一本」，只报新增会让人以为多了
+                delta.added > 0 && changed -> withTime(
+                    getString(R.string.sources_row_mixed, delta.added, delta.updated, delta.removed, books),
+                    state,
+                )
                 delta.added > 0 -> withTime(
                     getString(R.string.sources_row_added, delta.added, books),
                     state,
                 )
-                delta.updated > 0 || delta.removed > 0 ->
+                changed ->
                     getString(R.string.sources_row_changed, delta.updated, delta.removed, books)
                 else -> withTime(getString(R.string.sources_row_unchanged, books), state)
             }
@@ -406,13 +412,18 @@ class SourcesActivity : AppCompatActivity() {
         }
     }
 
-    /** 同步结果的说话方式：补了几本优先，没新书就说没新书，别只丢一个总数 */
+    /** 同步结果的说话方式：增 / 改 / 删都报出来，没新书就说没新书，别只丢一个总数 */
     private fun scanResultText(source: SourceEntity, result: LibraryScanner.Result): String = when {
         // 一本都没扫到不是「成功」，要把「书还在」说清楚，否则用户以为书全丢了
         result.keptAll ->
             getString(R.string.sources_scan_kept, source.label, bookCounts[source.id] ?: 0)
         result.unreachableDirs > 0 ->
             getString(R.string.sources_scan_partial, source.label, result.unreachableDirs)
+        result.added > 0 && (result.updated > 0 || result.removed > 0) ->
+            getString(
+                R.string.sources_scan_mixed,
+                source.label, result.added, result.updated, result.removed,
+            )
         result.added > 0 ->
             getString(R.string.sources_scan_added, source.label, result.added, result.found)
         result.updated > 0 || result.removed > 0 ->

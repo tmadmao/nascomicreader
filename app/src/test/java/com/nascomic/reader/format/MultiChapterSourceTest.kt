@@ -1,6 +1,8 @@
 package com.nascomic.reader.format
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -96,5 +98,35 @@ class MultiChapterSourceTest {
         )
         assertEquals(6, book.pageCount)
         assertEquals(2, opened)
+    }
+
+    /** 会现画的假书源：记下收到的页号，位图统一给 null（单测里画不了） */
+    private class FakeRendered(override val pageCount: Int) : BookSource, RenderedPageSource {
+        val seen = ArrayList<Int>()
+        override val chapters: List<ChapterInfo> get() = listOf(ChapterInfo(0, "r", pageCount))
+        override fun pageName(page: Int) = "r-$page"
+        override fun openPage(page: Int): InputStream = error("现画来源没有字节流")
+        override fun chapterOf(page: Int) = 0
+        override fun firstPageOfChapter(chapter: Int) = 0
+        override fun close() = Unit
+        override fun renderPage(page: Int, width: Int, height: Int): android.graphics.Bitmap? {
+            seen += page
+            return null
+        }
+    }
+
+    @Test
+    fun `渲染请求落到正确的章，图片章退回 null`() {
+        val rendered = FakeRendered(2)
+        val book = MultiChapterSource.of(
+            "画" to rendered,
+            "图" to FakeSource("img", 2),
+        )
+        // 合集整体要有现画身份，PDF 章的页才走得通渲染
+        assertTrue(book is RenderedPageSource)
+        book.renderPage(1, 100, 100)      // 第一章第 1 页
+        assertEquals(listOf(1), rendered.seen)
+        // 图片章的页渲染不了，返回 null 让调用方走字节流
+        assertNull(book.renderPage(2, 100, 100))
     }
 }

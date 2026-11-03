@@ -858,10 +858,10 @@ class ReadingActivity : AppCompatActivity() {
             sourceLock.withLock {
                 if (sourceClosed) {
                     null
-                } else if (src is RenderedPageSource) {
-                    src.renderPage(index, targetW, targetH)
                 } else {
-                    PageBitmapLoader.load(src.openPage(index), targetW, targetH, decodeConfig())
+                    // 现画来源先渲染；章回体里图片章的页渲染不了（返回 null），退回字节流
+                    (src as? RenderedPageSource)?.renderPage(index, targetW, targetH)
+                        ?: PageBitmapLoader.load(src.openPage(index), targetW, targetH, decodeConfig())
                 }
             }
         }.getOrNull() ?: return null

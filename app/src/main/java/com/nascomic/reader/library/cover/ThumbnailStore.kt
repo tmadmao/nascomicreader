@@ -44,14 +44,13 @@ class ThumbnailStore(private val context: Context) {
             bookSource.use { src ->
                 if (src.pageCount == 0) return@use null
                 val index = book.coverPage.coerceIn(0, src.pageCount - 1)
-                // PDF 这类来源没有字节流，直接按尺寸渲染
-                val decoded = if (src is RenderedPageSource) {
-                    src.renderPage(index, targetWidth, targetWidth * 3 / 2)
-                } else {
-                    src.openPage(index).use {
+                // PDF 这类来源没有字节流，直接按尺寸渲染；返回 null（图片章）退回字节流
+                val decoded = (src as? RenderedPageSource)
+                    ?.renderPage(index, targetWidth, targetWidth * 3 / 2)
+                    ?: src.openPage(index).use {
                         PageBitmapLoader.load(it, targetWidth, targetWidth * 3 / 2)
                     }
-                } ?: return@use null
+                ?: return@use null
 
                 val scaled = scaleToWidth(decoded, targetWidth)
                 val out = fileOf(book.id)
