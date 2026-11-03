@@ -1,7 +1,7 @@
 package com.nascomic.reader.library.scan
 
 import androidx.room.withTransaction
-import com.nascomic.reader.core.text.NaturalSort
+import com.nascomic.reader.core.text.ChapterOrder
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 
@@ -56,7 +56,7 @@ class ChapterWriter(private val db: ReaderDatabase) {
     }
 
     /**
-     * 章序与名称自然序对不上时（旧版远端来源留下的乱序）就地改回来，
+     * 章序与扫描时的排列对不上时（旧版远端来源留下的乱序）就地改回来，
      * 顺手把进度与书签搬过去。本来就对的话一次库都不写。
      *
      * @return 修好之后的章表
@@ -64,9 +64,7 @@ class ChapterWriter(private val db: ReaderDatabase) {
     suspend fun ensureNaturalOrder(bookId: Long, chapters: List<ChapterEntity>): List<ChapterEntity> {
         if (chapters.size < 2) return chapters
 
-        val ordered = chapters.sortedWith { a, b ->
-            NaturalSort.key(a.title).compareTo(NaturalSort.key(b.title))
-        }
+        val ordered = chapters.sortedWith(ChapterOrder.comparator { it.title })
         if (ordered.map { it.id } == chapters.map { it.id }) return chapters
 
         write(bookId, ordered.map { Draft(it.title, it.chapterRef, it.chapterKind) })

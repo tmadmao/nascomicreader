@@ -1,5 +1,6 @@
 package com.nascomic.reader.format
 
+import com.nascomic.reader.core.text.ChapterOrder
 import com.nascomic.reader.core.text.NaturalSort
 import java.io.InputStream
 
@@ -50,7 +51,7 @@ class FolderBookSource private constructor(
             val images = entries.filter { (name, _) -> ImageNames.isImage(name) }
 
             val grouped = images.groupBy { (name, _) -> chapterKeyOf(name) }
-            val order = NaturalSort.sortedByName(grouped.keys.toList()) { it }
+            val order = grouped.keys.toList().sortedWith(ChapterOrder.comparator { it })
 
             val flatRefs = ArrayList<String>(images.size)
             val starts = ArrayList<Int>(order.size)

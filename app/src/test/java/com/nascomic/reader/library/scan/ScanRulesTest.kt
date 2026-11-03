@@ -68,7 +68,7 @@ class ScanRulesTest {
         )
         assertEquals(
             listOf("01", "02", "16", "27"),
-            ScanRules.sortUnits(asListed, { it.name }, { it.isDir })
+            ScanRules.sortUnits(asListed) { if (it.isDir) it.name else ScanRules.titleOf(it.name) }
                 .map { it.name.substringAfterLast("vol_") },
         )
     }

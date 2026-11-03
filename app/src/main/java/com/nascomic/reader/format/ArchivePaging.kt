@@ -1,5 +1,6 @@
 package com.nascomic.reader.format
 
+import com.nascomic.reader.core.text.ChapterOrder
 import com.nascomic.reader.core.text.NaturalSort
 
 /**
@@ -31,7 +32,7 @@ object ArchivePaging {
     ): Layout<T> {
         val images = items.filter { !isDirectory(it) && ImageNames.isImage(nameOf(it)) }
         val grouped = images.groupBy { chapterKeyOf(nameOf(it)) }
-        val order = NaturalSort.sortedByName(grouped.keys.toList()) { it }
+        val order = grouped.keys.toList().sortedWith(ChapterOrder.comparator { it })
 
         val flat = ArrayList<T>(images.size)
         val starts = ArrayList<Int>(order.size)

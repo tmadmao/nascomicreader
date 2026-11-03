@@ -427,12 +427,10 @@ class LibraryScanner(
             return listOf(RemoteBook(ref, name, BookEntity.FORMAT_FOLDER, emptyList()))
         }
 
-        // 服务端给什么顺序就是什么顺序，章会乱：这里自己按名称自然序排一遍
+        // 服务端给什么顺序就是什么顺序，章会乱：这里自己按章的先后排一遍
         val units = ScanRules.sortUnits(
             children.filter { it.isDir || ScanRules.isArchive(it.name) || ScanRules.isPdf(it.name) },
-            nameOf = { it.name },
-            isDirOf = { it.isDir },
-        )
+        ) { if (it.isDir) it.name else ScanRules.titleOf(it.name) }
         if (units.isEmpty()) return emptyList()
 
         // 子项是「章」还是「各自一本」：有文件当章，或某个子目录里已经直接是图片，就按章算
