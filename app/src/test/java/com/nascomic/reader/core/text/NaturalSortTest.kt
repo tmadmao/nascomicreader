@@ -84,4 +84,101 @@ class NaturalSortTest {
         assertEquals(once, twice)
         assertEquals(listOf("a2", "a10", "b2"), once)
     }
+
+    @Test
+    fun `中文数字当序号`() {
+        val names = listOf("第十话", "第二话", "第一话", "第九话", "第三话", "第十二话", "第二十话")
+        assertEquals(
+            listOf("第一话", "第二话", "第三话", "第九话", "第十话", "第十二话", "第二十话"),
+            names.sortedWith(NaturalSort.comparator())
+        )
+    }
+
+    @Test
+    fun `繁体与日文量词同样认`() {
+        assertEquals(
+            listOf("第一話", "第二話", "第十話"),
+            listOf("第十話", "第一話", "第二話").sortedWith(NaturalSort.comparator())
+        )
+        assertEquals(
+            listOf("其ノ一", "其ノ二", "其ノ十"),
+            listOf("其ノ十", "其ノ一", "其ノ二").sortedWith(NaturalSort.comparator())
+        )
+        assertEquals(
+            listOf("卷一", "卷二", "卷十"),
+            listOf("卷十", "卷一", "卷二").sortedWith(NaturalSort.comparator())
+        )
+    }
+
+    @Test
+    fun `中文数字与阿拉伯数字混排`() {
+        val names = listOf("第10话", "第二话", "第03话", "第四话", "第5话", "第六话")
+        assertEquals(
+            listOf("第二话", "第03话", "第四话", "第5话", "第六话", "第10话"),
+            names.sortedWith(NaturalSort.comparator())
+        )
+    }
+
+    @Test
+    fun `百千与上千的话数`() {
+        assertEquals(
+            listOf("第99话", "第100话", "第999话", "第1000话"),
+            listOf("第1000话", "第999话", "第100话", "第99话").sortedWith(NaturalSort.comparator())
+        )
+        assertEquals(
+            listOf("第百话", "第两百话"),
+            listOf("第两百话", "第百话").sortedWith(NaturalSort.comparator())
+        )
+    }
+
+    @Test
+    fun `罗马数字当卷号`() {
+        val names = listOf("Vol.X", "Vol.IV", "Vol.II", "Vol.I", "Vol.IX", "Vol.V", "Vol.VIII")
+        assertEquals(
+            listOf("Vol.I", "Vol.II", "Vol.IV", "Vol.V", "Vol.VIII", "Vol.IX", "Vol.X"),
+            names.sortedWith(NaturalSort.comparator())
+        )
+    }
+
+    @Test
+    fun `不是卷号的罗马数字不动它`() {
+        // 整词不是罗马字符（CLAMP / DIVE），或没有量词语境（MIX），都不该被换成数字
+        assertEquals("clamp", NaturalSort.key("CLAMP"))
+        assertEquals("dive", NaturalSort.key("DIVE"))
+        assertEquals("mix", NaturalSort.key("MIX"))
+        // 单个 X 也留作字母
+        assertEquals("x", NaturalSort.key("X"))
+    }
+
+    @Test
+    fun `书名里的中文数字不当序号`() {
+        // 没有量词语境，键里不该冒出数字段：书架按名称排序时，这类书名不该跑到数字开头那一堆
+        assertEquals("一人之下", NaturalSort.key("一人之下"))
+        assertEquals("三体", NaturalSort.key("三体"))
+        assertEquals("二十世纪少年", NaturalSort.key("二十世纪少年"))
+    }
+
+    @Test
+    fun `季与集分开排`() {
+        val names = listOf("第一季 - 02", "第二季 - 01", "第一季 - 01", "第三季 - 01")
+        assertEquals(
+            listOf("第一季 - 01", "第一季 - 02", "第二季 - 01", "第三季 - 01"),
+            names.sortedWith(NaturalSort.comparator())
+        )
+    }
+
+    @Test
+    fun `字幕组常见的一长串命名`() {
+        val names = listOf(
+            "[VCB-Studio] Title [03][Ma10p_1080p][x265_flac].mkv",
+            "[VCB-Studio] Title [01][Ma10p_1080p][x265_flac].mkv",
+            "[VCB-Studio] Title [10][Ma10p_1080p][x265_flac].mkv",
+            "[VCB-Studio] Title [02][Ma10p_1080p][x265_flac].mkv",
+        )
+        assertEquals(
+            listOf(1, 2, 3, 10),
+            names.sortedWith(NaturalSort.comparator())
+                .map { Regex("\\[(\\d+)]\\[Ma10p").find(it)!!.groupValues[1].toInt() }
+        )
+    }
 }
