@@ -774,8 +774,9 @@ class ReadingActivity : AppCompatActivity() {
         val chapter = if (chaptered) src.chapterOf(index) else 0
         val chapterFirst = if (chaptered) src.firstPageOfChapter(chapter) else 0
         val chapterLast = if (chaptered) {
-            val next = src.firstPageOfChapter(chapter + 1)
-            (if (next > chapterFirst) next - 1 else total - 1).coerceAtMost(total - 1)
+            SpreadPlan.chapterLast(
+                chapter, chapterFirst, src.chapters.size, src::firstPageOfChapter, total,
+            )
         } else {
             total - 1
         }

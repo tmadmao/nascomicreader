@@ -61,4 +61,32 @@ class SpreadPlanTest {
         // 越界夹到最后一页；首张单页之后从 1 起两页一组，9 正好是组首
         assertEquals(9..9, range(99, 0, 9, SpreadPlan.ORDER_FIRST_SINGLE))
     }
+
+    @Test
+    fun `章尾计算：中间章取下一章前一页`() {
+        // 三章各 3 页：第一章 0..2（下一章首页 3 → 尾 2）
+        assertEquals(
+            2,
+            SpreadPlan.chapterLast(0, 0, 3, { ch -> ch * 3 }, 9),
+        )
+        // 第二章 3..5
+        assertEquals(
+            5,
+            SpreadPlan.chapterLast(1, 3, 3, { ch -> ch * 3 }, 9),
+        )
+    }
+
+    @Test
+    fun `章尾计算：最后一章没有下一章，收在整本尾`() {
+        // 只有一章的单 PDF 书：不能再问「下一章首页」，那是越界崩溃
+        assertEquals(
+            8,
+            SpreadPlan.chapterLast(0, 0, 1, { error("不该问下一章") }, 9),
+        )
+        // 多章书的最后一章同样兜底
+        assertEquals(
+            8,
+            SpreadPlan.chapterLast(2, 6, 3, { ch -> ch * 3 }, 9),
+        )
+    }
 }

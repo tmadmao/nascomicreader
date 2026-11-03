@@ -57,6 +57,22 @@ object SpreadPlan {
     }
 
     /**
+     * 本章最后一页的全局页号：下一章首页的前一页。
+     * 已是最后一章（[chapter] + 1 不在章数内）就没有「下一章」，整本收尾兜底——
+     * 这里越界一次，整本书都打不开。
+     */
+    fun chapterLast(
+        chapter: Int,
+        chapterFirst: Int,
+        chapterCount: Int,
+        firstPageOf: (Int) -> Int,
+        total: Int,
+    ): Int {
+        val next = (chapter + 1).takeIf { it < chapterCount }?.let(firstPageOf) ?: -1
+        return (if (next > chapterFirst) next - 1 else total - 1).coerceAtMost(total - 1)
+    }
+
+    /**
      * 从 [from] 起两页一组，返回包含 [page] 的那一组。
      * 组的起点落在 from、from+2、from+4……上；最后一组不足两页就只取一页。
      */
