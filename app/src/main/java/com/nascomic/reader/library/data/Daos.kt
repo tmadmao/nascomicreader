@@ -212,6 +212,10 @@ interface BookmarkDao {
     @Query("DELETE FROM bookmarks WHERE book_id = :bookId AND chapter_ordinal = :chapter AND page_in_chapter = :page")
     suspend fun deleteAt(bookId: Long, chapter: Int, page: Int)
 
+    /** 重扫后章序变了时，把书签挪到新的章号上（页内页不变，章的内容没动） */
+    @Query("UPDATE bookmarks SET chapter_ordinal = :chapter WHERE id = :id")
+    suspend fun moveToChapter(id: Long, chapter: Int)
+
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun delete(id: Long)
 }

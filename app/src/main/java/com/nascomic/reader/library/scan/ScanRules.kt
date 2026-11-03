@@ -57,13 +57,36 @@ object ScanRules {
      * 顺序固定按名称自然序：`第2话` 排在 `第10话` 前面。想倒着看是阅读时的事，
      * 详情页的目录右侧有正序 / 倒序，不必在扫描阶段再定一套。
      */
-    fun chapterUnitsOf(children: List<ScanNode>): List<ScanNode> {
-        val units = children.filter { it.isDir || isArchive(it.name) || isPdf(it.name) }
-        return units.sortedWith { a, b ->
-            com.nascomic.reader.core.text.NaturalSort.nameKey(a.name)
-                .compareTo(com.nascomic.reader.core.text.NaturalSort.nameKey(b.name))
+    fun chapterUnitsOf(children: List<ScanNode>): List<ScanNode> =
+        sortUnits(
+            children.filter { it.isDir || isArchive(it.name) || isPdf(it.name) },
+            nameOf = { it.name },
+            isDirOf = { it.isDir },
+        )
+
+    /**
+     * 把一批候选项按名称自然序排好。
+     *
+     * 本地与远端两个扫描分支都要用：远端列目录返回的顺序由服务端决定（不少 NAS 按
+     * 目录项在磁盘上的顺序给），不排就是乱的。
+     */
+    fun <T> sortUnits(items: List<T>, nameOf: (T) -> String, isDirOf: (T) -> Boolean): List<T> =
+        items.sortedWith { a, b ->
+            unitKey(nameOf(a), isDirOf(a)).compareTo(unitKey(nameOf(b), isDirOf(b)))
         }
-    }
+
+    /**
+     * 章单元的排序键。
+     *
+     * 目录名整串参与比较：`vol.01`、`5.1` 里的点是名字的一部分，切掉就只剩 `vol`，
+     * 一卷卷的书会全部并列、排序退化成列目录时的顺序。只有文件才把扩展名去掉。
+     */
+    private fun unitKey(name: String, isDir: Boolean): String =
+        if (isDir) {
+            com.nascomic.reader.core.text.NaturalSort.key(name)
+        } else {
+            com.nascomic.reader.core.text.NaturalSort.nameKey(name)
+        }
 
     /** 目录的直接子项里，可作为「书」的条目 */
     fun bookCandidates(children: List<ScanNode>): List<ScanNode> =

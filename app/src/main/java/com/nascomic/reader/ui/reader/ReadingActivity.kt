@@ -90,6 +90,7 @@ class ReadingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityReaderBinding
     private val db by lazy { ReaderDatabase.get(this) }
+    private val chapterWriter by lazy { com.nascomic.reader.library.scan.ChapterWriter(db) }
     private val opener by lazy { BookOpener(this) }
 
     /** 按书取参数：这本书单独调过的项优先，其余回落到全局默认 */
@@ -300,7 +301,11 @@ class ReadingActivity : AppCompatActivity() {
             try {
                 val book = db.bookDao().get(bookId) ?: error("书不存在")
                 val src = db.sourceDao().get(book.sourceId) ?: error("来源不存在")
-                val chapters = db.chapterDao().forBook(bookId)
+                // 章序与名称自然序对不上（旧版远端来源留下的乱序）就先改正，
+                // 免得抽屉里的目录与前后翻页都不按话走
+                val chapters = chapterWriter.ensureNaturalOrder(
+                    bookId, db.chapterDao().forBook(bookId)
+                )
 
                 val opened = withContext(Dispatchers.IO) {
                     opener.open(book, src, chapters)

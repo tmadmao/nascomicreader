@@ -40,6 +40,9 @@ class LibraryScanner(
     /** 扫描规则：封面取第几页、同名书去重、章的排序 */
     private val prefs by lazy { com.nascomic.reader.settings.AppPrefs(context) }
 
+    /** 写章：重建章表、带回量过的页数、把进度与书签搬到新的章号上 */
+    private val chapters by lazy { ChapterWriter(db) }
+
     /** 扫描过程中的回话口：列目录（不知道要多久）与入库（能报进度）两个阶段 */
     interface Listener {
         fun onListing() {}
@@ -162,21 +165,19 @@ class LibraryScanner(
 
                 if (candidate.chapters.isNotEmpty()) {
                     chaptered++
-                    db.chapterDao().replaceFor(
+                    chapters.write(
                         bookId,
-                        candidate.chapters.mapIndexed { index, unit ->
-                            ChapterEntity(
-                                bookId = bookId,
-                                ordinal = index,
+                        candidate.chapters.map { unit ->
+                            ChapterWriter.Draft(
                                 title = ScanRules.titleOf(unit),
-                                chapterRef = unit.docId,
-                                chapterKind = when {
+                                ref = unit.docId,
+                                kind = when {
                                     unit.isDir -> ChapterEntity.KIND_FOLDER
                                     ScanRules.isPdf(unit.name) -> ChapterEntity.KIND_PDF
                                     else -> ChapterEntity.KIND_ARCHIVE
                                 },
                             )
-                        }
+                        },
                     )
                 }
             }
@@ -350,17 +351,9 @@ class LibraryScanner(
         for (book in books.filter { it.chapters.isNotEmpty() }) {
             val bookId = idsByRef[book.docRef] ?: continue
             chaptered++
-            db.chapterDao().replaceFor(
+            chapters.write(
                 bookId,
-                book.chapters.mapIndexed { index, ch ->
-                    ChapterEntity(
-                        bookId = bookId,
-                        ordinal = index,
-                        title = ch.title,
-                        chapterRef = ch.ref,
-                        chapterKind = ch.kind,
-                    )
-                }
+                book.chapters.map { ch -> ChapterWriter.Draft(ch.title, ch.ref, ch.kind) },
             )
         }
 
@@ -434,9 +427,12 @@ class LibraryScanner(
             return listOf(RemoteBook(ref, name, BookEntity.FORMAT_FOLDER, emptyList()))
         }
 
-        val units = children.filter {
-            it.isDir || ScanRules.isArchive(it.name) || ScanRules.isPdf(it.name)
-        }
+        // 服务端给什么顺序就是什么顺序，章会乱：这里自己按名称自然序排一遍
+        val units = ScanRules.sortUnits(
+            children.filter { it.isDir || ScanRules.isArchive(it.name) || ScanRules.isPdf(it.name) },
+            nameOf = { it.name },
+            isDirOf = { it.isDir },
+        )
         if (units.isEmpty()) return emptyList()
 
         // 子项是「章」还是「各自一本」：有文件当章，或某个子目录里已经直接是图片，就按章算
