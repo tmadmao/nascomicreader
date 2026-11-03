@@ -72,6 +72,11 @@ class ZipCatalog private constructor(
 
     companion object {
         private const val EOCD_SIGNATURE = 0x06054b50
+        private const val ZIP64_EOCD_SIGNATURE = 0x06064b50
+        private const val ZIP64_LOCATOR_SIGNATURE = 0x07064b50
+
+        /** 中央目录本身也是整块读进内存的，超过这个数就是坏包——正常几千页也就几 MB */
+        private const val MAX_CENTRAL_DIRECTORY = 256L * 1024 * 1024
         private const val CENTRAL_HEADER_SIGNATURE = 0x02014b50
         private const val LOCAL_HEADER_SIGNATURE = 0x04034b50
         private const val METHOD_STORED = 0
@@ -102,27 +107,34 @@ class ZipCatalog private constructor(
             val eocdAt = findEocd(tail)
                 ?: throw ZipFormatException("找不到压缩包目录（文件可能被截断）")
 
-            val eocd = ByteBuffer.wrap(tail, eocdAt, tailLen - eocdAt).order(ByteOrder.LITTLE_ENDIAN)
-            eocd.position(eocdAt + 10)
-            val totalEntries = eocd.short.toInt() and 0xFFFF
-            eocd.position(eocdAt + 16)
-            val cdOffset = eocd.int.toLong() and 0xFFFFFFFFL
+            val eocd = ByteBuffer.wrap(tail).order(ByteOrder.LITTLE_ENDIAN)
+            val totalEntries16 = eocd.getShort(eocdAt + 10).toInt() and 0xFFFF
+            val cdSize32 = eocd.getInt(eocdAt + 12).toLong() and 0xFFFFFFFFL
+            val cdOffset32 = eocd.getInt(eocdAt + 16).toLong() and 0xFFFFFFFFL
 
-            if (totalEntries == 0xFFFF || cdOffset == 0xFFFFFFFFL) {
-                throw ZipFormatException("暂不支持 ZIP64 格式")
+            var totalEntries = totalEntries16.toLong()
+            var cdSize = cdSize32
+            var cdOffset = cdOffset32
+
+            // 三个字段任意一个顶到上限，就说明真实值在 ZIP64 的结束记录里
+            if (totalEntries16 == 0xFFFF || cdSize32 == 0xFFFFFFFFL || cdOffset32 == 0xFFFFFFFFL) {
+                val zip64 = readZip64End(data, tailStart + eocdAt)
+                totalEntries = zip64.totalEntries
+                cdSize = zip64.cdSize
+                cdOffset = zip64.cdOffset
             }
-            if (cdOffset >= data.size) throw ZipFormatException("目录偏移越界")
 
-            // 中央目录大小 = EOCD 里记录的值；从这里读到 EOCD 之前
-            eocd.position(eocdAt + 12)
-            val cdSize = eocd.int.toLong() and 0xFFFFFFFFL
+            if (cdOffset < 0 || cdOffset >= data.size) throw ZipFormatException("目录偏移越界")
+            if (cdSize <= 0 || cdSize > MAX_CENTRAL_DIRECTORY) throw ZipFormatException("目录大小异常")
             if (cdOffset + cdSize > data.size) throw ZipFormatException("中央目录越界")
+            if (totalEntries > cdSize) throw ZipFormatException("条目数异常")
 
             val cd = data.readFully(cdOffset, cdSize.toInt())
             val buf = ByteBuffer.wrap(cd).order(ByteOrder.LITTLE_ENDIAN)
 
-            val out = ArrayList<Entry>(totalEntries)
-            repeat(totalEntries) {
+            val out = ArrayList<Entry>(totalEntries.toInt())
+            var seen = 0L
+            while (seen < totalEntries) {
                 if (buf.remaining() < 46) throw ZipFormatException("中央目录条目不足")
                 val sig = buf.int
                 if (sig != CENTRAL_HEADER_SIGNATURE) throw ZipFormatException("中央目录条目签名不符")
@@ -131,18 +143,32 @@ class ZipCatalog private constructor(
                 val flags = buf.short.toInt() and 0xFFFF
                 val method = buf.short.toInt() and 0xFFFF
                 buf.position(buf.position() + 8)          // time + date + crc
-                val compSize = buf.int.toLong() and 0xFFFFFFFFL
-                val uncompSize = buf.int.toLong() and 0xFFFFFFFFL
+                var compSize = buf.int.toLong() and 0xFFFFFFFFL
+                var uncompSize = buf.int.toLong() and 0xFFFFFFFFL
                 val nameLen = buf.short.toInt() and 0xFFFF
                 val extraLen = buf.short.toInt() and 0xFFFF
                 val commentLen = buf.short.toInt() and 0xFFFF
                 buf.position(buf.position() + 8)          // disk start + internal/external attr
-                val localOffset = buf.int.toLong() and 0xFFFFFFFFL
+                var localOffset = buf.int.toLong() and 0xFFFFFFFFL
 
-                if (buf.remaining() < nameLen) throw ZipFormatException("条目名长度越界")
+                if (buf.remaining() < nameLen + extraLen + commentLen) {
+                    throw ZipFormatException("条目名长度越界")
+                }
                 val rawName = ByteArray(nameLen)
                 buf.get(rawName)
-                buf.position(buf.position() + extraLen + commentLen)
+
+                if (extraLen > 0) {
+                    val extra = ByteArray(extraLen)
+                    buf.get(extra)
+                    // 只有写满 0xFFFFFFFF 的字段才在 ZIP64 extra 里，且顺序固定
+                    if (compSize == 0xFFFFFFFFL || uncompSize == 0xFFFFFFFFL || localOffset == 0xFFFFFFFFL) {
+                        val z = readZip64Extra(extra, uncompSize, compSize, localOffset)
+                        uncompSize = z[0]
+                        compSize = z[1]
+                        localOffset = z[2]
+                    }
+                }
+                buf.position(buf.position() + commentLen)
 
                 val utf8Flag = flags and 0x0800 != 0
                 out += Entry(
@@ -152,8 +178,67 @@ class ZipCatalog private constructor(
                     uncompressedSize = uncompSize,
                     localHeaderOffset = localOffset,
                 )
+                seen++
             }
             return out
+        }
+
+        private class Zip64End(val totalEntries: Long, val cdSize: Long, val cdOffset: Long)
+
+        /**
+         * ZIP64 的结束记录：EOCD 前面 20 字节是一个定位器，里面存着结束记录的绝对偏移。
+         */
+        private fun readZip64End(data: RandomAccessData, eocdOffset: Long): Zip64End {
+            val locatorAt = eocdOffset - 20
+            if (locatorAt < 0) throw ZipFormatException("ZIP64 定位记录缺失")
+
+            val locator = ByteBuffer.wrap(data.readFully(locatorAt, 20)).order(ByteOrder.LITTLE_ENDIAN)
+            if (locator.int != ZIP64_LOCATOR_SIGNATURE) throw ZipFormatException("ZIP64 定位记录签名不符")
+            locator.position(8)
+            val recordAt = locator.long
+
+            if (recordAt < 0 || recordAt + 56 > data.size) throw ZipFormatException("ZIP64 结束记录越界")
+            val record = ByteBuffer.wrap(data.readFully(recordAt, 56)).order(ByteOrder.LITTLE_ENDIAN)
+            if (record.int != ZIP64_EOCD_SIGNATURE) throw ZipFormatException("ZIP64 结束记录签名不符")
+
+            record.position(32)
+            val totalEntries = record.long
+            val cdSize = record.long
+            val cdOffset = record.long
+            return Zip64End(totalEntries, cdSize, cdOffset)
+        }
+
+        /**
+         * 单个条目的 ZIP64 扩展字段（header id = 0x0001）。
+         *
+         * 里面的值只覆盖「中央目录里写不下」的那几个字段，顺序固定为
+         * 原始大小 → 压缩大小 → 本地头偏移 → 起始盘号，取几个由调用方决定。
+         */
+        private fun readZip64Extra(
+            extra: ByteArray,
+            uncompSize: Long,
+            compSize: Long,
+            localOffset: Long,
+        ): LongArray {
+            var outUncomp = uncompSize
+            var outComp = compSize
+            var outOffset = localOffset
+
+            val buf = ByteBuffer.wrap(extra).order(ByteOrder.LITTLE_ENDIAN)
+            while (buf.remaining() >= 4) {
+                val id = buf.short.toInt() and 0xFFFF
+                val size = buf.short.toInt() and 0xFFFF
+                if (buf.remaining() < size) break
+                val end = buf.position() + size
+                if (id == 0x0001) {
+                    if (outUncomp == 0xFFFFFFFFL && buf.position() + 8 <= end) outUncomp = buf.long
+                    if (outComp == 0xFFFFFFFFL && buf.position() + 8 <= end) outComp = buf.long
+                    if (outOffset == 0xFFFFFFFFL && buf.position() + 8 <= end) outOffset = buf.long
+                    return longArrayOf(outUncomp, outComp, outOffset)
+                }
+                buf.position(end)
+            }
+            return longArrayOf(outUncomp, outComp, outOffset)
         }
 
         private fun findEocd(tail: ByteArray): Int? {

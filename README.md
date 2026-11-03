@@ -7,7 +7,7 @@
 
 到 [Releases](https://github.com/tmadmao/nascomicreader/releases/latest) 下最新版本的安装包。
 
-Android 7.0 及以上。当前版本 1.1.1。
+Android 7.0 及以上。当前版本 1.1.2。
 
 ## 界面
 

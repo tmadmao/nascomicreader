@@ -120,4 +120,74 @@ class ZipCatalogTest {
         }
         override fun close() = raf.close()
     }
+
+    /**
+     * 造一个 ZIP64 包：单条目，中央目录里的三个字段全写 0xFFFFFFFF，
+     * 真实值放进 ZIP64 扩展字段与 ZIP64 结束记录里。
+     */
+    private fun zip64Bytes(payload: ByteArray, name: String = "a.jpg"): ByteArray {
+        val nameBytes = name.toByteArray()
+        val out = ByteArrayOutputStream()
+        fun u16(v: Int) = byteArrayOf((v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte())
+        fun u32(v: Long) = byteArrayOf(
+            (v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte(),
+            ((v shr 16) and 0xFF).toByte(), ((v shr 24) and 0xFF).toByte(),
+        )
+        fun u64(v: Long) = u32(v and 0xFFFFFFFFL) + u32(v ushr 32)
+
+        // 本地头（30 + 名字）+ 数据
+        out.write(u32(0x04034b50)); out.write(u16(45)); out.write(u16(0)); out.write(u16(0))
+        out.write(u16(0)); out.write(u16(0)); out.write(u32(0))
+        out.write(u32(payload.size.toLong())); out.write(u32(payload.size.toLong()))
+        out.write(u16(nameBytes.size)); out.write(u16(0)); out.write(nameBytes); out.write(payload)
+
+        // 中央目录条目：大小与偏移这里写 0xFFFFFFFF，真值走 ZIP64 扩展字段
+        val cdStart = out.size().toLong()
+        val extra = u16(0x0001) + u16(24) + u64(payload.size.toLong()) +
+            u64(payload.size.toLong()) + u64(0L)
+        out.write(u32(0x02014b50)); out.write(u16(45)); out.write(u16(45)); out.write(u16(0))
+        out.write(u16(0)); out.write(u16(0)); out.write(u16(0)); out.write(u32(0))
+        out.write(u32(0xFFFFFFFFL)); out.write(u32(0xFFFFFFFFL))
+        out.write(u16(nameBytes.size)); out.write(u16(extra.size)); out.write(u16(0))
+        out.write(u16(0)); out.write(u16(0)); out.write(u32(0))
+        out.write(u32(0xFFFFFFFFL)); out.write(nameBytes); out.write(extra)
+        val cdSize = out.size().toLong() - cdStart
+
+        // ZIP64 结束记录 + 定位器
+        val zip64At = out.size().toLong()
+        out.write(u32(0x06064b50)); out.write(u64(44)); out.write(u16(45)); out.write(u16(45))
+        out.write(u32(0)); out.write(u32(0)); out.write(u64(1)); out.write(u64(1))
+        out.write(u64(cdSize)); out.write(u64(cdStart))
+        out.write(u32(0x07064b50)); out.write(u32(0)); out.write(u64(zip64At)); out.write(u32(1))
+
+        // 传统 EOCD：三个字段全部顶到上限，逼解析器去读 ZIP64
+        out.write(u32(0x06054b50)); out.write(u16(0)); out.write(u16(0))
+        out.write(u16(0xFFFF)); out.write(u16(0xFFFF))
+        out.write(u32(0xFFFFFFFFL)); out.write(u32(0xFFFFFFFFL)); out.write(u16(0))
+        return out.toByteArray()
+    }
+
+    @Test
+    fun `ZIP64 包能读出条目与真实大小`() {
+        val payload = "hello".toByteArray()
+        val catalog = ZipCatalog.open(MemData(zip64Bytes(payload)))
+        catalog.use {
+            assertEquals(1, it.entries.size)
+            val e = it.entries.first()
+            assertEquals("a.jpg", e.name)
+            assertEquals(5L, e.compressedSize)
+            assertEquals(5L, e.uncompressedSize)
+            assertEquals(0L, e.localHeaderOffset)
+            assertArrayEquals(payload, it.open(e).use { s -> s.readBytes() })
+        }
+    }
+
+    @Test
+    fun `ZIP64 的定位记录坏了会报错而不是当成空包`() {
+        val bytes = zip64Bytes("hello".toByteArray())
+        // 把定位器签名抹掉
+        val at = bytes.size - 22 - 20
+        bytes[at] = 0
+        assertThrows(ZipFormatException::class.java) { ZipCatalog.open(MemData(bytes)) }
+    }
 }
