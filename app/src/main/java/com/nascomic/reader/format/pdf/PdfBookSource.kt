@@ -69,6 +69,8 @@ class PdfBookSource(
                 pdfPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 bitmap
             }
+        }.onFailure {
+            android.util.Log.w("PdfBookSource", "渲染第 $page 页失败（目标 ${width}x$height）", it)
         }.getOrNull()
     }
 

@@ -65,7 +65,14 @@ class BookOpener(private val context: Context) {
     /** 建好书源，并把 backend 的生命周期绑上去；中途失败也要把连接还掉 */
     private inline fun openWith(backend: RemoteBackend, open: (RemoteBackend) -> BookSource): BookSource =
         try {
-            RemoteBookSource(open(backend), backend)
+            val inner = open(backend)
+            // PDF 这类「按尺寸现画」的书源必须保住 RenderedPageSource 这个身份，
+            // 否则阅读页会去调 openPage 拿字节流，而那条路对它是空的
+            if (inner is RenderedPageSource) {
+                RemoteRenderedSource(inner, inner, backend)
+            } else {
+                RemoteBookSource(inner, backend)
+            }
         } catch (e: Throwable) {
             runCatching { backend.close() }
             throw e
@@ -128,6 +135,26 @@ class BookOpener(private val context: Context) {
         private val inner: BookSource,
         private val backend: RemoteBackend,
     ) : BookSource by inner {
+        override fun close() {
+            runCatching { inner.close() }
+            runCatching { backend.close() }
+        }
+    }
+
+    /**
+     * 远程的「现画」书源（PDF）：除了还连接，还要把 [RenderedPageSource] 一起转出去。
+     *
+     * 委托 `BookSource by inner` 只会带上 BookSource 那一半接口，渲染能力会在包装时丢掉，
+     * 阅读页于是按字节流去解，结果是一页都出不来。
+     */
+    private class RemoteRenderedSource(
+        private val inner: BookSource,
+        private val renderer: RenderedPageSource,
+        private val backend: RemoteBackend,
+    ) : BookSource by inner, RenderedPageSource {
+        override fun renderPage(page: Int, width: Int, height: Int) =
+            renderer.renderPage(page, width, height)
+
         override fun close() {
             runCatching { inner.close() }
             runCatching { backend.close() }
@@ -239,7 +266,8 @@ class BookOpener(private val context: Context) {
         val local = File(dir, "p${bookId}_" + ref.hashCode().toUInt().toString(16))
         if (!local.exists() || local.length() == 0L) save(local)
         return PdfBookSource(
-            ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY)
+            ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY),
+            pdfQuality,
         )
     }
 
