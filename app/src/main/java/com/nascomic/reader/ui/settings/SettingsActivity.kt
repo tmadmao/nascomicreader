@@ -32,12 +32,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 设置。照界面稿分六组，常用项直接摊开；冷门参数收在最后一组「高级设置」里，默认收起。
+ * 设置。分两级：进来是分类索引，点进去是某一类的参数页。
  *
- * 做过的参数按语义放进最贴近的那一组。
+ * 页面由 [Page] 决定，都在这一个 Activity 里渲染——不再按类拆五个 Activity：
+ * 拆开就要把下面那套行构造工具复制五份，改一处漏四处。二级页只是「同一副壳换个内容」。
  *
- * 行由代码拼，不用 preference 库：控件只有开关、单选、滑杆三种，
- * 自己拼比引一套框架再和它的主题打架划算。
+ * 参数仍按语义分组，冷门项收在每页自己的「高级」里；从阅读页进来时只显示与书相关的那几页，
+ * 全局项（书源、通用、关于）不在书的作用域里出现，免得看着像「改了只影响这一本」。
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -49,6 +50,9 @@ class SettingsActivity : AppCompatActivity() {
     private val bookTitle by lazy { intent.getStringExtra(EXTRA_BOOK_TITLE).orEmpty() }
 
     private val reader by lazy { ReaderPrefs(this, bookId) }
+
+    /** 当前是哪一页。没带就进索引 */
+    private val page by lazy { Page.of(intent.getStringExtra(EXTRA_PAGE)) }
 
     /** 书架列数可选档：0 = 自动，其余定死 */
     private val columnChoices = listOf(0, 3, 4, 5, 6, 8)
@@ -96,6 +100,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun buildRows() {
         val host = binding.settingsContainer
         host.removeAllViews()
+        binding.title.text = getString(page.titleRes)
 
         // 从阅读页进来时说明白：下面这些只改当前这本，不动全局默认
         if (bookId > 0) {
@@ -116,27 +121,108 @@ class SettingsActivity : AppCompatActivity() {
             })
         }
 
-        val groups = listOf(
-            R.string.settings_group_library to buildLibraryRows(),
-            R.string.settings_group_flip to buildFlipRows(),
-            R.string.settings_group_zoom to buildZoomRows(),
-            R.string.settings_group_layout to buildLayoutRows(),
-            R.string.settings_group_load to buildLoadRows(),
-        )
-        // 冷门参数不跟常用项一起摊开：一屏放得下的是「设置」，放不下就成了说明书
-        val advanced = ArrayList<View>()
-        groups.forEach { (titleRes, rows) ->
-            val basic = ArrayList<View>(rows.size)
-            rows.forEach { row -> if (row.tag == TAG_ADVANCED) advanced += row else basic += row }
-            addGroup(host, titleRes, basic)
+        when (page) {
+            Page.INDEX -> {
+                addGroup(host, 0, buildIndexRows())
+                val maintain = buildMaintainRows()
+                if (maintain.isNotEmpty()) {
+                    addGroup(host, R.string.settings_group_maintain, maintain)
+                }
+            }
+
+            // 每一页只留自己那一组：一屏放得下的是「设置」，放不下就成了说明书
+            Page.READ -> addSection(host, buildFlipRows())
+            Page.ZOOM -> addSection(host, buildZoomRows())
+            Page.LAYOUT -> addSection(host, buildLayoutRows())
+            Page.STORAGE -> addSection(host, buildLoadRows())
+            Page.GENERAL -> addSection(host, buildOtherRows())
         }
-        addGroup(host, R.string.settings_group_other, buildOtherRows())
+    }
+
+    /**
+     * 一页里的一组：常用项摊开，标了高级的收进本页底部的折叠卡。
+     * 不再单独出组头——顶栏已经写着这一页叫什么，再说一遍是重复。
+     */
+    private fun addSection(host: LinearLayout, rows: List<View>) {
+        val basic = ArrayList<View>(rows.size)
+        val advanced = ArrayList<View>()
+        rows.forEach { row -> if (row.tag == TAG_ADVANCED) advanced += row else basic += row }
+        if (basic.isNotEmpty()) addGroup(host, 0, basic)
         addAdvancedGroup(host, advanced)
     }
 
-    /** 组头只有一行标题：没有项数，也没有展开箭头 */
+    // ── 索引页 ─────────────────────────────────────────────
+
+    /**
+     * 索引页只回答「去哪儿」：一行一类，参数都在各自那一页。
+     *
+     * 从阅读页进来时只剩与书相关的四类，书源、通用、关于都是全局的，
+     * 摆在「只对这本书生效」的横幅下面会让人以为改了会影响这一本。
+     */
+    private fun buildIndexRows(): List<View> = collect {
+        if (bookId <= 0L) addView(sourceEntryRow())
+
+        addView(pageRow(Page.READ, R.string.settings_page_read_desc))
+        addView(pageRow(Page.ZOOM, R.string.settings_page_zoom_desc))
+        addView(pageRow(Page.LAYOUT, R.string.settings_page_layout_desc))
+        addView(pageRow(Page.STORAGE, R.string.settings_page_storage_desc))
+        if (bookId <= 0L) addView(pageRow(Page.GENERAL, R.string.settings_page_general_desc))
+    }
+
+    private fun pageRow(target: Page, descRes: Int): View =
+        choiceRowWithValue(
+            title = getString(target.titleRes),
+            desc = getString(descRes),
+        ) {
+            startActivity(Intent(this, SettingsActivity::class.java).apply {
+                putExtra(EXTRA_PAGE, target.key)
+                if (bookId > 0L) {
+                    putExtra(EXTRA_BOOK_ID, bookId)
+                    putExtra(EXTRA_BOOK_TITLE, bookTitle)
+                }
+            })
+        }
+
+    /** 索引页的第二张卡：关于与维护 */
+    private fun buildMaintainRows(): List<View> = collect {
+        if (bookId <= 0L) {
+            addView(
+                choiceRowWithValue(
+                    title = getString(R.string.settings_about_row),
+                    desc = getString(R.string.settings_about_desc),
+                ) { startActivity(Intent(this@SettingsActivity, AboutActivity::class.java)) }
+            )
+
+            addView(
+                choiceRowWithValue(
+                    title = getString(R.string.settings_reset),
+                    desc = getString(R.string.settings_reset_desc),
+                    destructive = true,
+                ) { confirmReset() }
+            )
+        } else if (reader.hasBookOverrides()) {
+            // 这本书单独调过参数，给一条路回到全局默认
+            addView(
+                choiceRowWithValue(
+                    title = getString(R.string.settings_book_reset),
+                    desc = getString(R.string.settings_book_reset_desc),
+                    destructive = true,
+                ) {
+                    reader.clearBookOverrides()
+                    buildRows()
+                    Toast.makeText(
+                        this@SettingsActivity,
+                        R.string.settings_book_reset_done,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            )
+        }
+    }
+
+    /** 组头只有一行标题：没有项数，也没有展开箭头。titleRes 传 0 表示不出组头 */
     private fun addGroup(host: LinearLayout, titleRes: Int, rows: List<View>) {
-        host.addView(TextView(this).apply {
+        if (titleRes != 0) host.addView(TextView(this).apply {
             text = getString(titleRes)
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -251,16 +337,6 @@ class SettingsActivity : AppCompatActivity() {
     private fun LinearLayout.addAdvanced(view: View) {
         view.tag = TAG_ADVANCED
         addView(view)
-    }
-
-    /**
-     * 书库与仓库：只留「书源管理」。
-     *
-     * 扫描规则、历史、封面这些曾经堆在这里，现在各归各位：
-     * 章的正倒序在详情页的目录上，阅读历史在首页，封面改成书架长按那本书再换。
-     */
-    private fun buildLibraryRows(): List<View> = collect {
-        addView(sourceEntryRow())
     }
 
     /**
@@ -444,6 +520,15 @@ class SettingsActivity : AppCompatActivity() {
                 initial = reader.flingMomentum,
                 format = { it.toString() },
             ) { value -> reader.flingMomentum = value }
+        )
+
+        // 常亮跟着阅读走：看着看着黑屏是阅读页的事，不是全局界面的事
+        addView(
+            switchRow(
+                title = getString(R.string.settings_keep_screen_on),
+                desc = getString(R.string.settings_keep_screen_on_desc),
+                checked = reader.keepScreenOn,
+            ) { checked -> reader.keepScreenOn = checked }
         )
     }
 
@@ -688,53 +773,6 @@ class SettingsActivity : AppCompatActivity() {
                 desc = getString(R.string.settings_page_label_desc),
                 checked = reader.showPageLabel,
             ) { checked -> reader.showPageLabel = checked }
-        )
-
-        addView(
-            switchRow(
-                title = getString(R.string.settings_keep_screen_on),
-                desc = getString(R.string.settings_keep_screen_on_desc),
-                checked = reader.keepScreenOn,
-            ) { checked -> reader.keepScreenOn = checked }
-        )
-
-        addView(
-            choiceRow(
-                title = getString(R.string.settings_orientation),
-                desc = null,
-                options = listOf(
-                    getString(R.string.settings_orientation_system),
-                    getString(R.string.settings_orientation_portrait),
-                    getString(R.string.settings_orientation_landscape),
-                    getString(R.string.settings_orientation_reverse_portrait),
-                    getString(R.string.settings_orientation_reverse_landscape),
-                ),
-                selected = AppPrefs.Orientation.entries.indexOf(
-                    AppPrefs.Orientation.of(prefs.orientation)
-                ).coerceAtLeast(0),
-            ) { index ->
-                prefs.orientation = AppPrefs.Orientation.entries[index].value
-                applyOrientation(prefs)
-            }
-        )
-
-        addView(
-            switchRow(
-                title = getString(R.string.settings_skip_detail),
-                desc = getString(R.string.settings_skip_detail_desc),
-                checked = prefs.skipDetail,
-            ) { checked -> prefs.skipDetail = checked }
-        )
-
-        addView(
-            choiceRow(
-                title = getString(R.string.settings_shelf_columns),
-                desc = getString(R.string.settings_shelf_columns_desc),
-                options = columnChoices.map {
-                    if (it == 0) getString(R.string.settings_columns_auto) else it.toString()
-                },
-                selected = columnChoices.indexOf(prefs.shelfColumns).coerceAtLeast(0),
-            ) { index -> prefs.shelfColumns = columnChoices[index] }
         )
     }
 
@@ -1018,38 +1056,43 @@ class SettingsActivity : AppCompatActivity() {
     /** 其他：关于、恢复默认。开源许可在关于页里，不在这里再摆一个 */
     private fun buildOtherRows(): List<View> = collect {
         addView(
-            choiceRowWithValue(
-                title = getString(R.string.settings_about_row),
-                desc = getString(R.string.settings_about_desc),
-            ) { startActivity(Intent(this@SettingsActivity, AboutActivity::class.java)) }
+            choiceRow(
+                title = getString(R.string.settings_orientation),
+                desc = null,
+                options = listOf(
+                    getString(R.string.settings_orientation_system),
+                    getString(R.string.settings_orientation_portrait),
+                    getString(R.string.settings_orientation_landscape),
+                    getString(R.string.settings_orientation_reverse_portrait),
+                    getString(R.string.settings_orientation_reverse_landscape),
+                ),
+                selected = AppPrefs.Orientation.entries.indexOf(
+                    AppPrefs.Orientation.of(prefs.orientation)
+                ).coerceAtLeast(0),
+            ) { index ->
+                prefs.orientation = AppPrefs.Orientation.entries[index].value
+                applyOrientation(prefs)
+            }
         )
 
         addView(
-            choiceRowWithValue(
-                title = getString(R.string.settings_reset),
-                desc = getString(R.string.settings_reset_desc),
-                destructive = true,
-            ) { confirmReset() }
+            switchRow(
+                title = getString(R.string.settings_skip_detail),
+                desc = getString(R.string.settings_skip_detail_desc),
+                checked = prefs.skipDetail,
+            ) { checked -> prefs.skipDetail = checked }
         )
 
-        // 当前这本单独调过参数时，给一条路回到全局默认
-        if (bookId > 0 && reader.hasBookOverrides()) {
-            addView(
-                choiceRowWithValue(
-                    title = getString(R.string.settings_book_reset),
-                    desc = getString(R.string.settings_book_reset_desc),
-                    destructive = true,
-                ) {
-                    reader.clearBookOverrides()
-                    buildRows()
-                    Toast.makeText(
-                        this@SettingsActivity,
-                        R.string.settings_book_reset_done,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            )
-        }
+        addView(
+            choiceRow(
+                title = getString(R.string.settings_shelf_columns),
+                desc = getString(R.string.settings_shelf_columns_desc),
+                options = columnChoices.map {
+                    if (it == 0) getString(R.string.settings_columns_auto) else it.toString()
+                },
+                selected = columnChoices.indexOf(prefs.shelfColumns).coerceAtLeast(0),
+            ) { index -> prefs.shelfColumns = columnChoices[index] }
+        )
     }
 
     // ── 恢复默认 ───────────────────────────────────────────
@@ -1402,5 +1445,28 @@ class SettingsActivity : AppCompatActivity() {
 
         /** 阅读参数与界面开关都在这一份偏好里 */
         const val PREFS_FILE = "reader_prefs"
+
+        /** 进哪一页；不带就进索引 */
+        const val EXTRA_PAGE = "page"
+    }
+
+    /**
+     * 设置的二级页。索引本身也是一页，只是内容换成入口。
+     *
+     * 页码写进 Intent 而不按类名拆开：一套壳、一套行构造工具，
+     * 加减一页只改这个枚举和 [buildRows] 里的一行。
+     */
+    enum class Page(val key: String, val titleRes: Int) {
+        INDEX("index", R.string.settings_title),
+        READ("read", R.string.settings_page_read),
+        ZOOM("zoom", R.string.settings_page_zoom),
+        LAYOUT("layout", R.string.settings_page_layout),
+        STORAGE("storage", R.string.settings_page_storage),
+        GENERAL("general", R.string.settings_page_general),
+        ;
+
+        companion object {
+            fun of(key: String?): Page = entries.firstOrNull { it.key == key } ?: INDEX
+        }
     }
 }

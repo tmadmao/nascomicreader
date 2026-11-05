@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DownloadManager 把包落在应用自己的外部私有目录，FileProvider 只开这一个子目录。
+  不做成通用 FileProvider：能少开一个口子就少开一个。
+-->
+<paths>
+    <external-files-path
+        name="update"
+        path="update/" />
+</paths>

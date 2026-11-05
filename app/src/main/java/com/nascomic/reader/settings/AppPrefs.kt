@@ -40,6 +40,44 @@ class AppPrefs(context: Context) {
         get() = sp.getInt(KEY_SHELF_COLUMNS, 0)
         set(value) = sp.edit().putInt(KEY_SHELF_COLUMNS, value.coerceAtLeast(0)).apply()
 
+    /** 上次检查更新的时间戳（毫秒）；0 = 从没查过 */
+    var updateLastCheckAt: Long
+        get() = sp.getLong(KEY_UPDATE_LAST_CHECK, 0L)
+        set(value) = sp.edit().putLong(KEY_UPDATE_LAST_CHECK, value).apply()
+
+    /** 用户点过「跳过此版本」的构建号；0 = 没跳过 */
+    var updateIgnoredVersion: Long
+        get() = sp.getLong(KEY_UPDATE_IGNORED, 0L)
+        set(value) = sp.edit().putLong(KEY_UPDATE_IGNORED, value).apply()
+
+    /** 自定义清单地址。空 = 用内置源；填了就只认这一个 */
+    var updateManifestUrl: String
+        get() = sp.getString(KEY_UPDATE_MANIFEST, "").orEmpty()
+        set(value) = sp.edit().putString(KEY_UPDATE_MANIFEST, value.trim()).apply()
+
+    /** 正在下载的任务 id；-1 = 没有。下载完成时要拿它比对广播里的 id */
+    var updatePendingDownloadId: Long
+        get() = sp.getLong(KEY_UPDATE_PENDING_ID, -1L)
+        set(value) = sp.edit().putLong(KEY_UPDATE_PENDING_ID, value).apply()
+
+    var updatePendingVersionCode: Long
+        get() = sp.getLong(KEY_UPDATE_PENDING_CODE, 0L)
+        set(value) = sp.edit().putLong(KEY_UPDATE_PENDING_CODE, value).apply()
+
+    var updatePendingVersionName: String
+        get() = sp.getString(KEY_UPDATE_PENDING_NAME, "").orEmpty()
+        set(value) = sp.edit().putString(KEY_UPDATE_PENDING_NAME, value).apply()
+
+    /** 这次下载声明的校验值。下载完成时进程可能被重启过，只能从这里取 */
+    var updatePendingSha256: String
+        get() = sp.getString(KEY_UPDATE_PENDING_SHA, "").orEmpty()
+        set(value) = sp.edit().putString(KEY_UPDATE_PENDING_SHA, value).apply()
+
+    /** 已下好并验过、等着安装的包路径；空 = 没有 */
+    var updateReadyPath: String
+        get() = sp.getString(KEY_UPDATE_READY_PATH, "").orEmpty()
+        set(value) = sp.edit().putString(KEY_UPDATE_READY_PATH, value).apply()
+
     enum class ShelfSort(val value: Int) {
         RECENT(0),
         TITLE_ASC(1),
@@ -74,5 +112,14 @@ class AppPrefs(context: Context) {
         const val KEY_TOC_DESCENDING = "detail.toc_descending"
         const val KEY_SHELF_SORT = "ui.shelf_sort"
         const val KEY_SHELF_COLUMNS = "ui.shelf_columns"
+
+        const val KEY_UPDATE_LAST_CHECK = "update.last_check_at"
+        const val KEY_UPDATE_IGNORED = "update.ignored_version"
+        const val KEY_UPDATE_MANIFEST = "update.manifest_url"
+        const val KEY_UPDATE_PENDING_ID = "update.pending_id"
+        const val KEY_UPDATE_PENDING_CODE = "update.pending_code"
+        const val KEY_UPDATE_PENDING_NAME = "update.pending_name"
+        const val KEY_UPDATE_PENDING_SHA = "update.pending_sha256"
+        const val KEY_UPDATE_READY_PATH = "update.ready_path"
     }
 }

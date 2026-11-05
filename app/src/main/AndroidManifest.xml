@@ -2,14 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      权限按功能最小化。当前只声明远程书库需要的两条：
-        INTERNET               WebDAV 列目录、取页
+      权限按功能最小化。当前声明：
+        INTERNET               远程书库、检查更新
         ACCESS_LOCAL_NETWORK   局域网 NAS（targetSdk 37 起需要，公网地址不影响）
+        REQUEST_INSTALL_PACKAGES  安装自己下载的更新包；系统仍会再弹一次确认
       后续真要后台扫描再加 FOREGROUND_SERVICE 与 POST_NOTIFICATIONS。
-      存储一律走 SAF 持久化授权，不申请任何外部存储权限。
+      存储一律走 SAF 持久化授权，不申请任何外部存储权限——更新包落在应用自己的外部私有目录。
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- 局域网 NAS 常见只有 http，允许明文；账号密码走 Basic，不额外加密 -->
     <application
@@ -61,6 +63,30 @@
             android:name=".ui.reader.ReadingActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
+        <!--
+          下载完成的广播由系统发出、且只发给发起下载的那个包，所以这里收得到。
+          广播本身不可信：真正的判断在 UpdateCenter 里，按下载 id 回查 DownloadManager，
+          再比 SHA-256 与签名。
+        -->
+        <receiver
+            android:name=".update.UpdateDownloadReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 只把应用自己下载目录下的 update/ 开给安装器，别的一律不给 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.update"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
 
     </application>
 

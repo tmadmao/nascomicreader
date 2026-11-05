@@ -32,8 +32,8 @@ android {
         applicationId = "com.nascomic.reader"
         minSdk = 24
         targetSdk = 37
-        versionCode = 24
-        versionName = "1.1.5"
+        versionCode = 26
+        versionName = "1.2.0"
     }
 
     signingConfigs {

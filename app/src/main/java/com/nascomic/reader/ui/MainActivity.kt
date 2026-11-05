@@ -13,7 +13,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import com.nascomic.reader.R
@@ -34,8 +36,11 @@ import com.nascomic.reader.ui.settings.SettingsActivity
 import com.nascomic.reader.ui.shelf.CoverBitmaps
 import com.nascomic.reader.ui.shelf.ShelfAdapter
 import com.nascomic.reader.ui.shelf.ShelfGrid
+import com.nascomic.reader.ui.update.UpdateDialogs
 import com.nascomic.reader.ui.widget.ScanProgressDialog
 import com.nascomic.reader.ui.widget.padBySystemBars
+import com.nascomic.reader.update.UpdateCenter
+import com.nascomic.reader.update.UpdateState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -152,6 +157,38 @@ class MainActivity : AppCompatActivity() {
         startCoverWorker()
         sweepCaches()
         refresh()
+
+        watchUpdates()
+    }
+
+    /**
+     * 更新只在这一页订阅：书架是回到前台的第一站，提示在这里出现最不容易被漏掉。
+     * 设置页、阅读页都不订阅，免得同一个弹窗在两层界面上同时冒出来。
+     */
+    private fun watchUpdates() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                UpdateCenter.state.collect { state ->
+                    when (state) {
+                        is UpdateState.Available -> UpdateDialogs.showAvailable(
+                            this@MainActivity, state.manifest, state.forced,
+                        ) { UpdateCenter.consume() }
+
+                        is UpdateState.Ready -> UpdateDialogs.showReady(
+                            this@MainActivity, state.versionName,
+                        ) { UpdateCenter.consume() }
+
+                        // 下到了但验不过：包已经删了，说清楚是哪一关没过
+                        is UpdateState.Broken -> {
+                            Toast.makeText(this@MainActivity, state.reason, Toast.LENGTH_LONG).show()
+                            UpdateCenter.consume()
+                        }
+
+                        else -> Unit
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -206,6 +243,11 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         applyOrientation(prefs)
         refresh()
+        // 已验过还没装的包，回到前台就重新摆出来。放在 onResume 而不是 onCreate：
+        // 首次安装会被系统拉去「安装未知应用」授权，授权完回来还得能接着装
+        UpdateCenter.restoreReady(this)
+        // 距上次检查超过六小时才会真的发请求，这里每次回前台都能调
+        UpdateCenter.checkIfDue(this)
     }
 
     // ── 数据 ───────────────────────────────────────────────

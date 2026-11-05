@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingTop="6dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="2dp">
+
+    <TextView
+        android:id="@+id/version"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/shell_ink"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/meta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:textColor="@color/shell_ink_faint"
+        android:textSize="11sp" />
+
+    <!-- 固定高度：说明可能很长，不给上限会把弹窗顶出屏幕外 -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="176dp"
+        android:layout_marginTop="14dp"
+        android:scrollbars="vertical">
+
+        <TextView
+            android:id="@+id/notes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:lineSpacingExtra="4dp"
+            android:textColor="@color/shell_ink_muted"
+            android:textSize="13sp" />
+    </ScrollView>
+</LinearLayout>
