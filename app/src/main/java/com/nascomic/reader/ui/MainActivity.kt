@@ -63,6 +63,10 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var adapter: ShelfAdapter
     private lateinit var header: com.nascomic.reader.ui.shelf.ShelfTopAdapter
+    private lateinit var concat: ConcatAdapter
+    private lateinit var seriesAdapter: com.nascomic.reader.ui.shelf.SeriesCardAdapter
+    private val seriesCovers by lazy { com.nascomic.reader.ui.shelf.CoverBitmaps(thumbs) }
+    private val seriesRepo by lazy { com.nascomic.reader.library.SeriesRepository(db) }
 
     /** 一本书上的动作与「加入系列」：详情页用的是同一份实现，不各写一套 */
     private val bookActions by lazy {
@@ -92,8 +96,11 @@ class MainActivity : AppCompatActivity() {
     private val MAX_COVER_QUEUE = 60
     private var coverWidth = 0
 
-    /** 搜索框里的关键字。本地过滤，不落库也不跨页保存；始终在当前书库筛选内找 */
+    /** 搜索框里的关键字。本地过滤，不落库也不跨页保存 */
     private var shelfQuery = ""
+
+    /** 搜索范围：false = 当前书库（默认），true = 系列 */
+    private var seriesScope = false
 
     /** 继续阅读卡指向的那本；卡不在时为空 */
     private var resumeBook: BookEntity? = null
@@ -133,7 +140,12 @@ class MainActivity : AppCompatActivity() {
                 }
             },
         )
-        binding.grid.adapter = ConcatAdapter(header, adapter)
+        concat = ConcatAdapter(header, adapter)
+        binding.grid.adapter = concat
+        seriesAdapter = com.nascomic.reader.ui.shelf.SeriesCardAdapter(
+            onClick = { seriesId -> openSeries(seriesId) },
+            onCoverNeeded = { card, image -> loadSeriesCover(card, image) },
+        )
         applyGridMetrics()
 
         binding.emptyLocal.setOnClickListener { pickFolder.launch(null) }
@@ -150,6 +162,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 搜书名：敲字即筛，120ms 防抖，免得每敲一个键都查一次库
+        binding.searchScope.setOnClickListener { askScope() }
+        renderScopeChip()
         binding.searchInput.doAfterTextChanged { text ->
             val query = text?.toString().orEmpty()
             if (query == shelfQuery) return@doAfterTextChanged
@@ -159,7 +173,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.selectCancel.setOnClickListener { exitSelection() }
-        binding.selectDelete.setOnClickListener { confirmDeleteSelected() }
+        binding.selectDelete.setOnClickListener { showBatchActions() }
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (selecting) exitSelection() else {
@@ -283,6 +297,11 @@ class MainActivity : AppCompatActivity() {
     // ── 数据 ───────────────────────────────────────────────
 
     private fun refresh() {
+        if (seriesScope) {
+            loadSeries()
+            return
+        }
+        binding.grid.adapter = concat
         lifecycleScope.launch {
             allSources = sources.list()
 
@@ -425,6 +444,89 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 搜索范围：当前书库（书名 / 书源）/ 系列（系列名） */
+    private fun askScope() {
+        val labels = arrayOf(
+            getString(R.string.shelf_scope_library),
+            getString(R.string.shelf_scope_series),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.shelf_scope_title)
+            .setSingleChoiceItems(labels, if (seriesScope) 1 else 0) { dialog, which ->
+                seriesScope = which == 1
+                dialog.dismiss()
+                renderScopeChip()
+                refresh()
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun renderScopeChip() {
+        binding.searchScope.text = getString(
+            if (seriesScope) R.string.shelf_scope_series else R.string.shelf_scope_library
+        )
+    }
+
+    /** 范围选「系列」时，网格换成系列卡；关键字只筛系列名 */
+    private fun loadSeries() {
+        if (!prefs.seriesEnabled) {
+            seriesScope = false
+            renderScopeChip()
+            refresh()
+            return
+        }
+        binding.grid.adapter = seriesAdapter
+        lifecycleScope.launch {
+            val q = shelfQuery.trim()
+            val cards = seriesRepo.all()
+                .filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
+                .map { entity ->
+                    val volumes = seriesRepo.volumes(entity.id)
+                    com.nascomic.reader.ui.shelf.SeriesCardAdapter.Card(
+                        seriesId = entity.id,
+                        name = entity.name,
+                        volumeCount = volumes.size,
+                        coverBookId = volumes.firstOrNull()?.id,
+                    )
+                }
+            seriesAdapter.submit(cards)
+            val empty = cards.isEmpty()
+            binding.empty.visibility = if (empty && q.isEmpty()) View.VISIBLE else View.GONE
+            binding.searchEmpty.visibility = if (empty && q.isNotEmpty()) View.VISIBLE else View.GONE
+            binding.grid.visibility = if (empty) View.GONE else View.VISIBLE
+        }
+    }
+
+    private fun loadSeriesCover(
+        card: com.nascomic.reader.ui.shelf.SeriesCardAdapter.Card,
+        image: android.widget.ImageView,
+    ) {
+        val bookId = card.coverBookId ?: return
+        val cached = seriesCovers.cached(bookId)
+        if (cached != null) {
+            image.setImageBitmap(cached)
+            return
+        }
+        lifecycleScope.launch {
+            val bitmap = withContext(Dispatchers.IO) {
+                val width = if (coverWidth > 0) coverWidth else dp(112)
+                runCatching { thumbs.load(bookId, width, width * 4 / 3) }.getOrNull()
+            }
+            if (bitmap != null) {
+                seriesCovers.put(bookId, bitmap)
+                seriesAdapter.showCover(card.seriesId, bitmap)
+            }
+        }
+    }
+
+    private fun openSeries(seriesId: Long) {
+        startActivity(
+            Intent(this, com.nascomic.reader.ui.SeriesDetailActivity::class.java)
+                .putExtra(com.nascomic.reader.ui.SeriesDetailActivity.EXTRA_SERIES_ID, seriesId)
+        )
+    }
+
     /**
      * 封面按需生成：只有滚到屏幕上、又没有缓存的那几本才去解一次。
      *
@@ -518,6 +620,32 @@ class MainActivity : AppCompatActivity() {
         binding.selectCount.text = getString(R.string.shelf_selected_count, selectedIds.size)
         binding.selectDelete.isEnabled = selectedIds.isNotEmpty()
         binding.selectDelete.alpha = if (selectedIds.isEmpty()) 0.5f else 1f
+    }
+
+    /**
+     * 多选之后能做什么。现在两项：从书库删除、加入作品系列。
+     * 不给每条都摆一个按钮——底栏只留一个入口，动作多了也不会挤。
+     */
+    private fun showBatchActions() {
+        if (selectedIds.isEmpty()) return
+        val items = mutableListOf(getString(R.string.shelf_batch_delete))
+        if (prefs.seriesEnabled) items += getString(R.string.shelf_batch_series)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.shelf_selected_count, selectedIds.size))
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which == 0) confirmDeleteSelected() else addSelectedToSeries()
+            }
+            .show()
+    }
+
+    /** 把当前勾选的几本一次加进同一个系列 */
+    private fun addSelectedToSeries() {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) return
+        lifecycleScope.launch {
+            val books = ids.mapNotNull { db.bookDao().get(it) }
+            seriesActions.openFor(books)
+        }
     }
 
     /** 批量删除：只删库里的记录，源文件不动 */

@@ -151,6 +151,20 @@
         android:paddingBottom="16dp" />
 
     <TextView
+        android:id="@+id/add_volumes"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginStart="@dimen/page_margin"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="@dimen/page_margin"
+        android:layout_marginBottom="14dp"
+        android:background="@drawable/bg_chip_unselected"
+        android:gravity="center"
+        android:text="@string/series_add_volumes"
+        android:textColor="@color/shell_ink"
+        android:textSize="13sp" />
+
+    <TextView
         android:id="@+id/empty"
         android:layout_width="match_parent"
         android:layout_height="0dp"

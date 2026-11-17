@@ -67,6 +67,7 @@ class SeriesDetailActivity : AppCompatActivity() {
         binding.back.setOnClickListener { finish() }
         binding.more.setOnClickListener { showMenu() }
         binding.primary.setOnClickListener { openLatest() }
+        binding.addVolumes.setOnClickListener { pickVolumes() }
     }
 
     override fun onResume() {
@@ -191,6 +192,41 @@ class SeriesDetailActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+    /** 加入其它卷：只列还不属于这个系列的书，带搜索，可一次多选 */
+    private fun pickVolumes() {
+        lifecycleScope.launch {
+            val inSeries = volumes.map { it.id }.toHashSet()
+            val candidates = db.bookDao().allSorted()
+                .filter { it.id !in inSeries }
+                .map {
+                    com.nascomic.reader.ui.shelf.SearchPicker.Item(
+                        id = it.id,
+                        title = it.title,
+                        subtitle = getString(R.string.series_volume_pages, it.pageTotal),
+                    )
+                }
+            if (candidates.isEmpty()) {
+                Toast.makeText(this@SeriesDetailActivity, R.string.series_add_empty, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            com.nascomic.reader.ui.shelf.SearchPicker(
+                context = this@SeriesDetailActivity,
+                title = getString(R.string.series_add_pick_title),
+                hint = getString(R.string.series_add_pick_hint),
+                items = candidates,
+                multi = true,
+                onPick = {},
+                onMultiPick = { picked ->
+                    lifecycleScope.launch {
+                        val now = System.currentTimeMillis()
+                        picked.forEach { repo.addBook(seriesId, it.id, now) }
+                        load()
+                    }
+                },
+            ).show()
+        }
     }
 
     private fun loadCover(book: BookEntity?) {

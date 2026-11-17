@@ -117,6 +117,18 @@
             android:textColor="@color/shell_ink"
             android:textColorHint="@color/shell_ink_faint"
             android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/search_scope"
+            android:layout_width="wrap_content"
+            android:layout_height="26dp"
+            android:background="@drawable/bg_chip_unselected"
+            android:gravity="center"
+            android:paddingStart="11dp"
+            android:paddingEnd="11dp"
+            android:text="@string/shelf_scope_library"
+            android:textColor="@color/shell_ink_muted"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -255,7 +267,7 @@
             android:gravity="center"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
-            android:text="@string/shelf_menu_delete"
+            android:text="@string/shelf_batch"
             android:textColor="#FFFFFFFF"
             android:textSize="12sp" />
     </LinearLayout>

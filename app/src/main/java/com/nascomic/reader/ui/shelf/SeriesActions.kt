@@ -28,32 +28,52 @@ class SeriesActions(
 
     private val repo by lazy { SeriesRepository(db) }
 
+    /** 单本入口：书架长按与书籍详情页用 */
     fun open(book: BookEntity) {
         activity.lifecycleScope.launch {
             val series = repo.seriesOf(book.id)
-            if (series == null) pick(book) else actions(book, series.id, series.name)
+            if (series == null) pick(listOf(book)) else actions(book, series.id, series.name)
         }
     }
 
-    private fun pick(book: BookEntity) {
+    /** 批量入口：书架多选后一次加入同一个系列 */
+    fun openFor(books: List<BookEntity>) {
+        if (books.isEmpty()) return
+        if (books.size == 1) {
+            open(books.first())
+            return
+        }
+        activity.lifecycleScope.launch { pick(books) }
+    }
+
+    /** 选系列：带搜索的底部选择器，系列多了也能找；第一行是新建 */
+    private fun pick(books: List<BookEntity>) {
         activity.lifecycleScope.launch {
             val all = repo.all()
-            val labels = all.map { it.name }.toMutableList()
-            labels += activity.getString(R.string.series_join_new)
-            AlertDialog.Builder(activity)
-                .setTitle(R.string.series_join_title)
-                .setItems(labels.toTypedArray()) { _, which ->
-                    if (which < all.size) {
-                        join(book, all[which].id)
-                    } else {
-                        create(book)
-                    }
-                }
-                .show()
+            val items = ArrayList<SearchPicker.Item>()
+            items += SearchPicker.Item(NEW_SERIES, activity.getString(R.string.series_join_new), "")
+            all.forEach { entity ->
+                items += SearchPicker.Item(
+                    entity.id,
+                    entity.name,
+                    activity.getString(R.string.series_volume_count, repo.countOf(entity.id)),
+                )
+            }
+            SearchPicker(
+                context = activity,
+                title = activity.getString(R.string.series_pick_title),
+                hint = activity.getString(R.string.series_pick_hint),
+                items = items,
+                multi = false,
+                onPick = { picked ->
+                    if (picked.id == NEW_SERIES) create(books) else join(books, picked.id)
+                },
+            ).show()
         }
     }
 
-    private fun create(book: BookEntity) {
+    private fun create(books: List<BookEntity>) {
+        val book = books.first()
         val input = EditText(activity).apply {
             setText(book.title)
             setSelection(text.length)
@@ -67,8 +87,9 @@ class SeriesActions(
                 val name = input.text.toString().trim()
                 if (name.isEmpty()) return@setPositiveButton
                 activity.lifecycleScope.launch {
-                    val id = repo.create(name, System.currentTimeMillis())
-                    repo.addBook(id, book.id, System.currentTimeMillis())
+                    val now = System.currentTimeMillis()
+                    val id = repo.create(name, now)
+                    books.forEach { repo.addBook(id, it.id, now) }
                     onChanged()
                     openDetail(id)
                 }
@@ -76,9 +97,10 @@ class SeriesActions(
             .show()
     }
 
-    private fun join(book: BookEntity, seriesId: Long) {
+    private fun join(books: List<BookEntity>, seriesId: Long) {
         activity.lifecycleScope.launch {
-            repo.addBook(seriesId, book.id, System.currentTimeMillis())
+            val now = System.currentTimeMillis()
+            books.forEach { repo.addBook(seriesId, it.id, now) }
             onChanged()
             openDetail(seriesId)
         }
@@ -103,6 +125,11 @@ class SeriesActions(
                 }
             }
             .show()
+    }
+
+    private companion object {
+        /** 选系列列表里「新建」那一行的键，与真实系列 id 不冲突 */
+        const val NEW_SERIES = -1L
     }
 
     private fun openDetail(seriesId: Long) {

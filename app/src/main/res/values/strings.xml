@@ -64,6 +64,9 @@
     <string name="recent_empty">还没有读过的书。读过一本之后，这里按最近打开排。</string>
     <string name="shelf_section_count">%1$d 本</string>
     <string name="shelf_search_hint">搜索书名或书源</string>
+    <string name="shelf_scope_library">当前书库</string>
+    <string name="shelf_scope_series">系列</string>
+    <string name="shelf_scope_title">搜索范围</string>
     <string name="shelf_search_empty">没有书名对得上的</string>
     <string name="shelf_sort">排序</string>
     <string name="shelf_sort_recent">最近添加</string>
@@ -340,6 +343,18 @@
     <string name="settings_series_desc">把散在各目录的同一部漫画聚成系列；首次要扫一遍全书库，只在本机建关联，不动 NAS 里的文件</string>
 
     <string name="series_menu">系列操作</string>
+    <string name="picker_no_match">没有对得上的</string>
+    <string name="picker_confirm_none">还没选</string>
+    <string name="picker_confirm">加入 %1$d 卷</string>
+    <string name="series_add_volumes">加入其它卷</string>
+    <string name="series_add_pick_title">加入其它卷</string>
+    <string name="series_add_pick_hint">搜书名</string>
+    <string name="series_add_empty">没有可以加入的书了</string>
+    <string name="series_pick_title">加入作品系列</string>
+    <string name="series_pick_hint">搜系列名</string>
+    <string name="shelf_batch">批量操作</string>
+    <string name="shelf_batch_delete">从书库删除</string>
+    <string name="shelf_batch_series">加入作品系列…</string>
     <string name="series_page_title">作品系列</string>
     <string name="series_page_empty">还没有作品系列。开了「作品系列」之后，可以从书的详情页把各卷聚在一起。</string>
     <string name="detail_more">更多</string>
