@@ -43,6 +43,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.SeriesActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.SeriesDetailActivity"
             android:exported="false" />
 

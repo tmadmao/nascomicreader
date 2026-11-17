@@ -17,14 +17,15 @@ import com.nascomic.reader.databinding.ActivityDetailBinding
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.readPercent
 import com.nascomic.reader.library.cover.ThumbnailStore
-import com.nascomic.reader.library.SeriesRepository
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
-import com.nascomic.reader.ui.SeriesDetailActivity
+import com.nascomic.reader.ui.MainActivity
+import com.nascomic.reader.ui.shelf.BookActions
+import com.nascomic.reader.ui.shelf.SeriesActions
 import com.nascomic.reader.library.detail.BookDetailLoader
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.applyOrientation
@@ -85,7 +86,7 @@ class DetailActivity : AppCompatActivity() {
         binding.back.setOnClickListener { finish() }
         // 作品系列关着时不摆这个入口，免得点了没反应
         binding.more.visibility = if (appPrefs.seriesEnabled) View.VISIBLE else View.GONE
-        binding.more.setOnClickListener { showSeriesMenu() }
+        binding.more.setOnClickListener { showActions() }
         tocDescending = appPrefs.tocDescending
         applyHeroMetrics()
         load()
@@ -477,89 +478,52 @@ class DetailActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    // ── 作品系列 ───────────────────────────────────────────
+    // ── 一本书上的动作 ─────────────────────────────────────
+    // 与书架长按同一组：多选 / 重命名 / 更换封面 / 删除 / 加入系列
 
-    private val seriesRepo by lazy { SeriesRepository(db) }
-
-    /** 已在某个系列里就给它「查看 / 移出」，没有就给「加入或新建」 */
-    private fun showSeriesMenu() {
-        lifecycleScope.launch {
-            val series = seriesRepo.seriesOf(bookId)
-            if (series == null) pickSeries() else seriesActions(series.id, series.name)
-        }
-    }
-
-    private fun pickSeries() {
-        lifecycleScope.launch {
-            val all = seriesRepo.all()
-            val labels = all.map { it.name }.toMutableList()
-            labels += getString(R.string.series_join_new)
-            AlertDialog.Builder(this@DetailActivity)
-                .setTitle(R.string.series_join_title)
-                .setItems(labels.toTypedArray()) { _, which ->
-                    if (which < all.size) {
-                        join(all[which].id)
-                    } else {
-                        createSeries()
-                    }
-                }
-                .show()
-        }
-    }
-
-    private fun createSeries() {
-        val input = EditText(this).apply {
-            setText(book?.title.orEmpty())
-            setSelection(text.length)
-            hint = getString(R.string.series_name_hint)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.series_new_title)
-            .setView(input)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.series_new_ok) { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isEmpty()) return@setPositiveButton
-                lifecycleScope.launch {
-                    val id = seriesRepo.create(name, System.currentTimeMillis())
-                    seriesRepo.addBook(id, bookId, System.currentTimeMillis())
-                    openSeries(id)
-                }
-            }
-            .show()
-    }
-
-    private fun join(seriesId: Long) {
-        lifecycleScope.launch {
-            seriesRepo.addBook(seriesId, bookId, System.currentTimeMillis())
-            openSeries(seriesId)
-        }
-    }
-
-    private fun seriesActions(seriesId: Long, seriesName: String) {
-        val items = arrayOf(
-            getString(R.string.series_view),
-            getString(R.string.series_leave),
+    private val bookActions by lazy {
+        BookActions(
+            activity = this,
+            db = db,
+            thumbs = thumbs,
+            opener = opener,
+            sourceOf = { source },
+            onCoverReady = { _, bitmap -> binding.cover.setImageBitmap(bitmap) },
+            onChanged = { load() },
+            coverWidth = { binding.cover.width },
         )
+    }
+    private val seriesActions by lazy { SeriesActions(this, db) { load() } }
+
+    private fun showActions() {
+        val book = book ?: return
+        val items = mutableListOf(
+            getString(R.string.shelf_menu_select),
+            getString(R.string.shelf_menu_rename),
+            getString(R.string.shelf_change_cover),
+            getString(R.string.shelf_menu_delete),
+        )
+        if (appPrefs.seriesEnabled) items += getString(R.string.series_join_action)
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.series_in, seriesName))
-            .setItems(items) { _, which ->
-                if (which == 0) {
-                    openSeries(seriesId)
-                } else {
-                    lifecycleScope.launch {
-                        seriesRepo.removeBook(bookId)
-                        Toast.makeText(this@DetailActivity, R.string.series_leave_done, Toast.LENGTH_SHORT).show()
-                    }
+            .setTitle(book.title)
+            .setItems(items.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> openShelfSelection(book.id)
+                    1 -> bookActions.rename(book)
+                    2 -> bookActions.changeCover(book)
+                    3 -> bookActions.delete(book)
+                    else -> seriesActions.open(book)
                 }
             }
             .show()
     }
 
-    private fun openSeries(seriesId: Long) {
+    /** 多选发生在书架页：带着这本书回到书架并进入多选态 */
+    private fun openShelfSelection(id: Long) {
         startActivity(
-            Intent(this, SeriesDetailActivity::class.java)
-                .putExtra(SeriesDetailActivity.EXTRA_SERIES_ID, seriesId)
+            Intent(this, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_SELECT_ID, id)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         )
     }
 }

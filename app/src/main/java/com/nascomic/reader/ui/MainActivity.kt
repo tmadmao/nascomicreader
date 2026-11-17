@@ -63,6 +63,23 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var adapter: ShelfAdapter
     private lateinit var header: com.nascomic.reader.ui.shelf.ShelfTopAdapter
+
+    /** 一本书上的动作与「加入系列」：详情页用的是同一份实现，不各写一套 */
+    private val bookActions by lazy {
+        com.nascomic.reader.ui.shelf.BookActions(
+            activity = this,
+            db = db,
+            thumbs = thumbs,
+            opener = opener,
+            sourceOf = { id -> allSources.firstOrNull { it.id == id } },
+            onCoverReady = { id, bitmap -> adapter.showCover(id, bitmap) },
+            onChanged = { refresh() },
+            coverWidth = { coverWidth },
+        )
+    }
+    private val seriesActions by lazy {
+        com.nascomic.reader.ui.shelf.SeriesActions(this, db) { refresh() }
+    }
     private var sourceFilter: String = com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES
     private var allSources: List<SourceEntity> = emptyList()
 
@@ -108,8 +125,7 @@ class MainActivity : AppCompatActivity() {
             onResumeClick = { resumeBook?.let { openBook(it) } },
             onSortClick = { askSort() },
             onRecentClick = { startActivity(Intent(this, RecentActivity::class.java)) },
-            // 系列页还没接上：这里留空，入口由 onSeriesClick 是否为 null 决定显不显示
-            onSeriesClick = null,
+            onSeriesClick = { startActivity(Intent(this, SeriesActivity::class.java)) },
             onSourceClick = { key ->
                 if (sourceFilter != key) {
                     sourceFilter = key
@@ -247,6 +263,21 @@ class MainActivity : AppCompatActivity() {
         UpdateCenter.restoreReady(this)
         // 距上次检查超过六小时才会真的发请求，这里每次回前台都能调
         UpdateCenter.checkIfDue(this)
+        applySelectExtra()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applySelectExtra()
+    }
+
+    /** 从详情页的「多选」回来时，直接把这一本勾上 */
+    private fun applySelectExtra() {
+        val id = intent.getLongExtra(EXTRA_SELECT_ID, 0L)
+        if (id <= 0L) return
+        intent.removeExtra(EXTRA_SELECT_ID)
+        binding.root.post { enterSelection(id) }
     }
 
     // ── 数据 ───────────────────────────────────────────────
@@ -439,20 +470,23 @@ class MainActivity : AppCompatActivity() {
      * 硬盘或 NAS 上的文件一个字节都不碰。所以措辞上写「从书库删除」。
      */
     private fun showBookMenu(book: BookEntity) {
-        val items = arrayOf(
+        val items = mutableListOf(
             getString(R.string.shelf_menu_select),
             getString(R.string.shelf_menu_rename),
             getString(R.string.shelf_change_cover),
             getString(R.string.shelf_menu_delete),
         )
+        // 系列功能关着时不摆这一项，菜单里每一条都点得动
+        if (prefs.seriesEnabled) items += getString(R.string.series_join_action)
         AlertDialog.Builder(this)
             .setTitle(book.title)
-            .setItems(items) { _, which ->
+            .setItems(items.toTypedArray()) { _, which ->
                 when (which) {
                     0 -> enterSelection(book.id)
-                    1 -> showRenameBook(book)
-                    2 -> showChangeCover(book)
-                    else -> confirmDeleteBook(book)
+                    1 -> bookActions.rename(book)
+                    2 -> bookActions.changeCover(book)
+                    3 -> bookActions.delete(book)
+                    else -> seriesActions.open(book)
                 }
             }
             .show()
@@ -517,140 +551,13 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    /** 只改库里的显示名：标题与排序键一起更新，书架立刻重排 */
-    private fun showRenameBook(book: BookEntity) {
-        val input = android.widget.EditText(this).apply {
-            setText(book.title)
-            setSelection(text.length)
-            setSingleLine()
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(2), dp(20), 0)
-            addView(TextView(this@MainActivity).apply {
-                text = getString(R.string.shelf_rename_hint)
-                textSize = 12f
-                setTextColor(getColor(R.color.shell_ink_muted))
-                setPadding(0, 0, 0, dp(10))
-            })
-            addView(input)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.shelf_rename_title)
-            .setView(box)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isEmpty()) {
-                    Toast.makeText(this, R.string.shelf_rename_empty, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                lifecycleScope.launch {
-                    db.bookDao().updateTitle(
-                        book.id, name, com.nascomic.reader.core.text.NaturalSort.key(name)
-                    )
-                    refresh()
-                    Toast.makeText(this@MainActivity, R.string.shelf_rename_done, Toast.LENGTH_SHORT).show()
-                }
-            }
-            .show()
-    }
+    
 
-    /** 只从库里删：进度、书签、历史随外键级联走，磁盘上的源文件留着 */
-    private fun confirmDeleteBook(book: BookEntity) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.shelf_delete_title)
-            .setMessage(getString(R.string.shelf_delete_message, book.title))
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.shelf_delete_confirm) { _, _ ->
-                lifecycleScope.launch {
-                    db.bookDao().delete(book.id)
-                    withContext(Dispatchers.IO) {
-                        // 这本书的页缓存与缩略图也一并清掉，不然没人再用它们
-                        com.nascomic.reader.ui.reader.DiskPageCache(this@MainActivity)
-                            .clearBook(book.id)
-                        thumbs.invalidate(book.id)
-                    }
-                    adapter.invalidateCover(book.id)
-                    refresh()
-                    Toast.makeText(
-                        this@MainActivity, R.string.shelf_delete_done, Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-            .show()
-    }
+    
 
-    /**
-     * 换封面：长按书架上的这一本，指定用它的第几张图。
-     *
-     * 这事只能按书做——同一套漫画里每本的第一张未必都是封面（很多是扉页），
-     * 所以不放在设置里做全局默认。
-     */
-    private fun showChangeCover(book: BookEntity) {
-        val pages = book.pageTotal
-        val input = android.widget.EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            hint = getString(R.string.shelf_cover_input_hint)
-            setText((book.coverPage + 1).toString())
-            setSelection(text.length)
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(2), dp(20), 0)
-            addView(TextView(this@MainActivity).apply {
-                text = getString(R.string.shelf_cover_hint, pages.coerceAtLeast(1))
-                textSize = 12f
-                setTextColor(getColor(R.color.shell_ink_muted))
-                setPadding(0, 0, 0, dp(10))
-            })
-            addView(input)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.shelf_cover_title, book.title))
-            .setView(box)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val n = input.text.toString().trim().toIntOrNull()
-                val upper = if (pages > 0) pages else Int.MAX_VALUE
-                if (n == null || n < 1 || n > upper) {
-                    Toast.makeText(
-                        this,
-                        getString(R.string.shelf_cover_invalid, minOf(upper, pages.coerceAtLeast(1))),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    return@setPositiveButton
-                }
-                applyCover(book, n - 1)
-            }
-            .show()
-    }
+    
 
-    /** 写回取图页号，删掉旧缩略图，重新生成一次再喂给书架 */
-    private fun applyCover(book: BookEntity, page: Int) {
-        lifecycleScope.launch {
-            db.bookDao().updateCoverPage(book.id, page)
-            val updated = book.copy(coverPage = page)
-            val src = allSources.firstOrNull { it.id == book.sourceId }
-            val chapters = db.chapterDao().forBook(book.id)
-            adapter.invalidateCover(book.id)
-            val file = if (src == null) {
-                null
-            } else {
-                withContext(Dispatchers.IO) {
-                    runCatching { thumbs.generate(updated, src, chapters, opener) }.getOrNull()
-                }
-            }
-            if (file == null) {
-                Toast.makeText(this@MainActivity, R.string.shelf_cover_failed, Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val width = if (coverWidth > 0) coverWidth else dp(112)
-            val bitmap = withContext(Dispatchers.IO) { thumbs.load(book.id, width, width * 4 / 3) }
-            if (bitmap != null) adapter.showCover(book.id, bitmap)
-            Toast.makeText(this@MainActivity, R.string.shelf_cover_done, Toast.LENGTH_SHORT).show()
-        }
-    }
+    
 
     private fun startCoverWorker() {
         // 两条并发：一条在等远端连上时，另一条已经在解下一页。
@@ -762,11 +669,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    private companion object {
+    companion object {
         /** 封面生成并发数：2 条够把「等网络」的时间藏起来 */
         private const val COVER_WORKERS = 2
 
         /** 来源筛选的键前缀；「全部来源」用 ShelfTopAdapter.ALL_SOURCES */
         const val TAB_SOURCE_PREFIX = "source:"
+
+        /** 从详情页跳回来时带上要勾选的书 */
+        const val EXTRA_SELECT_ID = "select_id"
     }
 }
