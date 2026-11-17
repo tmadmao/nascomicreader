@@ -82,7 +82,7 @@ class MigrationTest {
         assertNull(db.text("SELECT volume FROM books WHERE id = 1"))
         assertTrue(db.hasTable("series"))
         assertTrue(db.hasTable("series_books"))
-        assertTrue(db.hasTable("group_decisions"))
+        assertFalse(db.hasTable("group_decisions"))
         db.close()
     }
 

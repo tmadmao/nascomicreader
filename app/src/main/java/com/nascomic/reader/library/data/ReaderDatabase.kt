@@ -28,7 +28,6 @@ internal const val DB_VERSION = 6
         BookmarkEntity::class,
         SeriesEntity::class,
         SeriesBookEntity::class,
-        GroupDecisionEntity::class,
     ],
     version = DB_VERSION,
     exportSchema = true
@@ -41,7 +40,6 @@ abstract class ReaderDatabase : RoomDatabase() {
     abstract fun progressDao(): ProgressDao
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun seriesDao(): SeriesDao
-    abstract fun groupDecisionDao(): GroupDecisionDao
 
     companion object {
         private const val NAME = "reader.db"
@@ -123,21 +121,6 @@ abstract class ReaderDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_series_books_series_id` ON `series_books` (`series_id`)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_series_books_book_id` ON `series_books` (`book_id`)")
 
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `group_decisions` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `kind` INTEGER NOT NULL,
-                        `key_a` TEXT NOT NULL,
-                        `key_b` TEXT NOT NULL,
-                        `created_at` INTEGER NOT NULL
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_group_decisions_kind_key_a_key_b` " +
-                        "ON `group_decisions` (`kind`, `key_a`, `key_b`)"
-                )
             }
         }
 

@@ -271,20 +271,3 @@ interface SeriesDao {
         putMember(SeriesBookEntity(seriesId = seriesId, bookId = bookId, ordinal = next, addedAt = at))
     }
 }
-
-@Dao
-interface GroupDecisionDao {
-
-    /** 同一个决定重复写入只保留一行（(kind, key_a, key_b) 上有唯一索引） */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(decision: GroupDecisionEntity): Long
-
-    @Query("SELECT * FROM group_decisions ORDER BY kind ASC, id ASC")
-    suspend fun all(): List<GroupDecisionEntity>
-
-    @Query("SELECT * FROM group_decisions WHERE kind = :kind ORDER BY id ASC")
-    suspend fun byKind(kind: Int): List<GroupDecisionEntity>
-
-    @Query("DELETE FROM group_decisions WHERE id = :id")
-    suspend fun delete(id: Long)
-}

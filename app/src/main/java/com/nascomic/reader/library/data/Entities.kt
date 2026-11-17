@@ -258,38 +258,3 @@ data class SeriesBookEntity(
     @ColumnInfo(name = "added_at") val addedAt: Long,
 )
 
-/**
- * 人工决定。重扫先读这张表再生成候选，让用户改过的判断持续生效。
- * 存的是判断本身，不是撤销栈：删掉系列不会把这里清空。
- *
- * `key_a` / `key_b` 的含义按 `kind` 定：
- * - 拒绝合并：`key_a` = 被拒那一组的签名（组内标准化书名的排序拼接），`key_b` 为空串
- * - 移出系列：`key_a` = 系列 id，`key_b` = 书的 `doc_ref` 与来源 id 拼成的键
- * - 拆分：`key_a` = 原系列 id，`key_b` = 拆出去那一半的组签名
- * - 确认别名：`key_a` / `key_b` = 两个标准化书名，按字典序放，顺序不影响命中
- */
-@Entity(
-    tableName = "group_decisions",
-    indices = [Index(value = ["kind", "key_a", "key_b"], unique = true)]
-)
-data class GroupDecisionEntity(
-    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
-    @ColumnInfo(name = "kind") val kind: Int,
-    @ColumnInfo(name = "key_a") val keyA: String,
-    @ColumnInfo(name = "key_b") val keyB: String = "",
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-) {
-    companion object {
-        /** 这一组不该合并 */
-        const val KIND_REJECT = 0
-
-        /** 这本书不属于这个系列 */
-        const val KIND_EXCLUDE = 1
-
-        /** 这个系列拆出去一半 */
-        const val KIND_SPLIT = 2
-
-        /** 两个名字是同一部作品 */
-        const val KIND_ALIAS = 3
-    }
-}
