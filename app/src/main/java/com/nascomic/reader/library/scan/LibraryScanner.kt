@@ -22,8 +22,8 @@ import kotlinx.coroutines.withContext
  *
  * 书型判定见 [ScanRules]：目录里直接是图 = 单行本；目录里是子目录或压缩包 = 章回体。
  *
- * 扫描阶段只记名字、大小和章的结构，**不解包、不数页**——几百本的目录如果每本都解包，
- * 首次扫描要几分钟。页数在打开那本书时再算。
+ * 扫描阶段只记名字、大小和章的结构，**不解包、不数页**——逐本解包会让首次扫描随库规模线性变慢，
+ * 页数在打开那本书时再算。
  */
 private const val DELETE_BATCH = 400
 
@@ -141,7 +141,7 @@ class LibraryScanner(
 
         val books = found
 
-        // 一个事务写完：逐条提交时每条都要刷盘，一千多本会拖到分钟级；中途失败也不会留下半套书
+        // 一个事务写完：逐条提交会随库规模反复刷盘；中途失败也不会留下半套书
         db.withTransaction {
             for (candidate in books) {
                 val existing = db.bookDao().findByRef(source.id, candidate.node.docId)
@@ -197,8 +197,8 @@ class LibraryScanner(
             }
 
             // 清理磁盘上已经没有的条目。
-            // 按 id 分段删，不走 `doc_ref NOT IN (...)`——那条语句的书多过 998 本就会撞
-            // SQLite 的变量上限（Android 10 及以下），扫到一半失败
+            // 按 id 分段删，不走 `doc_ref NOT IN (...)`——单条 SQL 的绑定参数有上限，
+            // 书多到一定数量就会撞上（Android 10 及以下更低），扫到一半失败
             val present = books.mapTo(HashSet(books.size)) { it.node.docId }
             val gone = db.bookDao().bySourceNow(source.id)
                 .filterNot { it.docRef in present }
@@ -309,7 +309,7 @@ class LibraryScanner(
         var added = 0
         var updated = 0
 
-        // 一次读全这个来源已有的书，别每本查一遍库：一千多本时那是三千多次查询
+        // 一次读全这个来源已有的书，别每本查一遍库：逐本查会随库规模累积成大量查询
         val known = db.bookDao().bySourceNow(source.id).associateBy { it.docRef }
         val fresh = ArrayList<BookEntity>(books.size)
         val touched = ArrayList<BookEntity>()
@@ -352,12 +352,12 @@ class LibraryScanner(
 
         listener?.onProgress(books.size, books.size)
 
-        // 一个事务写完：逐条提交时每条都要刷盘，一千多本会拖到分钟级
+        // 一个事务写完：逐条提交会随库规模反复刷盘
         db.withTransaction {
             if (fresh.isNotEmpty()) db.bookDao().insertAll(fresh)
             if (touched.isNotEmpty()) db.bookDao().upsertAll(touched)
 
-            // 清理远端已经没有的条目：按 id 分段删，避免一次塞几千个参数。
+            // 清理远端已经没有的条目：按 id 分段删，避免单条 SQL 绑定过多参数。
             // 本轮有目录没读到就整段跳过——宁可留下几本已删的书，也不把读不到的书连同进度一起清掉
             if (!skipRemoval) {
                 val present = books.mapTo(HashSet(books.size)) { it.docRef }

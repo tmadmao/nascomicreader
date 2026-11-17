@@ -28,7 +28,7 @@ object PageBitmapLoader {
             inSampleSize = sample
             inPreferredConfig = config
             // 采样只能按 2 的幂降，常常还比目标大不少（目标 1080、原图 2000 时只能降到 2000）。
-            // 交给工厂直接按比例缩到目标宽，位图一出生就是最终尺寸，缓存才装得下预载的十几页。
+            // 交给工厂直接按比例缩到目标宽，位图一出生就是最终尺寸，缓存才装得下整个预载窗口。
             if (maxWidth > 0 && maxHeight > 0 && (sampledW > maxWidth || sampledH > maxHeight)) {
                 val scale = minOf(
                     maxWidth.toFloat() / sampledW,

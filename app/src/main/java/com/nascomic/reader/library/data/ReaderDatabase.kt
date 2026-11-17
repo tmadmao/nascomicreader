@@ -43,7 +43,7 @@ abstract class ReaderDatabase : RoomDatabase() {
                 instance ?: build(context.applicationContext).also { instance = it }
             }
 
-        /** 进度表补一列「读到过书的尾」，老库按未读完处理 */
+        /** 进度表补一列「读到过书的尾」，该列缺省为未读完 */
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE progress ADD COLUMN finished INTEGER NOT NULL DEFAULT 0")

@@ -303,7 +303,7 @@ class ReadingActivity : AppCompatActivity() {
             try {
                 val book = db.bookDao().get(bookId) ?: error("书不存在")
                 val src = db.sourceDao().get(book.sourceId) ?: error("来源不存在")
-                // 章序与名称自然序对不上（旧版远端来源留下的乱序）就先改正，
+                // 章序与名称自然序对不上（远端来源可能留下乱序）就先改正，
                 // 免得抽屉里的目录与前后翻页都不按话走
                 val chapters = chapterWriter.ensureNaturalOrder(
                     bookId, db.chapterDao().forBook(bookId)
@@ -584,8 +584,8 @@ class ReadingActivity : AppCompatActivity() {
     /**
      * 竖排窗口按内存收，而不是只按页数收。
      *
-     * 页数封顶（12）是按「一页 2 MB 左右」估的，条漫单页能到 20 MB，十几页就是几百兆，
-     * 直接把堆顶穿；反过来，小图只有一兆出头，还按 12 页收就白白多解几张。
+     * 按页数封顶假设了每页大小固定，实际条漫单页远大于普通页，页数一多就把堆顶穿；
+     * 小图则相反，按页数收会白白多解几张。
      * 所以先看字节：超了就从身后最远处丢，丢到预算内为止；身后没得丢才丢末尾。
      * 单页就比半个预算还大时，允许窗口只剩一页——宁可不预读，也不能闪退。
      */
@@ -889,8 +889,8 @@ class ReadingActivity : AppCompatActivity() {
     /**
      * 预取接下来的几页。翻页时等的是「连远端 + 解码」，先把这几页解好放进缓存，翻过去就直接出图。
      *
-     * 翻页只往队列里放页号，解码由常驻的两个 worker 慢慢做——原来每翻一页就把预载任务掐掉重开，
-     * 手快一点就永远追不上，等于没预载。
+     * 翻页只往队列里放页号，解码由常驻的两个 worker 慢慢做——每次翻页都掐掉预载重开，
+     * 连续翻页时就永远追不上，等于没预载。
      */
     private fun startPrefetch(src: BookSource, targetW: Int, targetH: Int) {
         prefetchTargetW = targetW
@@ -1348,7 +1348,7 @@ class ReadingActivity : AppCompatActivity() {
         half = newHalf
         page = target
         // 上一屏还在解：记下这次翻页，等它画完立刻接着画。
-        // 原来这里是直接 return，手一快就有几次点击被吞掉，看着像卡住。
+        // 若在此直接 return，连续点击会被吞掉，看着像卡住。
         if (loading) {
             pendingShow = true
             return

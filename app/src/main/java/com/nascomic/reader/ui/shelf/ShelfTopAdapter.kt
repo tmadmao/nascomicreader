@@ -14,7 +14,7 @@ import com.nascomic.reader.R
  * 书架列表的头：继续阅读卡 + 书源胶囊 + 排序按钮。
  *
  * 它是一片「只有一项」的适配器，拼在网格前面（`ConcatAdapter`），
- * 这样滚动时跟着列表一起走，不会像原来那样钉在屏幕上半部分吃掉半屏高度。
+ * 这样滚动时跟着列表一起走，不占用固定屏高。
  */
 class ShelfTopAdapter(
     private val onResumeClick: () -> Unit,

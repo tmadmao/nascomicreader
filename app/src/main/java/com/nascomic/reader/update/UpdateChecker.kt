@@ -74,7 +74,7 @@ class UpdateChecker(private val context: Context) {
     private companion object {
         /**
          * 单独一个客户端：更新检查要的是「快失败」，和 WebDAV 那种要慢慢传大文件的口径不同。
-         * 清单只有几百字节，十秒还没拿到就是拿不到了，没必要让用户等更久。
+         * 清单很小，短超时内拿不到就视为失败，没必要让用户等更久。
          * 连接池各有一份的代价可以忽略——更新检查几小时才跑一次。
          */
         val client: OkHttpClient = OkHttpClient.Builder()

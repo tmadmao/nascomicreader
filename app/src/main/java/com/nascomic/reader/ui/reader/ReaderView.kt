@@ -112,7 +112,7 @@ class ReaderView @JvmOverloads constructor(
     /**
      * 窗口里这些页一共占多少像素内存。
      *
-     * 竖排不能只按页数封顶：一页条漫解码后能到 20 MB，十几页就顶穿堆。
+     * 竖排不能只按页数封顶：条漫单页解码后远大于普通页，页数一多就顶穿堆。
      * 这里数的是位图本身的字节（ARGB_8888 四位一像素），不是绘制尺寸。
      */
     fun bitmapBytes(): Long {
@@ -427,7 +427,7 @@ class ReaderView @JvmOverloads constructor(
             val top = verticalTops[i]
             val height = (if (i + 1 < pages.size) verticalTops[i + 1] else verticalTotal) - top
             if (height <= 0f) continue
-            // 只画落在视口附近的页，滚到几百页也只是几次绘制
+            // 只画落在视口附近的页，绘制量与书的总页数无关
             val visibleTop = top - scrollY
             if (visibleTop > this.height || visibleTop + height < 0f) continue
             dst.set(verticalLeft, top, verticalLeft + verticalWidth, top + height)

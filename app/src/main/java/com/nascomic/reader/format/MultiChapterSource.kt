@@ -91,7 +91,7 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource, RenderedPa
     /** 返回（章序号, 章内页号） */
     private fun locate(page: Int): Pair<Int, Int> {
         var index = 0
-        // 章数一般不多，线性找够用；真到几百章再换二分
+        // 章数少时线性找够用；规模变大再换二分
         for (i in starts.indices) {
             if (page >= starts[i]) index = i else break
         }

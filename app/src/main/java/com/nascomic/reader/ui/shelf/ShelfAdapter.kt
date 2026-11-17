@@ -26,7 +26,7 @@ class ShelfAdapter(
     private val onClick: (BookEntity) -> Unit,
     /** 长按一本书：换封面、看详情这些「针对这一本」的动作 */
     private val onLongClick: (BookEntity) -> Unit = {},
-    /** 封面还没生成时叫一声，由外面排队慢慢生成——一千多本一起生成会把 NAS 连接打满 */
+    /** 封面还没生成时叫一声，由外面排队慢慢生成——同时生成过多会把 NAS 连接打满 */
     private val onCoverNeeded: (Long) -> Unit = {},
 ) : RecyclerView.Adapter<ShelfAdapter.Holder>() {
 
@@ -43,8 +43,8 @@ class ShelfAdapter(
     /**
      * 只把真变了的那几行刷一遍。
      *
-     * 早先是 `notifyDataSetChanged()`：搜索时每敲一个字都重绑整屏，
-     * 一千多本的书库上能明显看出掉帧，而且封面要重算一遍。
+     * `notifyDataSetChanged()` 会在每次输入时重绑整屏，书库一大就掉帧，
+     * 封面也得重算；只刷变化的行能避开这些开销。
      */
     fun submit(newBooks: List<BookEntity>, newProgress: Map<Long, ProgressEntity>) {
         val oldBooks = books

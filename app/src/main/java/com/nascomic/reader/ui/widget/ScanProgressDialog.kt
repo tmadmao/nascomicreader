@@ -11,9 +11,9 @@ import androidx.appcompat.app.AlertDialog
 import com.nascomic.reader.R
 
 /**
- * 扫描进度：一个小弹窗，先说「正在列目录」，列完再报「已读 120 / 1600 本」。
+ * 扫描进度：一个小弹窗，先说「正在列目录」，列完再报「已读 N / 总数 本」。
  *
- * 远端书一本本地数，一千多本要好一会儿；没有反馈用户只会以为卡死了。
+ * 远端书逐本列目录，书库一大就要等一阵；没有反馈用户只会以为卡死了。
  * 弹窗不可取消——扫描中途掐断会留下半本书架。
  */
 class ScanProgressDialog(

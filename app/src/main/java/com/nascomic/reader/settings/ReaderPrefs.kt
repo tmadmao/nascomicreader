@@ -129,7 +129,7 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
     /**
      * 跳过空白页：0 = 关；N > 0 = 从第 N 张空白页起，之后每隔一张跳过。
      *
-     * 旧版是「一直往后跳」，清屏页多的书会一下跳过好几页。现在按规格做成间隔一张。
+     * 跳空白页按间隔进行，避免清屏页连着出现时一下跳过好几页。
      */
     var skipBlankFrom: Int
         get() = int(KEY_SKIP_BLANK_FROM, if (bool(KEY_SKIP_BLANK, false)) 1 else 0)
@@ -192,9 +192,8 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
     /**
      * 磁盘页缓存的上限。
      *
-     * 自动档按可用空间的二十分之一给，夹在 1–5 GB：手机剩 100 GB 时给 5 GB，
-     * 剩 20 GB 时给 1 GB。一页按 0.4 MB 算，5 GB 约等于一万多页——够放十几本书的整本，
-     * 隔一周回来重读还在。
+     * 自动档按可用空间的二十分之一给，夹在 1–5 GB：空间宽裕时取上限，紧张时收下限。
+     * 容量按「能放下若干整本书、隔几天回来重读仍在」定，不追求覆盖整个书库。
      */
     fun diskBudgetBytes(available: Long = 0L): Long {
         val gb = cacheGb

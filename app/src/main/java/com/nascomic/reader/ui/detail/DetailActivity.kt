@@ -105,7 +105,7 @@ class DetailActivity : AppCompatActivity() {
             book = db.bookDao().get(bookId) ?: run { finish(); return@launch }
             val src = db.sourceDao().get(book!!.sourceId).also { source = it }
             chapters = db.chapterDao().forBook(bookId)
-            // 旧版远端来源列目录不排序，老书里可能留着乱序的章。约定是名称自然序，
+            // 远端来源可能留下乱序的章。约定是名称自然序，
             // 进详情页就对一次，对不上就地改正（进度与书签跟着搬），不必让用户重扫
             chapters = chapterWriter.ensureNaturalOrder(bookId, chapters)
             progress = db.progressDao().forBook(bookId)

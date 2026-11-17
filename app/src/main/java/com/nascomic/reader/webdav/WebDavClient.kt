@@ -71,7 +71,7 @@ class WebDavClient(
             }
             if (response.code == 200) {
                 // 服务器忽略了 Range，把整份都发来了。
-                // 不能 body.bytes()：几百兆的包会直接把进程撑爆，只读到需要的那一段就停
+                // 不能 body.bytes()：大包整块读进内存会撑爆进程，只读到需要的那一段就停
                 val body = response.body ?: return null
                 if (offset > 0L) return null
                 return body.byteStream().use { input ->
@@ -135,7 +135,7 @@ class WebDavClient(
     companion object {
         /**
          * 一个进程就一个 HTTP 客户端：连接池与线程池共用。
-         * 每本书各建一个的话，一千多本的封面生成会把连接和内存一起耗光（NAS 直接不让连）。
+         * 每本书各建一个的话，连接与内存会随书库规模一起涨，最终把 NAS 和进程都拖垮。
          */
         private val shared: OkHttpClient by lazy {
             OkHttpClient.Builder()

@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // 搜书名：敲字即筛，120ms 防抖，免得一千多本时每敲一个键都查一次库
+        // 搜书名：敲字即筛，120ms 防抖，免得每敲一个键都查一次库
         binding.searchScope.setOnClickListener { askScope() }
         binding.searchInput.doAfterTextChanged { text ->
             val query = text?.toString().orEmpty()
@@ -425,8 +425,8 @@ class MainActivity : AppCompatActivity() {
     /**
      * 封面按需生成：只有滚到屏幕上、又没有缓存的那几本才去解一次。
      *
-     * 早先是把当前标签下的书全量跑一遍，一千多本时等于一口气开一千多个封面——
-     * 每个封面都要连远端、建连接，NAS 直接被问挂，应用也会被系统杀掉。
+     * 若把当前标签下的书全量跑一遍，等于一口气开所有封面——
+     * 每个封面都要连远端、建连接，NAS 会被问挂，应用也会被系统杀掉。
      */
     private fun listenerFor(
         progress: ScanProgressDialog,
@@ -444,7 +444,7 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * 只要眼前这一屏，外加往后一屏的预取；再远的等滚到再说。
-     * 一千多本的书库靠这个把远端开销压到「用户看得见的那点」。
+     * 靠这个把远端开销压到「用户看得见的那点」，与书库总量无关。
      */
     private fun requestVisibleCovers() {
         val lm = binding.grid.layoutManager as? GridLayoutManager ?: return

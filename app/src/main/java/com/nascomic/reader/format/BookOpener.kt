@@ -84,7 +84,7 @@ class BookOpener(private val context: Context) {
      * 远端只需要这几件事；WebDAV 与 SMB 各实现一份，打开书的逻辑只写一遍。
      *
      * [close] 必须有：SMB 的每一次 open 都是一整个会话（TCP + 认证 + tree connect），
-     * 书关掉时不还回去，NAS 上就会攒下一堆没人用的连接——书架滚一圈就是几十个，
+     * 书关掉时不还回去，NAS 上就会攒下没人用的连接——浏览书架时连接持续累积，
      * 到它的会话上限就再也不让连了。
      */
     private interface RemoteBackend : java.io.Closeable {

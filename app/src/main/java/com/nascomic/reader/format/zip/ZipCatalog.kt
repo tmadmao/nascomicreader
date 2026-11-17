@@ -75,7 +75,7 @@ class ZipCatalog private constructor(
         private const val ZIP64_EOCD_SIGNATURE = 0x06064b50
         private const val ZIP64_LOCATOR_SIGNATURE = 0x07064b50
 
-        /** 中央目录本身也是整块读进内存的，超过这个数就是坏包——正常几千页也就几 MB */
+        /** 中央目录整块读进内存，超过这个上限视为坏包；上限按正常条目数留足余量 */
         private const val MAX_CENTRAL_DIRECTORY = 256L * 1024 * 1024
         private const val CENTRAL_HEADER_SIGNATURE = 0x02014b50
         private const val LOCAL_HEADER_SIGNATURE = 0x04034b50

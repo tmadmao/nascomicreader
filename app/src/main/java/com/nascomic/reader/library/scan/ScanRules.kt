@@ -4,7 +4,7 @@ import com.nascomic.reader.core.text.ChapterOrder
 import com.nascomic.reader.format.ImageNames
 
 /**
- * 扫描时的判定规则。抽成纯函数方便单测——真机跑一遍要几十秒，这里几毫秒能试完边界。
+ * 扫描时的判定规则。抽成纯函数方便单测——不必为真机扫描买单测的成本，边界情况在这里快得多。
  *
  * 两种书型（按用户的实际书库结构定义）：
  *
