@@ -61,11 +61,9 @@
     <string name="shelf_percent">%1$d%%</string>
     <string name="shelf_read_percent">已读 %1$d%%</string>
     <string name="shelf_count_meta">本地与远程书源\n共 %1$d 本漫画</string>
+    <string name="recent_empty">还没有读过的书。读过一本之后，这里按最近打开排。</string>
     <string name="shelf_section_count">%1$d 本</string>
     <string name="shelf_search_hint">搜索书名或书源</string>
-    <string name="shelf_scope_library">书库</string>
-    <string name="shelf_scope_tab">当前标签</string>
-    <string name="shelf_scope_title">搜索范围</string>
     <string name="shelf_search_empty">没有书名对得上的</string>
     <string name="shelf_sort">排序</string>
     <string name="shelf_sort_recent">最近添加</string>
@@ -338,6 +336,8 @@
     <string name="settings_title">设置</string>
     <string name="settings_skip_detail">跳过详情页</string>
     <string name="settings_skip_detail_desc">打开书时直接继续阅读，不显示详情页</string>
+    <string name="settings_series">作品系列</string>
+    <string name="settings_series_desc">把散在各目录的同一部漫画聚成系列；首次要扫一遍全书库，只在本机建关联，不动 NAS 里的文件</string>
 
     <string name="settings_about_row">关于本应用</string>
     <string name="settings_about_desc">版本、开源许可、源代码与赞助</string>
@@ -489,7 +489,7 @@
     <string name="settings_page_storage">性能与存储</string>
     <string name="settings_page_storage_desc">解码口径、预加载、缓存上限</string>
     <string name="settings_page_general">通用</string>
-    <string name="settings_page_general_desc">屏幕方向、跳过详情页、书架列数</string>
+    <string name="settings_page_general_desc">屏幕方向、跳过详情页、书架列数、作品系列</string>
     <string name="settings_group_advanced">高级设置</string>
     <string name="settings_prefetch_prev">上张图片预加载</string>
     <string name="settings_prefetch_prev_desc">往回翻之前先解好几页；回翻少的人留 0 就够，省内存</string>

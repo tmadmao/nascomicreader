@@ -40,6 +40,14 @@ class AppPrefs(context: Context) {
         get() = sp.getInt(KEY_SHELF_COLUMNS, 0)
         set(value) = sp.edit().putInt(KEY_SHELF_COLUMNS, value.coerceAtLeast(0)).apply()
 
+    /**
+     * 作品系列。默认关：关着时不解析文件名、不查关联表、书架也不出现系列入口。
+     * 已建的系列不会因为关掉而删除，再打开还在。
+     */
+    var seriesEnabled: Boolean
+        get() = sp.getBoolean(KEY_SERIES_ENABLED, false)
+        set(value) = sp.edit().putBoolean(KEY_SERIES_ENABLED, value).apply()
+
     /** 上次检查更新的时间戳（毫秒）；0 = 从没查过 */
     var updateLastCheckAt: Long
         get() = sp.getLong(KEY_UPDATE_LAST_CHECK, 0L)
@@ -112,6 +120,7 @@ class AppPrefs(context: Context) {
         const val KEY_TOC_DESCENDING = "detail.toc_descending"
         const val KEY_SHELF_SORT = "ui.shelf_sort"
         const val KEY_SHELF_COLUMNS = "ui.shelf_columns"
+        const val KEY_SERIES_ENABLED = "ui.series_enabled"
 
         const val KEY_UPDATE_LAST_CHECK = "update.last_check_at"
         const val KEY_UPDATE_IGNORED = "update.ignored_version"

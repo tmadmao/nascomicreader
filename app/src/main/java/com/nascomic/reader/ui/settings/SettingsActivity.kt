@@ -1093,6 +1093,15 @@ class SettingsActivity : AppCompatActivity() {
                 selected = columnChoices.indexOf(prefs.shelfColumns).coerceAtLeast(0),
             ) { index -> prefs.shelfColumns = columnChoices[index] }
         )
+
+        // 默认关：关着的时候书架不出现系列入口，也不做任何解析与查询
+        addView(
+            switchRow(
+                title = getString(R.string.settings_series),
+                desc = getString(R.string.settings_series_desc),
+                checked = prefs.seriesEnabled,
+            ) { checked -> prefs.seriesEnabled = checked }
+        )
     }
 
     // ── 恢复默认 ───────────────────────────────────────────

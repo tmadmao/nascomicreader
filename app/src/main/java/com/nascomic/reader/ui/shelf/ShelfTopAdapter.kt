@@ -11,15 +11,23 @@ import androidx.recyclerview.widget.RecyclerView
 import com.nascomic.reader.R
 
 /**
- * 书架列表的头：继续阅读卡 + 书源胶囊 + 排序按钮。
+ * 书架列表的头：书架入口 + 继续阅读卡 + 书库分段 + 排序按钮。
  *
  * 它是一片「只有一项」的适配器，拼在网格前面（`ConcatAdapter`），
  * 这样滚动时跟着列表一起走，不占用固定屏高。
+ *
+ * 三个维度分开：上面两个胶囊是「去别的页面」（最近阅读 / 作品系列），
+ * 下面一条槽是「在这个页面里筛来源」，两者形态不同，不会看混。
  */
 class ShelfTopAdapter(
     private val onResumeClick: () -> Unit,
     private val onSortClick: () -> Unit,
-    private val onTabClick: (String) -> Unit,
+    /** 最近阅读页 */
+    private val onRecentClick: () -> Unit,
+    /** 作品系列页；为 null 时不显示这个入口（页面还没接上） */
+    private val onSeriesClick: (() -> Unit)?,
+    /** 来源键：全部为 [ALL_SOURCES] */
+    private val onSourceClick: (String) -> Unit,
 ) : RecyclerView.Adapter<ShelfTopAdapter.Holder>() {
 
     /** 继续阅读卡要显示的内容；[resume] 为 null 时整张卡收起 */
@@ -30,17 +38,19 @@ class ShelfTopAdapter(
         val action: String,
     )
 
-    class Tab(val key: String, val label: String, val selected: Boolean)
+    /** 书库行的一段：全部，或某个来源 */
+    class SourceTab(val key: String, val label: String, val selected: Boolean)
 
     private var resume: Resume? = null
-    private var tabs: List<Tab> = emptyList()
+    private var sources: List<SourceTab> = emptyList()
+    private var showSeries = false
 
-    fun update(resume: Resume?, tabs: List<Tab>) {
-        val sameResume = this.resume == resume
-        val sameTabs = this.tabs == tabs
+    fun update(resume: Resume?, sources: List<SourceTab>, showSeries: Boolean) {
+        val same = this.resume == resume && this.sources == sources && this.showSeries == showSeries
+        if (same) return
         this.resume = resume
-        this.tabs = tabs
-        if (sameResume && sameTabs) return
+        this.sources = sources
+        this.showSeries = showSeries
         notifyItemChanged(0)
     }
 
@@ -52,7 +62,9 @@ class ShelfTopAdapter(
         val resumeBar: ProgressBar = view.findViewById(R.id.resume_bar)
         val resumeAction: TextView = view.findViewById(R.id.resume_action)
         val resumePlay: View = view.findViewById(R.id.resume_play)
-        val tabRow: LinearLayout = view.findViewById(R.id.tab_row)
+        val entryRecent: View = view.findViewById(R.id.entry_recent)
+        val entrySeries: View = view.findViewById(R.id.entry_series)
+        val sourceRow: LinearLayout = view.findViewById(R.id.source_row)
         val sortButton: View = view.findViewById(R.id.sort_button)
     }
 
@@ -81,37 +93,43 @@ class ShelfTopAdapter(
         }
 
         holder.sortButton.setOnClickListener { onSortClick() }
+        holder.entryRecent.setOnClickListener { onRecentClick() }
+        val seriesEntry = onSeriesClick
+        holder.entrySeries.visibility = if (showSeries && seriesEntry != null) View.VISIBLE else View.GONE
+        holder.entrySeries.setOnClickListener { seriesEntry?.invoke() }
 
-        // 胶囊每次重建：数量少（标签数 = 2 + 来源数），重建比做 diff 便宜
-        holder.tabRow.removeAllViews()
-        for (tab in tabs) {
-            holder.tabRow.addView(chip(holder.itemView, tab))
+        // 段数少（全部 + 来源数），每次重建比做 diff 便宜
+        holder.sourceRow.removeAllViews()
+        for (tab in sources) {
+            holder.sourceRow.addView(segment(holder.itemView, tab))
         }
     }
 
-    private fun chip(parent: View, tab: Tab): TextView {
+    private fun segment(parent: View, tab: SourceTab): TextView {
         val context = parent.context
         val density = context.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         return TextView(context).apply {
             text = tab.label
-            textSize = 11f
+            textSize = 12f
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(7), dp(14), dp(7))
+            setPadding(dp(14), dp(6), dp(14), dp(6))
             setTextColor(
-                context.getColor(
-                    if (tab.selected) android.R.color.white else R.color.shell_ink_muted
-                )
+                context.getColor(if (tab.selected) R.color.shell_ink else R.color.shell_ink_muted)
             )
-            background = context.getDrawable(
-                if (tab.selected) R.drawable.bg_chip_selected else R.drawable.bg_chip_unselected
-            )
+            // 选中才有底色；没选中就直接坐在浅米色槽上
+            background = if (tab.selected) context.getDrawable(R.drawable.bg_segment_selected) else null
             isClickable = true
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginEnd = dp(8) }
-            setOnClickListener { onTabClick(tab.key) }
+            )
+            setOnClickListener { onSourceClick(tab.key) }
         }
+    }
+
+    companion object {
+        /** 「全部来源」这一段的键；与具体来源 id 不冲突 */
+        const val ALL_SOURCES = "all"
     }
 }

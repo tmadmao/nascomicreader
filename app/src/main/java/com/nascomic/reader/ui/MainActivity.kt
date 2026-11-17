@@ -63,10 +63,10 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var adapter: ShelfAdapter
     private lateinit var header: com.nascomic.reader.ui.shelf.ShelfTopAdapter
-    private var currentTab: String = TAB_ALL
+    private var sourceFilter: String = com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES
     private var allSources: List<SourceEntity> = emptyList()
 
-    /** 各标签下的书数，随 refresh 一起算好 */
+    /** 各来源下的书数，随 refresh 一起算好 */
     private var tabCounts: Map<String, Int> = emptyMap()
 
     /** 封面生成队列：串行，慢慢来；同一本只排一次 */
@@ -75,11 +75,8 @@ class MainActivity : AppCompatActivity() {
     private val MAX_COVER_QUEUE = 60
     private var coverWidth = 0
 
-    /** 搜索框里的关键字。本地过滤，不落库也不跨页保存 */
+    /** 搜索框里的关键字。本地过滤，不落库也不跨页保存；始终在当前书库筛选内找 */
     private var shelfQuery = ""
-
-    /** 搜索范围：true = 整个书库，false = 只搜当前标签 */
-    private var searchWholeLibrary = true
 
     /** 继续阅读卡指向的那本；卡不在时为空 */
     private var resumeBook: BookEntity? = null
@@ -110,9 +107,12 @@ class MainActivity : AppCompatActivity() {
         header = com.nascomic.reader.ui.shelf.ShelfTopAdapter(
             onResumeClick = { resumeBook?.let { openBook(it) } },
             onSortClick = { askSort() },
-            onTabClick = { key ->
-                if (currentTab != key) {
-                    currentTab = key
+            onRecentClick = { startActivity(Intent(this, RecentActivity::class.java)) },
+            // 系列页还没接上：这里留空，入口由 onSeriesClick 是否为 null 决定显不显示
+            onSeriesClick = null,
+            onSourceClick = { key ->
+                if (sourceFilter != key) {
+                    sourceFilter = key
                     refresh()
                 }
             },
@@ -134,7 +134,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 搜书名：敲字即筛，120ms 防抖，免得每敲一个键都查一次库
-        binding.searchScope.setOnClickListener { askScope() }
         binding.searchInput.doAfterTextChanged { text ->
             val query = text?.toString().orEmpty()
             if (query == shelfQuery) return@doAfterTextChanged
@@ -260,8 +259,6 @@ class MainActivity : AppCompatActivity() {
             val allBooks = db.bookDao().allSorted()
             val progress = db.progressDao().all().associateBy { it.bookId }
             tabCounts = buildMap {
-                put(TAB_ALL, allBooks.size)
-                put(TAB_RECENT, allBooks.count { progress.containsKey(it.id) })
                 allSources.forEach { source ->
                     put("$TAB_SOURCE_PREFIX${source.id}", allBooks.count { it.sourceId == source.id })
                 }
@@ -290,8 +287,10 @@ class MainActivity : AppCompatActivity() {
     ) {
         val latest = progress.values.maxByOrNull { it.updatedAt }
         val book = latest?.let { p -> allBooks.firstOrNull { it.id == p.bookId } }
-        // 最近阅读标签下不再重复——那里第一本本来就是它
-        val shown = if (latest == null || book == null || currentTab == TAB_RECENT || book.pageTotal <= 0) {
+        // 筛了某个来源、而这本书不在该来源里时，卡收起——否则「接着读」与下面的网格不是一套书
+        val filteredOut = sourceFilter != com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES &&
+            book != null && "$TAB_SOURCE_PREFIX${book.sourceId}" != sourceFilter
+        val shown = if (latest == null || book == null || filteredOut || book.pageTotal <= 0) {
             null
         } else {
             book
@@ -320,28 +319,31 @@ class MainActivity : AppCompatActivity() {
                 },
             )
         }
-        header.update(card, tabs())
+        header.update(card, sourceTabs(), prefs.seriesEnabled)
 
-        binding.shelfCount.text = getString(R.string.shelf_count_meta, tabCounts[TAB_ALL] ?: 0)
+        binding.shelfCount.text = getString(R.string.shelf_count_meta, allBooks.size)
     }
 
     /**
-     * 标签胶囊：全部 / 最近阅读 / 每个来源一个。
+     * 书库行：全部 + 每个来源。
      * 书数为 0 的来源不出现（一个来源都没扫到书时，点进去只有空书架）。
      */
-    private fun tabs(): List<com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab> {
-        val out = ArrayList<com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab>()
-        out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab(
-            TAB_ALL, getString(R.string.tab_all), currentTab == TAB_ALL,
-        )
-        out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab(
-            TAB_RECENT, getString(R.string.tab_recent), currentTab == TAB_RECENT,
+    private fun sourceTabs(): List<com.nascomic.reader.ui.shelf.ShelfTopAdapter.SourceTab> {
+        val out = ArrayList<com.nascomic.reader.ui.shelf.ShelfTopAdapter.SourceTab>()
+        out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.SourceTab(
+            com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES,
+            getString(R.string.tab_all),
+            sourceFilter == com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES,
         )
         allSources.forEach { source ->
             val key = "$TAB_SOURCE_PREFIX${source.id}"
             val count = tabCounts[key] ?: 0
-            if (count == 0 && currentTab != key) return@forEach
-            out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.Tab(key, source.label, currentTab == key)
+            if (count == 0 && sourceFilter != key) return@forEach
+            out += com.nascomic.reader.ui.shelf.ShelfTopAdapter.SourceTab(
+                key,
+                source.label,
+                sourceFilter == key,
+            )
         }
         return out
     }
@@ -362,22 +364,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 当前要显示的列表。
+     * 当前要显示的列表：先按书库筛选，再按关键字过滤，最后按排序档排。
      *
-     * 搜索范围为「书库」时在全部书里找，不受当前标签限制——站在某个来源标签上搜别的来源的书，
-     * 结果却是空的，这不像搜索。范围选「当前标签」时才按标签先筛后搜。
+     * 搜索只在这套筛选里进行——界面上不再有第二个「范围」开关。
      */
     private suspend fun queryBooks(allBooks: List<BookEntity>): List<BookEntity> {
-        val searching = shelfQuery.isNotBlank()
-        val base = when {
-            searching && searchWholeLibrary -> allBooks
-            currentTab == TAB_RECENT -> db.bookDao().recentlyReadNow()
-            currentTab.startsWith(TAB_SOURCE_PREFIX) ->
-                db.bookDao().bySourceNow(currentTab.removePrefix(TAB_SOURCE_PREFIX).toLong())
-            else -> allBooks
+        val base = if (sourceFilter == com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES) {
+            allBooks
+        } else {
+            allBooks.filter { "$TAB_SOURCE_PREFIX${it.sourceId}" == sourceFilter }
         }
-        // 「最近阅读」标签本身按读过的时间排，排序档不覆盖它——否则这个标签就没意义了
-        if (currentTab == TAB_RECENT && !(searching && searchWholeLibrary)) return filterByQuery(base)
         val sorted = when (AppPrefs.ShelfSort.of(prefs.shelfSort)) {
             AppPrefs.ShelfSort.TITLE_ASC -> base.sortedBy { it.titleSort }
             AppPrefs.ShelfSort.TITLE_DESC -> base.sortedByDescending { it.titleSort }
@@ -396,30 +392,6 @@ class MainActivity : AppCompatActivity() {
             book.title.contains(q, ignoreCase = true) ||
                 sourceNames[book.sourceId]?.contains(q, ignoreCase = true) == true
         }
-    }
-
-    /** 搜索范围：书库（全部书）还是当前标签 */
-    private fun askScope() {
-        val labels = arrayOf(
-            getString(R.string.shelf_scope_library),
-            getString(R.string.shelf_scope_tab),
-        )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.shelf_scope_title)
-            .setSingleChoiceItems(labels, if (searchWholeLibrary) 0 else 1) { dialog, which ->
-                searchWholeLibrary = which == 0
-                dialog.dismiss()
-                renderScopeChip()
-                refresh()
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .show()
-    }
-
-    private fun renderScopeChip() {
-        binding.searchScope.text = getString(
-            if (searchWholeLibrary) R.string.shelf_scope_library else R.string.shelf_scope_tab
-        )
     }
 
     /**
@@ -738,7 +710,7 @@ class MainActivity : AppCompatActivity() {
                         getString(R.string.status_scan_done, source.label, r.found, r.added, r.updated)
                     }
                 )
-                currentTab = TAB_ALL
+                sourceFilter = com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES
                 refresh()
             } catch (e: LibraryScanner.Cancelled) {
                 status(getString(R.string.scan_cancelled))
@@ -794,8 +766,7 @@ class MainActivity : AppCompatActivity() {
         /** 封面生成并发数：2 条够把「等网络」的时间藏起来 */
         private const val COVER_WORKERS = 2
 
-        const val TAB_ALL = "all"
-        const val TAB_RECENT = "recent"
+        /** 来源筛选的键前缀；「全部来源」用 ShelfTopAdapter.ALL_SOURCES */
         const val TAB_SOURCE_PREFIX = "source:"
     }
 }
