@@ -8,6 +8,12 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
+ * 库版本。实体声明、导出的 schema、迁移目标都取这一处，
+ * 改表只动这里一个数。
+ */
+internal const val DB_VERSION = 5
+
+/**
  * 应用数据库。
  *
  * 迁移策略：每次改表结构都升 version 并写 Migration（schema 导出在 app/schemas/）。
@@ -21,7 +27,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProgressEntity::class,
         BookmarkEntity::class,
     ],
-    version = 5,
+    version = DB_VERSION,
     exportSchema = true
 )
 abstract class ReaderDatabase : RoomDatabase() {
@@ -75,10 +81,16 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 迁移链，按版本顺序排列。建库与设备测试共用这一份：
+         * 测试按它逐级套用，避免测试里另抄一份而两处走散。
+         */
+        internal val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+
         private fun build(context: Context): ReaderDatabase =
             Room.databaseBuilder(context, ReaderDatabase::class.java, NAME)
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(*MIGRATIONS)
                 // 兜底：开发期的库版本五花八门，认不出来的直接重建，别卡在启动上
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

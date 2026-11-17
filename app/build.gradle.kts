@@ -34,6 +34,7 @@ android {
         targetSdk = 37
         versionCode = 26
         versionName = "1.2.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -68,6 +69,8 @@ android {
 
     // AGP 9 不接受 Provider，取成 File 再传
     sourceSets.getByName("main").assets.srcDir(licensesDir.get().asFile)
+    // 迁移测试要按旧版本建库，导出的 schema 当资产喂给 MigrationTestHelper
+    sourceSets.getByName("androidTest").assets.srcDir(layout.projectDirectory.dir("schemas"))
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -110,6 +113,18 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // 迁移测试：真机跑 SQLite 的 DDL，不占 JVM 单测那条门
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+
+    // 迁移测试要读导出的 schema；AGP 的一致解析会把这个版本对齐到主包，
+    // 所以只在测试版本里提到与 room-testing 编译时一致的版本，正式包不带它
+    debugImplementation(libs.kotlinx.serialization.core)
+    debugImplementation(libs.kotlinx.serialization.json)
 }
 
 // Room 导出的 schema 进版本库，迁移才有据可查
