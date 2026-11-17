@@ -55,13 +55,10 @@ class SeriesDetectorTest {
     }
 
     @Test
-    fun `同作者不同作品不并`() {
-        val group = SeriesDetector().detect(sample)
-            .first { it.members.map { m -> m.bookId }.contains(8L) }
-        assertFalse(group.highConfidence)
-        // 只能靠「同一个文件夹」聚成候选，且理由要说人话
-        assertEquals(2, group.members.size)
-        assertTrue(group.reason.contains("文件夹"))
+    fun `同作者不同作品不成组`() {
+        val ids = SeriesDetector().detect(sample).flatMap { g -> g.members.map { it.bookId } }
+        assertFalse(ids.contains(8L))
+        assertFalse(ids.contains(9L))
     }
 
     @Test

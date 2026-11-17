@@ -49,6 +49,7 @@ class SourcesActivity : AppCompatActivity() {
     private val db by lazy { ReaderDatabase.get(this) }
     private val repository by lazy { SourceRepository(this, db) }
     private val scanner by lazy { LibraryScanner(this, db) }
+    private val appPrefs by lazy { com.nascomic.reader.settings.AppPrefs(this) }
 
     /** 选中要新增哪一类；为 null 表示选中的是某个已有书源 */
     private var selectedKind: Int? = SourceEntity.KIND_LOCAL
@@ -400,6 +401,7 @@ class SourcesActivity : AppCompatActivity() {
                 val result = scanner.scan(source, scanListener()) { scanCancelled }
                 lastSync[source.id] = result
                 showSuccess(scanResultText(source, result))
+                autoGroupIfEnabled()
             } catch (e: LibraryScanner.Cancelled) {
                 Toast.makeText(this@SourcesActivity, R.string.scan_cancelled, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
@@ -409,6 +411,22 @@ class SourcesActivity : AppCompatActivity() {
                 binding.progressPanel.isVisible = false
                 loadSources()
             }
+        }
+    }
+
+    /**
+     * 扫完顺手跑一次自动归入：开关关着就什么都不做。
+     * 只落高置信的组，认不准的留给人（D 阶段）。
+     */
+    private suspend fun autoGroupIfEnabled() {
+        if (!appPrefs.seriesEnabled) return
+        val made = withContext(Dispatchers.IO) {
+            runCatching {
+                com.nascomic.reader.library.series.SeriesAutoGrouper(db).run()
+            }.getOrDefault(0)
+        }
+        if (made > 0) {
+            Toast.makeText(this, getString(R.string.series_auto_done, made), Toast.LENGTH_SHORT).show()
         }
     }
 

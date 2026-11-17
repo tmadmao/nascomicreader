@@ -60,20 +60,8 @@ class SeriesDetector(
                 list.forEach { taken += it.first.bookId }
             }
 
-        // ② 同目录多本：目录名常就是系列名，但同名不同作者的情况要靠 ① 区分
-        parsed.filter { it.first.bookId !in taken }
-            .groupBy { it.first.parent }
-            .forEach { (parent, list) ->
-                if (list.size < 2) return@forEach
-                groups += Group(
-                    name = parent.substringAfterLast('/').ifEmpty { list.first().second.title },
-                    members = list.map { it.first },
-                    reason = "同一个文件夹下的多本，书名对不上",
-                    highConfidence = false,
-                )
-                list.forEach { taken += it.first.bookId }
-            }
-
+        // ② 目录聚合暂不启用：实测扁平书库里父目录常是「杂物间」，
+        //    按它分组会把不相干的作品并成一组。等有「一作品一目录」的强约定再打开。
         // ③ 编辑距离：只在前两步没认领的书之间比
         val rest = parsed.filter { it.first.bookId !in taken }
         val consumed = HashSet<Long>()
