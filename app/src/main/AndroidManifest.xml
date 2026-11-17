@@ -43,6 +43,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.SeriesDetailActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.about.LicensesActivity"
             android:exported="false" />
 

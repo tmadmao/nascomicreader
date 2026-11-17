@@ -339,6 +339,36 @@
     <string name="settings_series">作品系列</string>
     <string name="settings_series_desc">把散在各目录的同一部漫画聚成系列；首次要扫一遍全书库，只在本机建关联，不动 NAS 里的文件</string>
 
+    <string name="series_menu">系列操作</string>
+    <string name="detail_more">更多</string>
+    <string name="series_join_title">加入作品系列</string>
+    <string name="series_join_new">新建系列…</string>
+    <string name="series_new_title">新建系列</string>
+    <string name="series_new_ok">创建</string>
+    <string name="series_name_hint">系列名，默认用书名</string>
+    <string name="series_view">查看系列</string>
+    <string name="series_leave">移出这个系列</string>
+    <string name="series_leave_done">已移出系列，书还在书库里</string>
+    <string name="series_in">已在《%1$s》里</string>
+    <string name="series_volumes">全部卷</string>
+    <string name="series_empty">这个系列还没有卷</string>
+    <string name="series_meta">%1$d 卷 · 共 %2$d 页</string>
+    <string name="series_volume_count">%1$d 卷</string>
+    <string name="series_continue">接着读 · 第 %1$d 卷</string>
+    <string name="series_start">从第 1 卷开始</string>
+    <string name="series_read_position">读到第 %1$d 卷 · %2$d%%</string>
+    <string name="series_menu_rename">重命名</string>
+    <string name="series_menu_delete">删除系列</string>
+    <string name="series_rename_title">重命名系列</string>
+    <string name="series_rename_hint">只改系列名；书与来源文件都不动</string>
+    <string name="series_rename_ok">保存</string>
+    <string name="series_delete_title">删除系列</string>
+    <string name="series_delete_message">「%1$s」会从书架移除，里面的 %2$d 卷还留在书库里，进度与书签不受影响。</string>
+    <string name="series_delete_ok">删除</string>
+    <string name="series_delete_done">已删除系列</string>
+    <string name="series_volume_pages">%1$d 页</string>
+    <string name="series_volume_progress">%1$d 页 · 已读 %2$d%%</string>
+
     <string name="settings_about_row">关于本应用</string>
     <string name="settings_about_desc">版本、开源许可、源代码与赞助</string>
 

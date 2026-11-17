@@ -5,7 +5,9 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
@@ -15,12 +17,14 @@ import com.nascomic.reader.databinding.ActivityDetailBinding
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.readPercent
 import com.nascomic.reader.library.cover.ThumbnailStore
+import com.nascomic.reader.library.SeriesRepository
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
+import com.nascomic.reader.ui.SeriesDetailActivity
 import com.nascomic.reader.library.detail.BookDetailLoader
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.applyOrientation
@@ -79,6 +83,9 @@ class DetailActivity : AppCompatActivity() {
             return
         }
         binding.back.setOnClickListener { finish() }
+        // 作品系列关着时不摆这个入口，免得点了没反应
+        binding.more.visibility = if (appPrefs.seriesEnabled) View.VISIBLE else View.GONE
+        binding.more.setOnClickListener { showSeriesMenu() }
         tocDescending = appPrefs.tocDescending
         applyHeroMetrics()
         load()
@@ -469,4 +476,90 @@ class DetailActivity : AppCompatActivity() {
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    // ── 作品系列 ───────────────────────────────────────────
+
+    private val seriesRepo by lazy { SeriesRepository(db) }
+
+    /** 已在某个系列里就给它「查看 / 移出」，没有就给「加入或新建」 */
+    private fun showSeriesMenu() {
+        lifecycleScope.launch {
+            val series = seriesRepo.seriesOf(bookId)
+            if (series == null) pickSeries() else seriesActions(series.id, series.name)
+        }
+    }
+
+    private fun pickSeries() {
+        lifecycleScope.launch {
+            val all = seriesRepo.all()
+            val labels = all.map { it.name }.toMutableList()
+            labels += getString(R.string.series_join_new)
+            AlertDialog.Builder(this@DetailActivity)
+                .setTitle(R.string.series_join_title)
+                .setItems(labels.toTypedArray()) { _, which ->
+                    if (which < all.size) {
+                        join(all[which].id)
+                    } else {
+                        createSeries()
+                    }
+                }
+                .show()
+        }
+    }
+
+    private fun createSeries() {
+        val input = EditText(this).apply {
+            setText(book?.title.orEmpty())
+            setSelection(text.length)
+            hint = getString(R.string.series_name_hint)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.series_new_title)
+            .setView(input)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.series_new_ok) { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) return@setPositiveButton
+                lifecycleScope.launch {
+                    val id = seriesRepo.create(name, System.currentTimeMillis())
+                    seriesRepo.addBook(id, bookId, System.currentTimeMillis())
+                    openSeries(id)
+                }
+            }
+            .show()
+    }
+
+    private fun join(seriesId: Long) {
+        lifecycleScope.launch {
+            seriesRepo.addBook(seriesId, bookId, System.currentTimeMillis())
+            openSeries(seriesId)
+        }
+    }
+
+    private fun seriesActions(seriesId: Long, seriesName: String) {
+        val items = arrayOf(
+            getString(R.string.series_view),
+            getString(R.string.series_leave),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.series_in, seriesName))
+            .setItems(items) { _, which ->
+                if (which == 0) {
+                    openSeries(seriesId)
+                } else {
+                    lifecycleScope.launch {
+                        seriesRepo.removeBook(bookId)
+                        Toast.makeText(this@DetailActivity, R.string.series_leave_done, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun openSeries(seriesId: Long) {
+        startActivity(
+            Intent(this, SeriesDetailActivity::class.java)
+                .putExtra(SeriesDetailActivity.EXTRA_SERIES_ID, seriesId)
+        )
+    }
 }

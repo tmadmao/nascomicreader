@@ -34,9 +34,15 @@
             android:textSize="13sp"
             android:textStyle="bold" />
 
-        <View
+        <ImageView
+            android:id="@+id/more"
             android:layout_width="36dp"
-            android:layout_height="36dp" />
+            android:layout_height="36dp"
+            android:background="@drawable/bg_circle_white"
+            android:contentDescription="@string/detail_more"
+            android:padding="8dp"
+            android:src="@drawable/ic_more_line"
+            android:visibility="gone" />
     </LinearLayout>
 
     <ScrollView
