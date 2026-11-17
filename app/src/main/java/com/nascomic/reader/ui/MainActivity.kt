@@ -745,6 +745,21 @@ class MainActivity : AppCompatActivity() {
                         getString(R.string.status_scan_done, source.label, r.found, r.added, r.updated)
                     }
                 )
+                // 扫完顺手跑一次自动归入：只在开关打开时做，且只落高置信的组
+                if (prefs.seriesEnabled) {
+                    val made = withContext(Dispatchers.IO) {
+                        runCatching {
+                            com.nascomic.reader.library.series.SeriesAutoGrouper(db).run()
+                        }.getOrDefault(0)
+                    }
+                    if (made > 0) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.series_auto_done, made),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
                 sourceFilter = com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES
                 refresh()
             } catch (e: LibraryScanner.Cancelled) {
