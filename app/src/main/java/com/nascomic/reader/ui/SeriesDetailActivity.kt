@@ -46,6 +46,8 @@ class SeriesDetailActivity : AppCompatActivity() {
     private lateinit var adapter: VolumeAdapter
     private var seriesId = 0L
     private var volumes: List<BookEntity> = emptyList()
+    private var selecting = false
+    private val selectedIds = LinkedHashSet<Long>()
     private var progress: Map<Long, ProgressEntity> = emptyMap()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,7 +62,10 @@ class SeriesDetailActivity : AppCompatActivity() {
             return
         }
 
-        adapter = VolumeAdapter { book -> openVolume(book) }
+        adapter = VolumeAdapter(
+            onClick = { book -> if (selecting) toggleSelection(book.id) else openVolume(book) },
+            onLongClick = { book -> enterSelection(book.id) },
+        )
         binding.volumeList.layoutManager = LinearLayoutManager(this)
         binding.volumeList.adapter = adapter
 
@@ -68,6 +73,8 @@ class SeriesDetailActivity : AppCompatActivity() {
         binding.more.setOnClickListener { showMenu() }
         binding.primary.setOnClickListener { openLatest() }
         binding.addVolumes.setOnClickListener { pickVolumes() }
+        binding.selectCancel.setOnClickListener { exitSelection() }
+        binding.selectRemove.setOnClickListener { confirmRemove() }
     }
 
     override fun onResume() {
@@ -194,6 +201,54 @@ class SeriesDetailActivity : AppCompatActivity() {
             .show()
     }
 
+    // ── 卷的多选 ───────────────────────────────────────────
+
+    private fun enterSelection(firstId: Long) {
+        selecting = true
+        selectedIds.clear()
+        selectedIds += firstId
+        renderSelection()
+    }
+
+    private fun exitSelection() {
+        selecting = false
+        selectedIds.clear()
+        renderSelection()
+    }
+
+    private fun toggleSelection(id: Long) {
+        if (!selectedIds.add(id)) selectedIds.remove(id)
+        renderSelection()
+    }
+
+    private fun renderSelection() {
+        adapter.setSelection(selecting, selectedIds)
+        binding.selectBar.visibility = if (selecting) View.VISIBLE else View.GONE
+        binding.addVolumes.visibility = if (selecting) View.GONE else View.VISIBLE
+        binding.selectCount.text = getString(R.string.series_selected_count, selectedIds.size)
+        binding.selectRemove.isEnabled = selectedIds.isNotEmpty()
+        binding.selectRemove.alpha = if (selectedIds.isEmpty()) 0.5f else 1f
+    }
+
+    /** 移出系列：只解关联，书还在书库里 */
+    private fun confirmRemove() {
+        if (selectedIds.isEmpty()) return
+        val doomed = selectedIds.toList()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.series_remove_title)
+            .setMessage(getString(R.string.series_remove_message, doomed.size))
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.series_leave) { _, _ ->
+                lifecycleScope.launch {
+                    doomed.forEach { repo.removeBook(it) }
+                    exitSelection()
+                    load()
+                    Toast.makeText(this@SeriesDetailActivity, R.string.series_remove_done, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
     /** 加入其它卷：只列还不属于这个系列的书，带搜索，可一次多选 */
     private fun pickVolumes() {
         lifecycleScope.launch {
@@ -243,10 +298,22 @@ class SeriesDetailActivity : AppCompatActivity() {
     /** 卷列表：序号 · 封面 · 卷名与页数进度 · 箭头 */
     private class VolumeAdapter(
         private val onClick: (BookEntity) -> Unit,
+        private val onLongClick: (BookEntity) -> Unit,
     ) : RecyclerView.Adapter<VolumeAdapter.Holder>() {
 
         private var books: List<BookEntity> = emptyList()
         private var progress: Map<Long, ProgressEntity> = emptyMap()
+        private var selecting = false
+        private var selectedIds: Set<Long> = emptySet()
+
+        /** 同书架：调用方传的是同一个可变集合，必须另存一份再比，否则勾选不重绑 */
+        fun setSelection(selecting: Boolean, ids: Set<Long>) {
+            val incoming = HashSet(ids)
+            if (this.selecting == selecting && this.selectedIds == incoming) return
+            this.selecting = selecting
+            this.selectedIds = incoming
+            notifyItemRangeChanged(0, books.size)
+        }
 
         fun submit(newBooks: List<BookEntity>, newProgress: Map<Long, ProgressEntity>) {
             books = newBooks
@@ -275,7 +342,14 @@ class SeriesDetailActivity : AppCompatActivity() {
                     readPercent(p.pageGlobal, book.pageTotal, p.finished),
                 )
             }
+            holder.binding.check.visibility = if (selecting) View.VISIBLE else View.GONE
+            holder.binding.check.text = if (book.id in selectedIds) "☑" else "☐"
+            holder.binding.root.alpha = if (selecting && book.id !in selectedIds) 0.55f else 1f
             holder.binding.root.setOnClickListener { onClick(book) }
+            holder.binding.root.setOnLongClickListener {
+                onLongClick(book)
+                true
+            }
         }
     }
 

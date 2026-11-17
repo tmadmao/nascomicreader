@@ -74,9 +74,12 @@ class ShelfAdapter(
 
     /** 进出多选态 / 勾选变化：只重绑在屏的格子 */
     fun setSelection(selecting: Boolean, selected: Set<Long>) {
-        if (this.selecting == selecting && this.selectedIds == selected) return
+        // 必须另存一份：调用方传的是同一个可变集合，原地增删后引用相等、内容也相等，
+        // 直接比会判成「没变」而不重绑，于是只有进多选那一下刷出的角标，后面勾的都不显示
+        val incoming = HashSet(selected)
+        if (this.selecting == selecting && this.selectedIds == incoming) return
         this.selecting = selecting
-        this.selectedIds = selected
+        this.selectedIds = incoming
         notifyItemRangeChanged(0, books.size)
     }
 

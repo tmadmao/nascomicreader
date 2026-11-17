@@ -367,6 +367,10 @@
     <string name="series_view">查看系列</string>
     <string name="series_leave">移出这个系列</string>
     <string name="series_leave_done">已移出系列，书还在书库里</string>
+    <string name="series_selected_count">已选 %1$d 卷</string>
+    <string name="series_remove_title">从系列移出</string>
+    <string name="series_remove_message">把这 %1$d 卷移出系列？书还在书库里，进度与书签不受影响。</string>
+    <string name="series_remove_done">已移出</string>
     <string name="series_in">已在《%1$s》里</string>
     <string name="series_volumes">全部卷</string>
     <string name="series_empty">这个系列还没有卷</string>

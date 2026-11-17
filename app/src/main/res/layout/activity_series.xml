@@ -164,6 +164,52 @@
         android:textColor="@color/shell_ink"
         android:textSize="13sp" />
 
+    <!-- 多选态：底部一条操作带 -->
+    <LinearLayout
+        android:id="@+id/select_bar"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:background="@drawable/bg_bottom_bar"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_margin"
+        android:paddingEnd="@dimen/page_margin"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/select_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/shell_ink"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/select_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:background="@drawable/bg_pill_outline"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/action_cancel"
+            android:textColor="@color/shell_ink"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/select_remove"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/bg_pill_ink"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/series_leave"
+            android:textColor="#FFFFFFFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/empty"
         android:layout_width="match_parent"
