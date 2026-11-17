@@ -357,6 +357,7 @@
     <string name="shelf_batch_series">加入作品系列…</string>
     <string name="series_page_title">作品系列</string>
     <string name="series_auto_done">自动归入 %1$d 个系列</string>
+    <string name="series_auto_none">没有可以自动归入的卷，要合就手动加</string>
     <string name="series_page_empty">还没有作品系列。开了「作品系列」之后，可以从书的详情页把各卷聚在一起。</string>
     <string name="detail_more">更多</string>
     <string name="series_join_title">加入作品系列</string>

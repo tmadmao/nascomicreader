@@ -1100,8 +1100,29 @@ class SettingsActivity : AppCompatActivity() {
                 title = getString(R.string.settings_series),
                 desc = getString(R.string.settings_series_desc),
                 checked = prefs.seriesEnabled,
-            ) { checked -> prefs.seriesEnabled = checked }
+            ) { checked ->
+                prefs.seriesEnabled = checked
+                // 打开的那一刻就把现有的书跑一遍，不然用户会以为开关没生效
+                if (checked) groupExisting()
+            }
         )
+    }
+
+    /**
+     * 打开「作品系列」后，对现有书库跑一次自动归入。
+     * 只落高置信的组，认不准的不管——要合就手动加。
+     */
+    private fun groupExisting() {
+        lifecycleScope.launch {
+            val made = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.nascomic.reader.library.series.SeriesAutoGrouper(db).run()
+                }.getOrDefault(0)
+            }
+            val text = if (made > 0) getString(R.string.series_auto_done, made)
+            else getString(R.string.series_auto_none)
+            Toast.makeText(this@SettingsActivity, text, Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ── 恢复默认 ───────────────────────────────────────────
