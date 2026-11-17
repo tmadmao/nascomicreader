@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -68,6 +69,23 @@ class MigrationTest {
         db.close()
     }
 
+    @Test
+    fun `5到6加作者卷号与系列三表_原有数据不动`() {
+        val name = "mig_5_6.db"
+        createOld(name, version = 5).close()
+
+        val db = helper.runMigrationsAndValidate(name, 6, true, *chainUpTo(6))
+        assertEquals("第一卷", db.text("SELECT title FROM books WHERE id = 1"))
+        assertEquals(1L, db.count("SELECT COUNT(*) FROM bookmarks"))
+        // 新列留空：作者卷号要靠解析文件名填，升级时不去猜
+        assertNull(db.text("SELECT author FROM books WHERE id = 1"))
+        assertNull(db.text("SELECT volume FROM books WHERE id = 1"))
+        assertTrue(db.hasTable("series"))
+        assertTrue(db.hasTable("series_books"))
+        assertTrue(db.hasTable("group_decisions"))
+        db.close()
+    }
+
     /** 跨过多个版本的库要能一路升上来，中间每一步都不能断 */
     @Test
     fun `从2一路升到当前版本_书与进度书签都在`() {
@@ -118,7 +136,7 @@ class MigrationTest {
                 "INSERT INTO bookmarks (id, book_id, chapter_ordinal, page_in_chapter, note, created_at) " +
                     "VALUES (1, 1, 0, 3, '看到这里', 2000)"
             )
-            if (version >= 4) {
+            if (version == 4) {
                 execSQL("INSERT INTO history (book_id, opened_at) VALUES (1, 3000)")
             }
         }

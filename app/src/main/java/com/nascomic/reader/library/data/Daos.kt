@@ -222,3 +222,69 @@ interface BookmarkDao {
 
 /** 分组计数的投影：来源 id 与该来源下的书数 */
 data class SourceCount(val sourceId: Long, val total: Int)
+
+@Dao
+interface SeriesDao {
+
+    @Insert
+    suspend fun insert(series: SeriesEntity): Long
+
+    @Query("SELECT * FROM series ORDER BY name_sort ASC")
+    fun observeAll(): Flow<List<SeriesEntity>>
+
+    @Query("SELECT * FROM series ORDER BY name_sort ASC")
+    suspend fun all(): List<SeriesEntity>
+
+    @Query("SELECT * FROM series WHERE id = :id")
+    suspend fun get(id: Long): SeriesEntity?
+
+    @Query("UPDATE series SET name = :name, name_sort = :nameSort WHERE id = :id")
+    suspend fun rename(id: Long, name: String, nameSort: String)
+
+    /** 删系列只删这一行；关联表靠外键级联跟着走，书本身不动 */
+    @Query("DELETE FROM series WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM series_books WHERE series_id = :seriesId ORDER BY ordinal ASC")
+    suspend fun members(seriesId: Long): List<SeriesBookEntity>
+
+    @Query("SELECT * FROM series_books WHERE book_id = :bookId LIMIT 1")
+    suspend fun membershipOf(bookId: Long): SeriesBookEntity?
+
+    /** 一本只归一个系列：book_id 上有唯一索引，换系列时覆盖原来那行 */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putMember(member: SeriesBookEntity): Long
+
+    @Query("DELETE FROM series_books WHERE book_id = :bookId")
+    suspend fun removeMember(bookId: Long)
+
+    @Query("UPDATE series_books SET ordinal = :ordinal WHERE id = :id")
+    suspend fun moveMember(id: Long, ordinal: Int)
+
+    @Query("SELECT MAX(ordinal) FROM series_books WHERE series_id = :seriesId")
+    suspend fun lastOrdinal(seriesId: Long): Int?
+
+    /** 追加到组尾。组内序只往后长，重排由界面显式调 moveMember */
+    @Transaction
+    suspend fun append(seriesId: Long, bookId: Long, at: Long) {
+        val next = (lastOrdinal(seriesId) ?: -1) + 1
+        putMember(SeriesBookEntity(seriesId = seriesId, bookId = bookId, ordinal = next, addedAt = at))
+    }
+}
+
+@Dao
+interface GroupDecisionDao {
+
+    /** 同一个决定重复写入只保留一行（(kind, key_a, key_b) 上有唯一索引） */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(decision: GroupDecisionEntity): Long
+
+    @Query("SELECT * FROM group_decisions ORDER BY kind ASC, id ASC")
+    suspend fun all(): List<GroupDecisionEntity>
+
+    @Query("SELECT * FROM group_decisions WHERE kind = :kind ORDER BY id ASC")
+    suspend fun byKind(kind: Int): List<GroupDecisionEntity>
+
+    @Query("DELETE FROM group_decisions WHERE id = :id")
+    suspend fun delete(id: Long)
+}

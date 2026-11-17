@@ -135,3 +135,8 @@ ksp {
 
 // 许可文件要在合并 assets 之前就位
 tasks.named("preBuild").configure { dependsOn(copyLicenses) }
+
+// schema 是 KSP 在编译期导出的，测试资产合并若排在它前面，新版本的 json 会漏打进去
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("AndroidTestAssets") }.configureEach {
+    dependsOn("kspDebugKotlin")
+}

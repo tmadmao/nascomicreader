@@ -86,6 +86,10 @@ data class BookEntity(
     @ColumnInfo(name = "title") val title: String,
     /** 自然序排序键，由 NaturalSort.key 生成 */
     @ColumnInfo(name = "title_sort") val titleSort: String,
+    /** 从文件名解析出的作者；解析不出就空着，不猜 */
+    @ColumnInfo(name = "author") val author: String? = null,
+    /** 从文件名解析出的卷号；可以是数字，也可以是「上」「特别篇」这类字，解析不出就空着 */
+    @ColumnInfo(name = "volume") val volume: String? = null,
     /** 0=zip/cbz 1=目录 2=pdf 3=epub 4=其他压缩包 */
     @ColumnInfo(name = "format") val format: Int,
     @ColumnInfo(name = "byte_size") val byteSize: Long = 0,
@@ -202,3 +206,90 @@ data class BookmarkEntity(
     @ColumnInfo(name = "note") val note: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
 )
+
+/**
+ * 作品系列：把散在不同目录 / 不同来源的同一部作品的各卷聚在一起。
+ * 只建关联，不改来源文件，也不动 `books.doc_ref`。见《开发计划》§2.5。
+ */
+@Entity(
+    tableName = "series",
+    indices = [Index("name_sort")]
+)
+data class SeriesEntity(
+    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
+    /** 系列名，默认取作品名，允许改 */
+    @ColumnInfo(name = "name") val name: String,
+    /** 排序键，与 books.title_sort 同一套规则，列表可按它排 */
+    @ColumnInfo(name = "name_sort") val nameSort: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
+/**
+ * 书与系列的归属。一本最多属于一个系列，靠 `book_id` 上的唯一索引兜住；
+ * 删系列只删这里的行，书本身不动。
+ */
+@Entity(
+    tableName = "series_books",
+    foreignKeys = [
+        ForeignKey(
+            entity = SeriesEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["series_id"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = BookEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["book_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index("series_id"),
+        Index(value = ["book_id"], unique = true),
+    ]
+)
+data class SeriesBookEntity(
+    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
+    @ColumnInfo(name = "series_id") val seriesId: Long,
+    @ColumnInfo(name = "book_id") val bookId: Long,
+    /** 组内序，0 基；重排只改这一列 */
+    @ColumnInfo(name = "ordinal") val ordinal: Int,
+    @ColumnInfo(name = "added_at") val addedAt: Long,
+)
+
+/**
+ * 人工决定。重扫先读这张表再生成候选，让用户改过的判断持续生效。
+ * 存的是判断本身，不是撤销栈：删掉系列不会把这里清空。
+ *
+ * `key_a` / `key_b` 的含义按 `kind` 定：
+ * - 拒绝合并：`key_a` = 被拒那一组的签名（组内标准化书名的排序拼接），`key_b` 为空串
+ * - 移出系列：`key_a` = 系列 id，`key_b` = 书的 `doc_ref` 与来源 id 拼成的键
+ * - 拆分：`key_a` = 原系列 id，`key_b` = 拆出去那一半的组签名
+ * - 确认别名：`key_a` / `key_b` = 两个标准化书名，按字典序放，顺序不影响命中
+ */
+@Entity(
+    tableName = "group_decisions",
+    indices = [Index(value = ["kind", "key_a", "key_b"], unique = true)]
+)
+data class GroupDecisionEntity(
+    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
+    @ColumnInfo(name = "kind") val kind: Int,
+    @ColumnInfo(name = "key_a") val keyA: String,
+    @ColumnInfo(name = "key_b") val keyB: String = "",
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+) {
+    companion object {
+        /** 这一组不该合并 */
+        const val KIND_REJECT = 0
+
+        /** 这本书不属于这个系列 */
+        const val KIND_EXCLUDE = 1
+
+        /** 这个系列拆出去一半 */
+        const val KIND_SPLIT = 2
+
+        /** 两个名字是同一部作品 */
+        const val KIND_ALIAS = 3
+    }
+}
