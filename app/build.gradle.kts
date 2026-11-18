@@ -104,6 +104,7 @@ dependencies {
     implementation(libs.libarchive)
     implementation(libs.okhttp)
     implementation(libs.smbj)
+    implementation(libs.tinypinyin)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
