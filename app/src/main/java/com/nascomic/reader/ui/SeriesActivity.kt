@@ -13,11 +13,13 @@ import androidx.recyclerview.widget.GridLayoutManager
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivitySeriesListBinding
 import com.nascomic.reader.library.SeriesRepository
+import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.ui.shelf.CoverBitmaps
 import com.nascomic.reader.ui.shelf.SeriesCardAdapter
+import com.nascomic.reader.ui.shelf.SeriesCover
 import com.nascomic.reader.ui.shelf.ShelfGrid
 import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +40,7 @@ class SeriesActivity : AppCompatActivity() {
     private val prefs by lazy { AppPrefs(this) }
     private val thumbs by lazy { ThumbnailStore(this) }
     private val covers by lazy { CoverBitmaps(thumbs) }
+    private val seriesCover by lazy { SeriesCover(db, thumbs, BookOpener(this)) }
 
     private lateinit var adapter: SeriesCardAdapter
     private var coverWidth = 0
@@ -93,18 +96,16 @@ class SeriesActivity : AppCompatActivity() {
         }
     }
 
+    /** 系列封面 = 首卷封面；首卷还没缩略图就现生成一次，别让整页灰着 */
     private fun loadCover(card: SeriesCardAdapter.Card, image: ImageView) {
         val bookId = card.coverBookId ?: return
-        val cached = covers.cached(bookId)
-        if (cached != null) {
-            image.setImageBitmap(cached)
+        covers.cached(bookId)?.let {
+            image.setImageBitmap(it)
             return
         }
         lifecycleScope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                val width = if (coverWidth > 0) coverWidth else dp(112)
-                runCatching { thumbs.load(bookId, width, width * 4 / 3) }.getOrNull()
-            }
+            val width = if (coverWidth > 0) coverWidth else dp(112)
+            val bitmap = seriesCover.load(bookId, width)
             if (bitmap != null) {
                 covers.put(bookId, bitmap)
                 adapter.showCover(card.seriesId, bitmap)

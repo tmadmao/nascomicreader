@@ -17,6 +17,7 @@ import com.nascomic.reader.databinding.ActivitySeriesBinding
 import com.nascomic.reader.databinding.ItemSeriesVolumeBinding
 import com.nascomic.reader.format.readPercent
 import com.nascomic.reader.library.SeriesRepository
+import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ProgressEntity
@@ -24,6 +25,7 @@ import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.ui.detail.DetailActivity
 import com.nascomic.reader.ui.reader.ReadingActivity
+import com.nascomic.reader.ui.shelf.SeriesCover
 import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,6 +44,7 @@ class SeriesDetailActivity : AppCompatActivity() {
     private val repo by lazy { SeriesRepository(db) }
     private val prefs by lazy { AppPrefs(this) }
     private val thumbs by lazy { ThumbnailStore(this) }
+    private val seriesCover by lazy { SeriesCover(db, thumbs, BookOpener(this)) }
 
     private lateinit var adapter: VolumeAdapter
     private var seriesId = 0L
@@ -284,13 +287,12 @@ class SeriesDetailActivity : AppCompatActivity() {
         }
     }
 
+    /** 系列封面 = 首卷封面；缺缩略图就现生成一次 */
     private fun loadCover(book: BookEntity?) {
         if (book == null) return
         lifecycleScope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                val width = (92 * resources.displayMetrics.density).toInt()
-                runCatching { thumbs.load(book.id, width, width * 4 / 3) }.getOrNull()
-            }
+            val width = (92 * resources.displayMetrics.density).toInt()
+            val bitmap = seriesCover.load(book.id, width)
             if (bitmap != null) binding.cover.setImageBitmap(bitmap)
         }
     }
