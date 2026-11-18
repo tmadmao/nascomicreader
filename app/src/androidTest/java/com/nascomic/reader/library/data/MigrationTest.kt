@@ -86,6 +86,18 @@ class MigrationTest {
         db.close()
     }
 
+    fun `6到7加书型列_老库按连载处理`() {
+        val name = "mig_6_7.db"
+        createOld(name, version = 6).close()
+
+        val db = helper.runMigrationsAndValidate(name, 7, true, *chainUpTo(7))
+        assertEquals("第一卷", db.text("SELECT title FROM books WHERE id = 1"))
+        assertEquals(1L, db.count("SELECT COUNT(*) FROM bookmarks"))
+        // 升级前没有书型这个概念，老来源一律按连载：行为与升级前一致
+        assertEquals(0L, db.count("SELECT COUNT(*) FROM sources WHERE book_mode <> 0"))
+        db.close()
+    }
+
     /** 跨过多个版本的库要能一路升上来，中间每一步都不能断 */
     @Test
     fun `从2一路升到当前版本_书与进度书签都在`() {

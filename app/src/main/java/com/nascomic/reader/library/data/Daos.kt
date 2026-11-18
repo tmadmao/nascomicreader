@@ -29,6 +29,9 @@ interface SourceDao {
     @Query("SELECT * FROM sources WHERE kind = :kind AND tree_uri = :treeUri LIMIT 1")
     suspend fun findByTreeUri(kind: Int, treeUri: String): SourceEntity?
 
+    @Query("UPDATE sources SET book_mode = :mode WHERE id = :id")
+    suspend fun updateBookMode(id: Long, mode: Int)
+
     @Query("UPDATE sources SET scan_state = :state, error_code = :errorCode, last_scan_at = :at WHERE id = :id")
     suspend fun setScanState(id: Long, state: Int, errorCode: Int?, at: Long)
 

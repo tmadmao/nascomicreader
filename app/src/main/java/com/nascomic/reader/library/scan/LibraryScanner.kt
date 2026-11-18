@@ -92,15 +92,10 @@ class LibraryScanner(
         try {
             // 列不出来就抛：这一层失败必须让整次扫描失败，不能退化成「这个目录空了」
             val rootChildren = walker.list(walker.rootDocId) ?: throw TreeGoneException()
+            val single = source.bookMode == SourceEntity.MODE_SINGLE
             for (node in rootChildren) {
                 if (isCancelled()) throw Cancelled()
-                when {
-                    node.isDir -> classifyFolder(walker, node)?.let { found += it }
-                    ScanRules.isArchive(node.name) -> found += archiveAsBook(node)
-                    ScanRules.isPdf(node.name) -> found += pdfAsBook(node)
-                    ScanRules.isEpub(node.name) -> found += epubAsBook(node)
-                    else -> Unit
-                }
+                collectLocal(walker, node, single, found)
             }
         } catch (e: Exception) {
             db.sourceDao().setScanState(
@@ -284,7 +279,10 @@ class LibraryScanner(
 
         val broken = ArrayList<String>()
         val all = try {
-            collectRemoteBooks(rootRef, list, listener, broken, isCancelled)
+            collectRemoteBooks(
+                rootRef, list, listener, broken, isCancelled,
+                singleBook = source.bookMode == SourceEntity.MODE_SINGLE,
+            )
         } catch (e: Cancelled) {
             throw e
         } catch (e: Exception) {
@@ -401,13 +399,17 @@ class LibraryScanner(
         listener: Listener?,
         broken: MutableList<String>,
         isCancelled: () -> Boolean = { false },
+        singleBook: Boolean = false,
     ): List<RemoteBook> {
         listener?.onProgress(0, 0)
         val out = ArrayList<RemoteBook>()
         for (entry in list(rootRef)) {
             if (isCancelled()) throw Cancelled()
             when {
-                entry.isDir -> out += classifyRemoteFolder(entry.ref, entry.name, list, depth = 0, broken = broken, isCancelled = isCancelled)
+                entry.isDir -> out += classifyRemoteFolder(
+                    entry.ref, entry.name, list, depth = 0, broken = broken,
+                    isCancelled = isCancelled, singleBook = singleBook,
+                )
                 ScanRules.isArchive(entry.name) -> out += RemoteBook(
                     docRef = entry.ref,
                     title = ScanRules.titleOf(entry.name),
@@ -441,6 +443,7 @@ class LibraryScanner(
         depth: Int,
         broken: MutableList<String>,
         isCancelled: () -> Boolean = { false },
+        singleBook: Boolean = false,
     ): List<RemoteBook> {
         if (isCancelled()) throw Cancelled()
         if (depth > MAX_REMOTE_DEPTH) return emptyList()
@@ -456,6 +459,35 @@ class LibraryScanner(
         // 目录里直接是图片：这一本就是单行本
         if (children.any { !it.isDir && ScanRules.isImage(it.name) }) {
             return listOf(RemoteBook(ref, name, BookEntity.FORMAT_FOLDER, emptyList()))
+        }
+
+        // 单行本：这一层不合并——子目录继续下钻，压缩包 / PDF 各自成书
+        if (singleBook) {
+            val books = ArrayList<RemoteBook>()
+            for (child in children) {
+                when {
+                    child.isDir -> books += classifyRemoteFolder(
+                        child.ref, child.name, list, depth + 1, broken,
+                        isCancelled = isCancelled, singleBook = true,
+                    )
+                    ScanRules.isArchive(child.name) -> books += RemoteBook(
+                        docRef = child.ref,
+                        title = ScanRules.titleOf(child.name),
+                        format = BookEntity.FORMAT_ZIP,
+                        chapters = emptyList(),
+                        size = child.size,
+                    )
+                    ScanRules.isPdf(child.name) -> books += RemoteBook(
+                        docRef = child.ref,
+                        title = ScanRules.titleOf(child.name),
+                        format = BookEntity.FORMAT_PDF,
+                        chapters = emptyList(),
+                        size = child.size,
+                    )
+                    else -> Unit
+                }
+            }
+            return books
         }
 
         // 服务端给什么顺序就是什么顺序，章会乱：这里自己按章的先后排一遍
@@ -497,7 +529,12 @@ class LibraryScanner(
 
         // 都是「只装书的目录」：再往下走，每个子目录各是一本
         return units.filter { it.isDir }
-            .flatMap { classifyRemoteFolder(it.ref, it.name, list, depth + 1, broken, isCancelled) }
+            .flatMap {
+                classifyRemoteFolder(
+                    it.ref, it.name, list, depth + 1, broken,
+                    isCancelled = isCancelled, singleBook = singleBook,
+                )
+            }
     }
 
     /** 账号不对和连不上要分开报：前者提示改密码，后者提示查地址与网络 */
@@ -514,18 +551,39 @@ class LibraryScanner(
         else -> BookEntity.FORMAT_ZIP
     }
 
-    /** 目录 → 一本书；空目录返回 null */
-    private fun classifyFolder(walker: SafWalker, node: ScanNode): Candidate? {
-        // 读不到就抛：一个章节目录读失败，不能让这本书静默消失
+    /**
+     * 把一个子项变成书，必要时继续下钻。
+     *
+     * 连载模式只看这一层；单行本模式下，遇到「没有图片、只有子目录」的文件夹继续往下走，
+     * 每个直接含图的目录各自成书——图集库就是这种存法。
+     */
+    private fun collectLocal(
+        walker: SafWalker,
+        node: ScanNode,
+        single: Boolean,
+        out: MutableList<Candidate>,
+    ) {
+        if (!node.isDir) {
+            when {
+                ScanRules.isArchive(node.name) -> out += archiveAsBook(node)
+                ScanRules.isPdf(node.name) -> out += pdfAsBook(node)
+                ScanRules.isEpub(node.name) -> out += epubAsBook(node)
+            }
+            return
+        }
+        // 读不到就抛：一个子目录读失败，不能让这本书静默消失
         val children = walker.list(node.docId) ?: throw TreeGoneException()
-        return when (ScanRules.folderKind(children)) {
+        when (ScanRules.folderKind(children, single)) {
             ScanRules.FolderKind.DIRECT_PAGES ->
-                Candidate(node, BookEntity.FORMAT_FOLDER, emptyList())
+                out += Candidate(node, BookEntity.FORMAT_FOLDER, emptyList())
 
             ScanRules.FolderKind.BY_CHAPTER ->
-                Candidate(node, BookEntity.FORMAT_FOLDER, ScanRules.chapterUnitsOf(children))
+                out += Candidate(node, BookEntity.FORMAT_FOLDER, ScanRules.chapterUnitsOf(children))
 
-            ScanRules.FolderKind.EMPTY -> null
+            ScanRules.FolderKind.CONTAINER ->
+                children.forEach { child -> collectLocal(walker, child, single, out) }
+
+            ScanRules.FolderKind.EMPTY -> Unit
         }
     }
 

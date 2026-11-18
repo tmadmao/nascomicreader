@@ -21,7 +21,7 @@ class SourceRepository(
     /**
      * 把一个刚授权的目录登记为来源。同一个目录重复添加时返回已有记录。
      */
-    suspend fun addLocalFolder(treeUri: Uri, label: String?): Long {
+    suspend fun addLocalFolder(treeUri: Uri, label: String?, bookMode: Int = SourceEntity.MODE_SERIAL): Long {
         runCatching {
             context.contentResolver.takePersistableUriPermission(
                 treeUri,
@@ -42,6 +42,7 @@ class SourceRepository(
                 label = display,
                 treeUri = key,
                 addedAt = System.currentTimeMillis(),
+                bookMode = bookMode,
             )
         )
     }
@@ -55,6 +56,7 @@ class SourceRepository(
         account: String?,
         password: String?,
         label: String?,
+        bookMode: Int = SourceEntity.MODE_SERIAL,
     ): Long {
         val url = normalizeEndpoint(endpoint)
         val display = label?.takeIf { it.isNotBlank() }
@@ -67,6 +69,7 @@ class SourceRepository(
                 endpoint = url,
                 account = account?.takeIf { it.isNotBlank() },
                 addedAt = System.currentTimeMillis(),
+                bookMode = bookMode,
             )
         )
         if (!password.isNullOrBlank()) {
@@ -87,6 +90,7 @@ class SourceRepository(
         password: String?,
         label: String?,
         port: Int? = null,
+        bookMode: Int = SourceEntity.MODE_SERIAL,
     ): Long {
         val target = com.nascomic.reader.smb.SmbTarget.parse(endpoint, port)
         val url = buildString {
@@ -108,6 +112,7 @@ class SourceRepository(
                 endpoint = url,
                 account = account?.takeIf { it.isNotBlank() },
                 addedAt = System.currentTimeMillis(),
+                bookMode = bookMode,
             )
         )
         if (!password.isNullOrBlank()) {

@@ -67,6 +67,19 @@ class SourcesActivity : AppCompatActivity() {
     /** 正在更新时不再接受第二次点击 */
     private var scanning = false
 
+    /** 这次新增要用的书型；-1 = 还没选 */
+    private var pendingMode = -1
+
+    /** 第 2 步：选书型。选完才继续选目录 / 填地址 */
+    private val chooseBookMode = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            pendingMode = result.data?.getIntExtra(BookModeActivity.EXTRA_MODE, -1) ?: -1
+            continueAdd()
+        }
+    }
+
     /** 本地目录用系统的目录选择器：授权一次，之后一直能用 */
     private val pickLocalFolder = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -102,8 +115,20 @@ class SourcesActivity : AppCompatActivity() {
     private fun selectKind(kind: Int) {
         selectedKind = kind
         selectedSource = null
+        pendingMode = -1
         renderSelection()
         renderAction()
+        // 新增流程：先定书型，再选目录 / 填地址
+        chooseBookMode.launch(BookModeActivity.intent(this, kind))
+    }
+
+    /** 书型已定：按来源类型继续第 3 步 */
+    private fun continueAdd() {
+        when (selectedKind) {
+            SourceEntity.KIND_WEBDAV -> showRemoteDialog(SourceEntity.KIND_WEBDAV)
+            SourceEntity.KIND_SMB -> showRemoteDialog(SourceEntity.KIND_SMB)
+            else -> pickLocalFolder.launch(null)
+        }
     }
 
     private fun selectSource(source: SourceEntity) {
@@ -173,11 +198,11 @@ class SourcesActivity : AppCompatActivity() {
             runScan(source)
             return
         }
-        when (selectedKind) {
-            SourceEntity.KIND_WEBDAV -> showRemoteDialog(SourceEntity.KIND_WEBDAV)
-            SourceEntity.KIND_SMB -> showRemoteDialog(SourceEntity.KIND_SMB)
-            else -> pickLocalFolder.launch(null)
+        if (pendingMode < 0) {
+            chooseBookMode.launch(BookModeActivity.intent(this, selectedKind ?: SourceEntity.KIND_LOCAL))
+            return
         }
+        continueAdd()
     }
 
     // ── 列表 ───────────────────────────────────────────────
@@ -492,6 +517,7 @@ class SourcesActivity : AppCompatActivity() {
      * 一柜子「Download」「漫画」分不清谁是谁。
      */
     private fun addLocalFolder(uri: Uri) {
+        val mode = pendingMode
         val suggested = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':').orEmpty()
         val input = EditText(this).apply {
             hint = getString(R.string.source_local_label_hint)
@@ -503,17 +529,17 @@ class SourcesActivity : AppCompatActivity() {
             .setView(input)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                registerLocal(uri, input.text.toString().trim())
+                registerLocal(uri, input.text.toString().trim(), mode)
             }
             .show()
     }
 
-    private fun registerLocal(uri: Uri, label: String) {
+    private fun registerLocal(uri: Uri, label: String, bookMode: Int) {
         showProgress(label.ifBlank { getString(R.string.source_kind_local) })
         lifecycleScope.launch {
             var sourceLabel = label
             try {
-                val id = repository.addLocalFolder(uri, label.ifBlank { null })
+                val id = repository.addLocalFolder(uri, label.ifBlank { null }, bookMode)
                 val source = db.sourceDao().get(id) ?: error("来源记录丢失")
                 sourceLabel = source.label
                 binding.progressTitle.text = getString(R.string.sources_scanning, source.label)
@@ -710,9 +736,15 @@ class SourcesActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val id = if (kind == SourceEntity.KIND_SMB) {
-                    repository.addSmb(endpoint, account, password, label.ifBlank { null }, port)
+                    repository.addSmb(
+                        endpoint, account, password, label.ifBlank { null }, port,
+                        bookMode = pendingMode,
+                    )
                 } else {
-                    repository.addWebDav(endpoint, account, password, label.ifBlank { null })
+                    repository.addWebDav(
+                        endpoint, account, password, label.ifBlank { null },
+                        bookMode = pendingMode,
+                    )
                 }
                 val source = db.sourceDao().get(id) ?: error("来源记录丢失")
                 binding.progressTitle.text = getString(R.string.sources_scanning, source.label)
@@ -737,25 +769,74 @@ class SourcesActivity : AppCompatActivity() {
 
     // ── 来源操作 ───────────────────────────────────────────
 
-    /** 长按来源：重扫、改名、改地址账号或删掉 */
+    /** 长按来源：重扫、改书型、改名、改地址账号或删掉 */
     private fun showSourceActions(source: SourceEntity) {
-        val items = ArrayList<String>()
-        items += getString(R.string.sources_action_update)
-        if (source.kind != SourceEntity.KIND_LOCAL) items += getString(R.string.source_edit)
-        items += getString(R.string.source_rename)
-        items += getString(R.string.action_delete)
+        val actions = ArrayList<Pair<String, () -> Unit>>()
+        actions += getString(R.string.sources_action_update) to {
+            selectSource(source)
+            runScan(source)
+        }
+        actions += getString(R.string.source_mode_label, modeLabel(source.bookMode)) to {
+            changeBookMode(source)
+        }
+        if (source.kind != SourceEntity.KIND_LOCAL) {
+            actions += getString(R.string.source_edit) to { editRemote(source) }
+        }
+        actions += getString(R.string.source_rename) to { renameSource(source) }
+        actions += getString(R.string.action_delete) to { confirmRemove(source) }
+
         AlertDialog.Builder(this)
-            .setItems(items.toTypedArray()) { _, which ->
-                val editIndex = if (source.kind != SourceEntity.KIND_LOCAL) 1 else -1
-                when {
-                    which == 0 -> {
-                        selectSource(source)
-                        runScan(source)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which ->
+                actions[which].second()
+            }
+            .show()
+    }
+
+    private fun modeLabel(mode: Int): String = getString(
+        if (mode == SourceEntity.MODE_SINGLE) {
+            R.string.source_mode_single_short
+        } else {
+            R.string.source_mode_serial_short
+        }
+    )
+
+    /**
+     * 改书型。改的是「扫描时怎么切书」，所以必须重扫这个书库；
+     * 书目会按新书型重建，旧进度跟着旧书目走——确认框里写清楚。
+     */
+    private fun changeBookMode(source: SourceEntity) {
+        val labels = arrayOf(
+            getString(R.string.source_mode_serial_short),
+            getString(R.string.source_mode_single_short),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.source_mode_change_title)
+            .setSingleChoiceItems(labels, if (source.bookMode == SourceEntity.MODE_SINGLE) 1 else 0) { dialog, which ->
+                dialog.dismiss()
+                val target = if (which == 1) SourceEntity.MODE_SINGLE else SourceEntity.MODE_SERIAL
+                if (target == source.bookMode) return@setSingleChoiceItems
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.source_mode_change_title)
+                    .setMessage(
+                        getString(
+                            R.string.source_mode_change_message,
+                            modeLabel(source.bookMode),
+                            modeLabel(target),
+                        )
+                    )
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        lifecycleScope.launch {
+                            db.sourceDao().updateBookMode(source.id, target)
+                            Toast.makeText(
+                                this@SourcesActivity,
+                                R.string.source_mode_changed,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            loadSources()
+                        }
                     }
-                    which == editIndex -> editRemote(source)
-                    which == editIndex + 1 -> renameSource(source)
-                    else -> confirmRemove(source)
-                }
+                    .show()
             }
             .show()
     }

@@ -34,11 +34,23 @@ data class SourceEntity(
     /** 0=未扫描 1=扫描中 2=完成 3=失败 */
     @ColumnInfo(name = "scan_state") val scanState: Int = STATE_IDLE,
     @ColumnInfo(name = "error_code") val errorCode: Int? = null,
+    /**
+     * 这个书库的书型，只影响扫描时怎么切书：
+     * 连载 = 扫描根的子项各自成书、子项内部当章；单行本 = 每个含图的目录各自成书。
+     * 图集与连载经常同时存在，所以按来源区分，不给全局开关。
+     */
+    @ColumnInfo(name = "book_mode", defaultValue = "0") val bookMode: Int = MODE_SERIAL,
 ) {
     companion object {
         const val KIND_LOCAL = 0
         const val KIND_WEBDAV = 1
         const val KIND_SMB = 2
+
+        /** 连载漫画：子目录 / 压缩包 / PDF 都当章 */
+        const val MODE_SERIAL = 0
+
+        /** 单行本 / 图集：每个含图的目录、每个压缩包或 PDF 各自成书 */
+        const val MODE_SINGLE = 1
 
         const val STATE_IDLE = 0
         const val STATE_SCANNING = 1

@@ -42,13 +42,18 @@ object ScanRules {
      * - [FolderKind.BY_CHAPTER]：不含图片，但子项是子目录或压缩包 → 这是章回体的一本书
      * - [FolderKind.CONTAINER]：只装着下级目录，既不是书也不是章回体 → 继续往下找
      */
-    fun folderKind(children: List<ScanNode>): FolderKind {
+    fun folderKind(children: List<ScanNode>, singleBook: Boolean = false): FolderKind {
         if (children.isEmpty()) return FolderKind.EMPTY
         if (hasImages(children)) return FolderKind.DIRECT_PAGES
 
         // 子目录、压缩包、PDF 都能当一章——章回体目录里放 PDF 当章是常见存法
         val hasChapterUnit = children.any { it.isDir } ||
             children.any { !it.isDir && (isArchive(it.name) || isPdf(it.name)) }
+
+        // 单行本模式：没有图片、只有下级 → 不在这里成书，继续往下钻，
+        // 让每个「直接含图」的目录各自成书（图集库的常见存法）
+        if (singleBook && children.any { it.isDir }) return FolderKind.CONTAINER
+
         return if (hasChapterUnit) FolderKind.BY_CHAPTER else FolderKind.EMPTY
     }
 
@@ -92,11 +97,14 @@ object ScanRules {
     fun titleOf(name: String): String = ImageNames.baseName(name)
 
     enum class FolderKind {
-        /** 直接是图片页：单行本 */
+        /** 直接是图片页：这一层就是一本单行本 */
         DIRECT_PAGES,
 
-        /** 子项是章：章回体 */
+        /** 子项是章：章回体的一本书 */
         BY_CHAPTER,
+
+        /** 只装着下级，既不是书也不分章：单行本模式下继续往下钻 */
+        CONTAINER,
 
         /** 空目录 */
         EMPTY,

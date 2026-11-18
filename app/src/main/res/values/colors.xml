@@ -48,6 +48,7 @@
     <color name="banner_muted">#657867</color>
     <color name="selected_card_bg">#FFF4EC</color>
 
+    <color name="book_mode_selected">#FFF3EC</color>
     <color name="cover_placeholder">#EFEAE1</color>
     <color name="tab_active">#1B1C20</color>
     <color name="tab_inactive">#6F6A62</color>

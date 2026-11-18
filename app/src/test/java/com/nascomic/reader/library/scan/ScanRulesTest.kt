@@ -89,6 +89,47 @@ class ScanRulesTest {
         assertEquals(units.map { it.name }, byTitle.map { it.name })
     }
 
+
+    @Test
+    fun `连载模式：子目录当章，有图就先成书`() {
+        assertEquals(
+            ScanRules.FolderKind.DIRECT_PAGES,
+            ScanRules.folderKind(listOf(dir("第01话"), dir("第02话"), file("封面.jpg"))),
+        )
+        assertEquals(
+            ScanRules.FolderKind.BY_CHAPTER,
+            ScanRules.folderKind(listOf(dir("第01话"), dir("第02话"))),
+        )
+    }
+
+    @Test
+    fun `单行本模式：没有图片就继续往下钻`() {
+        val gallery = listOf(dir("2024-05-01"), dir("2024-05-02"))
+        assertEquals(ScanRules.FolderKind.BY_CHAPTER, ScanRules.folderKind(gallery))
+        assertEquals(
+            ScanRules.FolderKind.CONTAINER,
+            ScanRules.folderKind(gallery, singleBook = true),
+        )
+    }
+
+    @Test
+    fun `单行本模式下含图的目录仍然各自成书`() {
+        val oneAlbum = listOf(file("01.jpg"), file("02.jpg"))
+        assertEquals(
+            ScanRules.FolderKind.DIRECT_PAGES,
+            ScanRules.folderKind(oneAlbum, singleBook = true),
+        )
+    }
+
+    @Test
+    fun `空目录不产书`() {
+        assertEquals(ScanRules.FolderKind.EMPTY, ScanRules.folderKind(emptyList()))
+        assertEquals(
+            ScanRules.FolderKind.EMPTY,
+            ScanRules.folderKind(listOf(file("说明.txt")), singleBook = true),
+        )
+    }
+
     private fun file(name: String) = ScanNode(docId = "id:$name", name = name, isDir = false)
     private fun dir(name: String) = ScanNode(docId = "id:$name", name = name, isDir = true)
 

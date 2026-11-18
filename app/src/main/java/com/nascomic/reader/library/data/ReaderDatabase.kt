@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 库版本。实体声明、导出的 schema、迁移目标都取这一处，
  * 改表只动这里一个数。
  */
-internal const val DB_VERSION = 6
+internal const val DB_VERSION = 7
 
 /**
  * 应用数据库。
@@ -88,6 +88,15 @@ abstract class ReaderDatabase : RoomDatabase() {
          * 作品系列：书补两列从文件名解析出的作者与卷号，新增系列、归属、人工决定三张表。
          * 老库升级后原有书 / 进度 / 书签原样保留，新列留空。
          */
+        /** 6→7：来源加「书型」一列。老库一律按连载处理，与升级前的行为一致 */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE sources ADD COLUMN book_mode INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN author TEXT")
@@ -132,6 +141,7 @@ abstract class ReaderDatabase : RoomDatabase() {
             MIGRATION_2_3,
             MIGRATION_3_4,
             MIGRATION_4_5,
+            MIGRATION_6_7,
             MIGRATION_5_6,
         )
 

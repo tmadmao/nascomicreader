@@ -446,6 +446,28 @@
     <string name="settings_update_source_hint">填 update.json 的完整地址，留空恢复默认。清单换地方时改这里，不用等新版本。</string>
     <string name="settings_update_source_saved">已保存，下次检查更新生效</string>
 
+    <string name="book_mode_title">新增书源</string>
+    <string name="book_mode_step">第 2 步 · 共 3 步 · %1$s</string>
+    <string name="book_mode_kind_local">本机文件夹</string>
+    <string name="book_mode_lead">这个书库是——</string>
+    <string name="book_mode_hint">只影响扫描时怎么切书：同一批目录，选错了书目会完全不同。</string>
+    <string name="book_mode_serial">连载漫画</string>
+    <string name="book_mode_serial_desc">子文件夹、压缩包、PDF 都当作章节。一本 = 一部作品。</string>
+    <string name="book_mode_serial_eg">例：犬夜叉 / 第01卷 / 01.jpg</string>
+    <string name="book_mode_single">单行本 / 图集</string>
+    <string name="book_mode_single_desc">每个子文件夹、压缩包、PDF 各自成一本。</string>
+    <string name="book_mode_single_eg">例：写真 / 2024-05-01 / 01.jpg</string>
+    <string name="book_mode_note">书库属性可以在书源里改；改完要重扫这个书库，已有的进度会按照属性重建。
+同一系列的单行本可考虑使用作品系列功能制作连载合集。</string>
+    <string name="book_mode_next">下一步 · 选择文件夹</string>
+    <string name="book_mode_next_gate">下一步</string>
+    <string name="book_mode_choose_first">先选一种书型</string>
+    <string name="source_mode_label">书型：%1$s</string>
+    <string name="source_mode_serial_short">连载漫画</string>
+    <string name="source_mode_single_short">单行本 / 图集</string>
+    <string name="source_mode_change_title">改书型</string>
+    <string name="source_mode_change_message">「%1$s」改成「%2$s」后需要重扫这个书库：书目会按新书型重建，已有的进度会丢。</string>
+    <string name="source_mode_changed">已改书型，请重扫这个书库</string>
     <string name="source_kind_local">本地目录</string>
     <string name="source_kind_webdav">WebDAV</string>
     <string name="source_kind_smb">SMB</string>
