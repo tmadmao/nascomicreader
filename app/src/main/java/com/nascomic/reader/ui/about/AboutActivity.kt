@@ -156,8 +156,7 @@ class AboutActivity : AppCompatActivity() {
         const val LICENSE = "LICENSE"
         const val SOURCE_URL = "https://github.com/tmadmao/nascomicreader"
 
-        /** 收款码放在仓库 design/ 下，与 .github/FUNDING.yml 指向同一张图 */
-        const val SPONSOR_URL =
-            "https://raw.githubusercontent.com/tmadmao/nascomicreader/main/design/wechat-pay.png"
+        /** 赞助页：点击后在浏览器打开，含支付宝 / 微信 / Ko-fi 三种方式 */
+        const val SPONSOR_URL = "http://iptv.new.tg/sponsor.html"
     }
 }

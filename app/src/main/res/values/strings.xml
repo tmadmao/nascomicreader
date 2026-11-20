@@ -407,8 +407,8 @@
     <string name="about_license_full">许可全文（Apache-2.0）</string>
     <string name="about_source">源代码</string>
     <string name="about_sponsor">赞助</string>
-    <string name="about_sponsor_desc">微信收款码</string>
-    <string name="about_copyright">© 2026 tmadmao · 按 Apache License 2.0 发布</string>
+    <string name="about_sponsor_desc">在浏览器打开赞助页面（支付宝 / 微信 / Ko-fi）</string>
+    <string name="about_copyright">© 2026 SeanFan · 按 Apache License 2.0 发布</string>
     <string name="about_arrow">›</string>
 
     <!-- 更新：清单 → 下载 → 校验 → 安装。文案只说用户此刻要知道的事 -->
