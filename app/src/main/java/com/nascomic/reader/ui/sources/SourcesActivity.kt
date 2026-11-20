@@ -428,6 +428,8 @@ class SourcesActivity : AppCompatActivity() {
                 lastSync[source.id] = result
                 showSuccess(scanResultText(source, result))
                 autoGroupIfEnabled()
+            } catch (e: LibraryScanner.SourceChanged) {
+                showFailure(getString(R.string.scan_source_changed))
             } catch (e: LibraryScanner.Cancelled) {
                 Toast.makeText(this@SourcesActivity, R.string.scan_cancelled, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
@@ -547,6 +549,8 @@ class SourcesActivity : AppCompatActivity() {
                 val result = scanner.scan(source, scanListener()) { scanCancelled }
                 lastSync[source.id] = result
                 showSuccess(getString(R.string.source_added, source.label, result.found))
+            } catch (e: LibraryScanner.SourceChanged) {
+                showFailure(getString(R.string.scan_source_changed))
             } catch (e: LibraryScanner.Cancelled) {
                 Toast.makeText(this@SourcesActivity, R.string.scan_cancelled, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
@@ -756,6 +760,8 @@ class SourcesActivity : AppCompatActivity() {
                 } else {
                     showSuccess(getString(R.string.source_added, source.label, result.found))
                 }
+            } catch (e: LibraryScanner.SourceChanged) {
+                showFailure(getString(R.string.scan_source_changed))
             } catch (e: LibraryScanner.Cancelled) {
                 Toast.makeText(this@SourcesActivity, R.string.scan_cancelled, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {

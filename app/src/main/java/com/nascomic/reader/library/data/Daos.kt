@@ -112,6 +112,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE source_id = :sourceId AND doc_ref = :docRef LIMIT 1")
     suspend fun findByRef(sourceId: Long, docRef: String): BookEntity?
 
+    @Query("UPDATE books SET doc_ref = :ref WHERE id = :id")
+    suspend fun updateRef(id: Long, ref: String)
+
     /** 书架默认顺序：最近添加 */
     @Query("SELECT * FROM books ORDER BY added_at DESC, id DESC")
     fun observeRecentAdded(): Flow<List<BookEntity>>
@@ -208,6 +211,9 @@ interface ChapterDao {
 
     @Query("SELECT * FROM chapters WHERE book_id = :bookId ORDER BY ordinal ASC")
     suspend fun forBook(bookId: Long): List<ChapterEntity>
+
+    @Query("UPDATE chapters SET chapter_ref = :ref WHERE id = :id")
+    suspend fun updateRef(id: Long, ref: String)
 
     @Query("SELECT * FROM chapters WHERE book_id = :bookId ORDER BY ordinal ASC")
     fun observeForBook(bookId: Long): Flow<List<ChapterEntity>>

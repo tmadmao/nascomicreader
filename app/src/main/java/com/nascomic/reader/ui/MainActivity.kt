@@ -868,6 +868,8 @@ class MainActivity : AppCompatActivity() {
                 refresh()
             } catch (e: LibraryScanner.Cancelled) {
                 status(getString(R.string.scan_cancelled))
+            } catch (e: LibraryScanner.SourceChanged) {
+                status(getString(R.string.scan_source_changed))
             } catch (e: Exception) {
                 status(getString(R.string.status_scan_failed, e.message ?: ""))
             } finally {

@@ -502,6 +502,7 @@
     <string name="source_state_failed_unreachable">失败 · 连不上</string>
     <string name="source_state_failed_empty">没扫到书 · 已保留原书库</string>
     <string name="source_state_failed_interrupted">上次扫描中断 · 可重试</string>
+    <string name="scan_source_changed">来源地址已变，请重扫</string>
     <string name="source_state_partial">部分目录没读到</string>
     <string name="source_row_desc">%1$s · %2$s</string>
     <string name="source_rescan_done">已重扫「%1$s」，%2$d 本</string>

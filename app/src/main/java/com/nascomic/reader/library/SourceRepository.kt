@@ -3,9 +3,11 @@ package com.nascomic.reader.library
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.room.withTransaction
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
 import com.nascomic.reader.settings.SecretStore
+import com.nascomic.reader.webdav.Origins
 
 /**
  * 书库来源的增删。
@@ -162,9 +164,16 @@ class SourceRepository(
             else -> normalizeEndpoint(endpoint)
         }
         val cleanAccount = account?.takeIf { it.isNotBlank() }
-        db.sourceDao().upsert(
-            source.copy(endpoint = url, account = cleanAccount, scanState = SourceEntity.STATE_IDLE)
-        )
+        db.withTransaction {
+            val current = db.sourceDao().get(sourceId) ?: return@withTransaction
+            val previous = current.endpoint
+            if (current.kind == SourceEntity.KIND_WEBDAV && previous != null && previous != url) {
+                rebaseWebDav(sourceId, previous, url)
+            }
+            db.sourceDao().upsert(
+                current.copy(endpoint = url, account = cleanAccount, scanState = SourceEntity.STATE_IDLE)
+            )
+        }
         // 地址或账号换了，这个来源下所有落盘副本都作废：
         // 书 id 不变、章引用也可能一字未变，光看名字分不出是新内容还是旧内容
         com.nascomic.reader.format.LocalCopies.evictBooks(
@@ -179,6 +188,27 @@ class SourceRepository(
             }
             SecretStore(context).put(key, password)
             db.sourceDao().get(sourceId)?.let { db.sourceDao().upsert(it.copy(secretRef = key)) }
+        }
+    }
+
+    private suspend fun rebaseWebDav(sourceId: Long, previous: String, endpoint: String) {
+        val origin = requireNotNull(Origins.of(endpoint))
+        val oldRoot = Origins.pathOf(previous).trimEnd('/') + "/"
+        val newRoot = Origins.pathOf(endpoint).trimEnd('/') + "/"
+        fun rebase(ref: String): String {
+            if (!Origins.same(ref, previous)) return ref
+            val path = Origins.pathOf(ref)
+            return origin + if (path.startsWith(oldRoot)) newRoot + path.removePrefix(oldRoot) else path
+        }
+
+        val books = db.bookDao().bySourceNow(sourceId).sortedBy { it.docRef.length }
+        for (book in if (newRoot.length > oldRoot.length) books.asReversed() else books) {
+            val ref = rebase(book.docRef)
+            if (ref != book.docRef) db.bookDao().updateRef(book.id, ref)
+            for (chapter in db.chapterDao().forBook(book.id)) {
+                val chapterRef = rebase(chapter.chapterRef)
+                if (chapterRef != chapter.chapterRef) db.chapterDao().updateRef(chapter.id, chapterRef)
+            }
         }
     }
 

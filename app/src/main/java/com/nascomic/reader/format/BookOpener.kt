@@ -42,7 +42,9 @@ class BookOpener(private val context: Context) {
     private val fastEpub get() = readerPrefs.fastEpub
 
     /** 副本下载的互斥锁，按文件绝对路径分 */
-    private val fetchLocks = HashMap<String, Any>()
+    private companion object {
+        val fetchLocks = Array(32) { Any() }
+    }
 
     fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource {
         // 落盘副本只在打开时才需要，顺手按总量收一次：进一本新书是天然的检查点
@@ -255,12 +257,26 @@ class BookOpener(private val context: Context) {
             .getOrNull()?.let { return it }
 
         // 副本名带上书的 id：两个来源里相对路径相同的章，不能共用同一份文件
-        val local = fetchOnce(
-            LocalCopies.remoteDir(context),
-            "a${book.id}_" + ref.hashCode().toUInt().toString(16),
-            expected = -1L,
-        ) { backend.download(ref, it) }
-        return LibArchiveBookSource(LibArchiveCatalog.open(local), rootOnly = rootOnly)
+        return openRemoteArchiveCopy(book.id, ref) { backend.download(ref, it) }
+    }
+
+    internal fun openRemoteArchiveCopy(bookId: Long, ref: String, download: (File) -> Unit): BookSource {
+        val dir = LocalCopies.remoteDir(context)
+        val name = "a${bookId}_" + ref.hashCode().toUInt().toString(16)
+        val file = File(dir, name)
+        fun openCopy(): LibArchiveBookSource {
+            val local = fetchOnce(dir, name, -1L, download)
+            return LibArchiveBookSource(LibArchiveCatalog.open(local, pinCopy = true), rootOnly = rootOnly)
+        }
+        return synchronized(lockFor(file)) {
+            try {
+                openCopy()
+            } catch (failure: Exception) {
+                if (failure is java.util.concurrent.CancellationException) throw failure
+                file.delete()
+                openCopy()
+            }
+        }
     }
 
     /** 远程目录书：递归收集图片，按文件名自然序由 [FolderBookSource] 排好 */
@@ -347,9 +363,7 @@ class BookOpener(private val context: Context) {
     }
 
     /** 每个副本一把锁；键是绝对路径，不会随书规模无限增长到离谱 */
-    private fun lockFor(file: File): Any = synchronized(fetchLocks) {
-        fetchLocks.getOrPut(file.absolutePath) { Any() }
-    }
+    private fun lockFor(file: File): Any = fetchLocks[(file.absolutePath.hashCode() and Int.MAX_VALUE) % fetchLocks.size]
 
     // ---- 本地（SAF）----
 

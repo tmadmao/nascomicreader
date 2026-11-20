@@ -3,6 +3,7 @@ package com.nascomic.reader.library.scan
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ChapterEntity
@@ -186,6 +187,49 @@ class RemoteScanRulesTest {
     }
 
     // ---- 造数据 ----
+
+    @Test
+    fun webDavMovePreservesLibraryOnRescan() = runBlocking {
+        val source = newSource()
+        val suffix = "book%20one/"
+        val chapter = "%E7%AC%AC1.zip"
+        val oldBook = source.endpoint!! + suffix
+        val bookId = newBook(source.id, oldBook, "book one", BookEntity.FORMAT_FOLDER)
+        val chapterId = db.chapterDao().insertAll(listOf(ChapterEntity(bookId = bookId, ordinal = 0,
+            title = "第1", chapterRef = oldBook + chapter, chapterKind = ChapterEntity.KIND_ARCHIVE, pageTotal = 4))).single()
+        val progress = ProgressEntity(bookId, 0, 2, 2, false, 2000)
+        db.progressDao().upsert(progress)
+        val bookmark = db.bookmarkDao().insert(BookmarkEntity(bookId = bookId, chapterOrdinal = 0, pageInChapter = 2, createdAt = 2000))
+        val series = db.seriesDao().insert(SeriesEntity(name = "系列", nameSort = "series", createdAt = 1000))
+        db.seriesDao().append(series, bookId, 1000)
+        val root = "https://new.example:8443/moved/"
+        val newBook = root + suffix
+        SourceRepository(InstrumentationRegistry.getInstrumentation().targetContext, db)
+            .updateRemote(source.id, root, null, null)
+        val moved = requireNotNull(db.sourceDao().get(source.id))
+        assertEquals(root, moved.endpoint)
+        val movedChapter = db.chapterDao().forBook(bookId).single()
+        assertEquals(chapterId, movedChapter.id)
+        assertEquals(newBook + chapter, movedChapter.chapterRef)
+        suspend fun assertRecords() {
+            assertEquals(bookId, db.bookDao().findByRef(source.id, newBook)?.id)
+            assertEquals(progress, db.progressDao().forBook(bookId))
+            assertEquals(bookmark, db.bookmarkDao().forBookNow(bookId).single().id)
+            assertEquals(series, db.seriesDao().membershipOf(bookId)?.seriesId)
+        }
+        assertRecords()
+        val result = scanner.scanRemoteForTest(moved, root) { dir ->
+            when (dir) {
+                root -> listOf(LibraryScanner.RemoteEntry(newBook, "book one", true, 0))
+                newBook -> listOf(LibraryScanner.RemoteEntry(newBook + chapter, "第1.zip", false, 100))
+                else -> error(dir)
+            }
+        }
+        assertEquals(0, result.added)
+        assertEquals(0, result.removed)
+        assertRecords()
+        assertEquals(4, db.chapterDao().forBook(bookId).single().pageTotal)
+    }
 
     private suspend fun newSource(): SourceEntity {
         val source = SourceEntity(

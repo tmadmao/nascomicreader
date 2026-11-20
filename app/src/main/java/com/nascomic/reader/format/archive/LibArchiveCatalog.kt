@@ -1,5 +1,6 @@
 package com.nascomic.reader.format.archive
 
+import android.os.ParcelFileDescriptor
 import me.zhanghai.android.libarchive.Archive
 import me.zhanghai.android.libarchive.ArchiveEntry
 import java.io.File
@@ -22,6 +23,7 @@ import java.nio.ByteBuffer
 class LibArchiveCatalog private constructor(
     private val file: File,
     val entries: List<Entry>,
+    private val descriptor: ParcelFileDescriptor? = null,
 ) {
 
     data class Entry(
@@ -117,7 +119,10 @@ class LibArchiveCatalog private constructor(
     }
 
     fun close() {
-        synchronized(lock) { resetSession() }
+        synchronized(lock) {
+            resetSession()
+            descriptor?.close()
+        }
     }
 
     private fun <T> openArchive(block: (Long) -> T): T {
@@ -163,11 +168,17 @@ class LibArchiveCatalog private constructor(
         private const val CHUNK = 64 * 1024
         private const val MAX_ENTRY_BYTES = 64L * 1024 * 1024
 
-        fun open(file: File): LibArchiveCatalog {
-            val catalog = LibArchiveCatalog(file, emptyList())
-            val entries = catalog.list()
-            if (entries.isEmpty()) throw IOException("压缩包是空的或格式不认识")
-            return LibArchiveCatalog(file, entries)
+        fun open(file: File, pinCopy: Boolean = false): LibArchiveCatalog {
+            val descriptor = if (pinCopy) ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) else null
+            try {
+                val path = descriptor?.let { File("/proc/self/fd/${it.fd}") } ?: file
+                val entries = LibArchiveCatalog(path, emptyList()).list()
+                if (entries.isEmpty()) throw IOException("压缩包是空的或格式不认识")
+                return LibArchiveCatalog(path, entries, descriptor)
+            } catch (failure: Throwable) {
+                descriptor?.close()
+                throw failure
+            }
         }
 
         private fun LibArchiveCatalog.list(): List<Entry> = openArchive { archive ->

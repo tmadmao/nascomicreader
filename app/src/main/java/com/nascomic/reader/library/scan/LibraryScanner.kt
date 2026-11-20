@@ -70,6 +70,14 @@ class LibraryScanner(
      */
     class Cancelled : Exception("扫描已取消")
 
+    /**
+     * 扫描进行到写库这一步时，来源的地址已经变了。
+     *
+     * 与 [Cancelled] 分开：取消是用户主动点的，不该打扰；这个却是「这次扫的是旧地址，
+     * 继续写会把旧地址下的书当成已消失全删掉」，必须停下来让用户重扫。
+     */
+    class SourceChanged : Exception("来源地址已变")
+
     suspend fun scan(
         source: SourceEntity,
         listener: Listener? = null,
@@ -394,6 +402,7 @@ class LibraryScanner(
 
         // 一个事务写完：逐条提交会随库规模反复刷盘
         db.withTransaction {
+            if (db.sourceDao().get(source.id)?.endpoint != source.endpoint) throw SourceChanged()
             if (fresh.isNotEmpty()) db.bookDao().insertAll(fresh)
             if (touched.isNotEmpty()) db.bookDao().upsertAll(touched)
 
