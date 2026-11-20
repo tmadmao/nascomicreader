@@ -59,8 +59,11 @@ class WebDavClientTest {
             "https://nas.local/dav/a.zip",
             WebDavClient.absoluteUrl("https://nas.local/dav/", "a.zip")
         )
+        // 完整 URL 也只取路径：主机一律换回配置的那个。
+        // 服务端常把自己认定的主机名写进 href（用户填的是 IP），换回来才连得上；
+        // 顺带保证请求不会被引到配置以外的站点去
         assertEquals(
-            "https://other/x.zip",
+            "https://nas.local/x.zip",
             WebDavClient.absoluteUrl("https://nas.local/dav/", "https://other/x.zip")
         )
     }

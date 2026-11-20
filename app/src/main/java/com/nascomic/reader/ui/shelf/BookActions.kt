@@ -42,7 +42,7 @@ class BookActions(
 
     fun rename(book: BookEntity) {
         val input = EditText(activity).apply {
-            setText(book.title)
+            setText(book.displayTitle)
             setSelection(text.length)
             setSingleLine()
         }
@@ -68,7 +68,7 @@ class BookActions(
                     return@setPositiveButton
                 }
                 activity.lifecycleScope.launch {
-                    db.bookDao().updateTitle(book.id, name, NaturalSort.key(name))
+                    db.bookDao().rename(book.id, name, NaturalSort.key(name))
                     onChanged()
                     Toast.makeText(activity, R.string.shelf_rename_done, Toast.LENGTH_SHORT).show()
                 }
@@ -130,7 +130,7 @@ class BookActions(
             addView(input)
         }
         AlertDialog.Builder(activity)
-            .setTitle(activity.getString(R.string.shelf_cover_title, book.title))
+            .setTitle(activity.getString(R.string.shelf_cover_title, book.displayTitle))
             .setView(box)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -178,7 +178,7 @@ class BookActions(
     fun delete(book: BookEntity) {
         AlertDialog.Builder(activity)
             .setTitle(R.string.shelf_delete_title)
-            .setMessage(activity.getString(R.string.shelf_delete_message, book.title))
+            .setMessage(activity.getString(R.string.shelf_delete_message, book.displayTitle))
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.shelf_delete_confirm) { _, _ ->
                 activity.lifecycleScope.launch {

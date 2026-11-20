@@ -105,7 +105,7 @@ class ShelfAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val book = books[position]
-        holder.title.text = book.title
+        holder.title.text = book.displayTitle
 
         val p = progress[book.id]
         val total = book.pageTotal

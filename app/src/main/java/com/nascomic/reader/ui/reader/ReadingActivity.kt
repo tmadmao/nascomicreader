@@ -32,6 +32,7 @@ import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.BookSource
 import com.nascomic.reader.format.RenderedPageSource
 import com.nascomic.reader.format.pagePosition
+import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.BookmarkEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
@@ -299,6 +300,13 @@ class ReadingActivity : AppCompatActivity() {
         }
     }
 
+    /** 内容版本：页缓存靠它失效；口径见 [ContentStamp] */
+    private fun contentStamp(book: BookEntity, src: BookSource): Long = ContentStamp.of(
+        byteSize = book.byteSize,
+        chapters = src.chapters.map { it.title to it.pageCount },
+        totalPages = src.pageCount,
+    )
+
     private fun openBook() {
         lifecycleScope.launch {
             binding.loading.isVisible = true
@@ -326,9 +334,9 @@ class ReadingActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                bookTitle = book.title
-                bookStamp = book.byteSize
-                binding.bookTitle.text = book.title
+                bookTitle = book.displayTitle
+                bookStamp = contentStamp(book, opened)
+                binding.bookTitle.text = book.displayTitle
                 chaptered = book.isSingleVolume == 0 && opened.chapters.isNotEmpty()
                 // 目录只对章回体有意义
                 binding.toc.isVisible = chaptered

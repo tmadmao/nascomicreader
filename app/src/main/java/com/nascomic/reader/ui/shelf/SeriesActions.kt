@@ -75,7 +75,7 @@ class SeriesActions(
     private fun create(books: List<BookEntity>) {
         val book = books.first()
         val input = EditText(activity).apply {
-            setText(book.title)
+            setText(book.displayTitle)
             setSelection(text.length)
             hint = activity.getString(R.string.series_name_hint)
         }

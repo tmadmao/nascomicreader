@@ -17,6 +17,11 @@ import java.util.concurrent.TimeUnit
 class WebDavClient(
     private val account: String?,
     private val password: String?,
+    /**
+     * 书源配置里的地址。凭据只发给这一个站点；
+     * 传 null 表示「还不知道站点」（例如手动浏览远端目录时），这时不额外限制。
+     */
+    private val origin: String? = null,
 ) {
 
     data class Entry(
@@ -45,6 +50,11 @@ class WebDavClient(
                 throw WebDavException(response.code, "列目录失败：HTTP ${response.code}")
             }
             val xml = response.body?.string().orEmpty()
+            // 一个 <response> 都没有：这是「响应不是 WebDAV 列表」，不是「目录是空的」。
+            // 两者混为一谈，调用方就会把整个书库当成已被删除。
+            if (RESPONSE.find(xml) == null) {
+                throw WebDavException(response.code, "列目录的响应不是 WebDAV 列表")
+            }
             return parseMultiStatus(xml, target).filter { normalize(it.url) != normalize(target) }
         }
     }
@@ -90,15 +100,44 @@ class WebDavClient(
         }
     }
 
-    /** 整份下载到本地文件（PDF 与 7z/RAR 需要文件路径） */
+    /**
+     * 整份下载到本地文件（PDF 与 7z/RAR 需要文件路径）。
+     *
+     * 先写同目录的 `.part`，长度核对通过再改名到最终路径。
+     * 直写最终文件的话，一次中断就会留下半份，而打开端只判「存在且非空」——
+     * 那本书从此再也打不开，网络恢复也不会重下。
+     */
     fun download(url: String, out: java.io.File) {
         client.newCall(request(url).build()).execute().use { response ->
             if (!response.isSuccessful) {
                 throw WebDavException(response.code, "下载失败：HTTP ${response.code}")
             }
             val body = response.body ?: throw WebDavException(response.code, "响应为空")
-            out.outputStream().use { sink -> body.byteStream().copyTo(sink) }
+            val expected = response.header("Content-Length")?.toLongOrNull() ?: -1L
+            val tmp = java.io.File(out.parentFile, out.name + ".part")
+            runCatching { tmp.delete() }
+            val written = try {
+                tmp.outputStream().use { sink -> body.byteStream().copyTo(sink) }
+            } catch (e: Exception) {
+                runCatching { tmp.delete() }
+                if (e is WebDavException) throw e
+                // 连接中途断了：换成自家异常，界面才好按「网络问题」说话
+                throw WebDavException(0, "下载中断：${e.message ?: e.javaClass.simpleName}")
+            }
+            if (expected >= 0 && written != expected) {
+                runCatching { tmp.delete() }
+                throw WebDavException(response.code, "下载不完整：$written / $expected 字节")
+            }
+            publish(tmp, out)
         }
+    }
+
+    /** 落成最终文件。改名失败就退化成拷贝，别把已经下好的这份丢掉 */
+    private fun publish(tmp: java.io.File, out: java.io.File) {
+        if (out.exists()) runCatching { out.delete() }
+        if (tmp.renameTo(out)) return
+        tmp.copyTo(out, overwrite = true)
+        runCatching { tmp.delete() }
     }
 
     /**
@@ -126,10 +165,18 @@ class WebDavClient(
 
     private fun request(url: String): Request.Builder {
         val builder = Request.Builder().url(url)
-        if (!account.isNullOrEmpty()) {
+        // 凭据只发给配置的那个站点：目录项里冒出别的主机（被改过的清单、代理、重定向）时，
+        // 宁可不带认证头让请求被拒，也不能把账号密码送到配置以外的地方
+        if (!account.isNullOrEmpty() && sameOrigin(url)) {
             builder.header("Authorization", Credentials.basic(account, password.orEmpty()))
         }
         return builder
+    }
+
+    /** 不知道站点（origin 为 null）时不作限制；知道就必须同源 */
+    private fun sameOrigin(url: String): Boolean {
+        val base = origin ?: return true
+        return Origins.same(base, url)
     }
 
     companion object {
@@ -202,9 +249,18 @@ class WebDavClient(
             else null
 
         /** href 可能是绝对路径也可能是完整 URL，统一拼成完整 URL */
+        /**
+         * href 可能是绝对路径，也可能是完整 URL，统一拼成完整 URL。
+         *
+         * 完整 URL 也只取「路径 + 查询」，主机一律换成配置的那个：
+         * 有些服务端回的 href 是自己认定的主机名（用户填的是 IP），
+         * 换回配置站点既不会连不上，也不会把请求引到别处。
+         */
         fun absoluteUrl(baseUrl: String, href: String): String {
-            if (href.startsWith("http://") || href.startsWith("https://")) return href
-            val origin = Regex("""^(https?://[^/]+)""").find(baseUrl)?.groupValues?.get(1) ?: return href
+            val origin = Origins.of(baseUrl) ?: return href
+            if (href.startsWith("http://") || href.startsWith("https://")) {
+                return origin + Origins.pathOf(href)
+            }
             return if (href.startsWith("/")) origin + href else baseUrl.trimEnd('/') + "/" + href
         }
 

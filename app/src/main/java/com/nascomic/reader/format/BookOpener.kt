@@ -41,12 +41,15 @@ class BookOpener(private val context: Context) {
     private val pdfQuality get() = readerPrefs.pdfRenderQuality
     private val fastEpub get() = readerPrefs.fastEpub
 
+    /** 副本下载的互斥锁，按文件绝对路径分 */
+    private val fetchLocks = HashMap<String, Any>()
+
     fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource {
         // 落盘副本只在打开时才需要，顺手按总量收一次：进一本新书是天然的检查点
         runCatching { LocalCopies.trim(context) }
         return when (source.kind) {
             SourceEntity.KIND_WEBDAV -> {
-                val client = WebDavClient(source.account, secrets.get(source.secretRef))
+                val client = WebDavClient(source.account, secrets.get(source.secretRef), source.endpoint)
                 openWith(WebDavBackend(client)) { openRemote(book, chapters, it) }
             }
             SourceEntity.KIND_SMB -> {
@@ -174,40 +177,58 @@ class BookOpener(private val context: Context) {
             return openChaptered(chapters) { ch -> remoteChapter(backend, ch, book) }
         }
         return when (book.format) {
-            BookEntity.FORMAT_ZIP, BookEntity.FORMAT_EPUB ->
-                openArchiveSource(book) { backend.randomAccess(book.docRef) }
-            // PDF 要文件描述符、7z/RAR 要文件路径，都得先落到本地
+            // 压缩包按内容判：zip → tar → 落盘交给 libarchive（7z / RAR / CBR）。
+            // 只试 zip 与 tar 的话，远端那本 7z 永远打不开
+            BookEntity.FORMAT_ZIP -> remoteArchive(book, book.docRef, backend)
+            BookEntity.FORMAT_EPUB ->
+                EpubBookSource(ZipCatalog.open(backend.randomAccess(book.docRef)), fastEpub)
+            // PDF 要文件描述符，得先落到本地
             else -> openLocalCopy(book) { backend.download(book.docRef, it) }
         }
     }
 
+    /** 封面要从哪份书源的哪一页取 */
+    class CoverPage(val source: BookSource, val index: Int)
+
     /**
-     * 只打开能给出封面那一页的最少内容。
+     * 封面用哪一页。
      *
-     * 生成封面只需要第一页，但 [open] 会把每一章都打开——远程三百章的书
-     * 在书架上滚到一次就是三百次请求。章回体这里只建第一章，其余不碰。
+     * 默认取首页，这时只建第一章——远程三百章的书在书架上滚到一次就是三百次请求。
+     * 但用户可以把封面设到任意一页，那是**全书页号**：若封面落在后面的章里，
+     * 只开第一章就会把它钳回首章末页。章页数量过就按它折算到「第几章 + 章内页」，
+     * 没量过就整本打开——宁可慢一次，也别取错页。
      */
-    fun openForCover(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource {
-        if (book.format != BookEntity.FORMAT_FOLDER || chapters.size <= 1) {
-            return open(book, source, chapters)
+    fun coverPage(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): CoverPage {
+        val page = book.coverPage.coerceAtLeast(0)
+        if (page == 0 || book.format != BookEntity.FORMAT_FOLDER || chapters.size <= 1) {
+            return CoverPage(open(book, source, chapters), page)
         }
-        val first = chapters.sortedBy { it.ordinal }.first()
-        return when (source.kind) {
+        val ordered = chapters.sortedBy { it.ordinal }
+        val hit = com.nascomic.reader.library.cover.CoverPageMap.pick(
+            ordered.map { it.pageTotal },
+            page,
+        ) ?: return CoverPage(open(book, source, chapters), page)
+
+        return CoverPage(openChapter(book, source, ordered[hit.first]), hit.second)
+    }
+
+    /** 只打开某一章，其余不碰 */
+    private fun openChapter(book: BookEntity, source: SourceEntity, ch: ChapterEntity): BookSource =
+        when (source.kind) {
             SourceEntity.KIND_WEBDAV -> {
-                val client = WebDavClient(source.account, secrets.get(source.secretRef))
-                openWith(WebDavBackend(client)) { remoteChapter(it, first, book) }
+                val client = WebDavClient(source.account, secrets.get(source.secretRef), source.endpoint)
+                openWith(WebDavBackend(client)) { remoteChapter(it, ch, book) }
             }
             SourceEntity.KIND_SMB -> {
                 val target = SmbTarget.parse(source.endpoint ?: error("这个来源没有地址"))
                 val client = SmbClient(target, source.account, secrets.get(source.secretRef))
-                openWith(SmbBackend(client)) { remoteChapter(it, first, book) }
+                openWith(SmbBackend(client)) { remoteChapter(it, ch, book) }
             }
             else -> openLocalChapter(
                 SafWalker(context, Uri.parse(source.treeUri ?: error("这个来源没有目录授权"))),
-                first,
+                ch,
             )
         }
-    }
 
     /** 一章可以是目录、压缩包，也可以是一份 PDF */
     private fun remoteChapter(
@@ -217,20 +238,28 @@ class BookOpener(private val context: Context) {
     ): BookSource = when (ch.chapterKind) {
         ChapterEntity.KIND_FOLDER -> remoteFolder(backend, ch.chapterRef, ch.title)
         ChapterEntity.KIND_PDF -> openPdfCopy(book.id, ch.chapterRef) { backend.download(ch.chapterRef, it) }
-        else -> openRemoteArchive(backend, ch.chapterRef)
+        else -> remoteArchive(book, ch.chapterRef, backend)
     }
 
-    /** 远程压缩包：先按 zip 试，再按 tar 头；都不成再整份下回本地交给 libarchive */
-    private fun openRemoteArchive(backend: RemoteBackend, ref: String): BookSource {
+    /**
+     * 远程压缩包：先按 zip 试，再按 tar 头；都不成再整份下回本地交给 libarchive。
+     *
+     * 独立的一本 7z / RAR / CBR 与「章是一本 7z」走的是同一条路——
+     * 以前前者只试 zip 与 tar，于是远端那种书根本打不开。
+     */
+    private fun remoteArchive(book: BookEntity, ref: String, backend: RemoteBackend): BookSource {
         runCatching { ZipBookSource(ZipCatalog.open(backend.randomAccess(ref)), rootOnly = rootOnly) }
             .getOrNull()?.let { return it }
 
         runCatching { TarBookSource(TarCatalog.open(backend.randomAccess(ref)), rootOnly = rootOnly) }
             .getOrNull()?.let { return it }
 
-        val dir = LocalCopies.remoteDir(context)
-        val local = File(dir, "a" + ref.hashCode().toUInt().toString(16))
-        if (!local.exists() || local.length() == 0L) backend.download(ref, local)
+        // 副本名带上书的 id：两个来源里相对路径相同的章，不能共用同一份文件
+        val local = fetchOnce(
+            LocalCopies.remoteDir(context),
+            "a${book.id}_" + ref.hashCode().toUInt().toString(16),
+            expected = -1L,
+        ) { backend.download(ref, it) }
         return LibArchiveBookSource(LibArchiveCatalog.open(local), rootOnly = rootOnly)
     }
 
@@ -262,29 +291,16 @@ class BookOpener(private val context: Context) {
 
     /** 远程 PDF 章：下一份到本地再交给系统渲染 */
     private fun openPdfCopy(bookId: Long, ref: String, save: (File) -> Unit): BookSource {
-        val dir = LocalCopies.remoteDir(context)
-        val local = File(dir, "p${bookId}_" + ref.hashCode().toUInt().toString(16))
-        if (!local.exists() || local.length() == 0L) save(local)
+        val local = fetchOnce(
+            LocalCopies.remoteDir(context),
+            "p${bookId}_" + ref.hashCode().toUInt().toString(16),
+            expected = -1L,
+            save = save,
+        )
         return PdfBookSource(
             ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY),
             pdfQuality,
         )
-    }
-
-    /**
-     * 能按字节区间读的格式：zip / tar / epub 共用同一套解析，只是底层换成了
-     * HTTP 区间请求或 SMB 读。两种来源的差别到此为止。
-     */
-    private fun openArchiveSource(book: BookEntity, data: () -> RandomAccessData): BookSource {
-        val open = data()
-        return when (book.format) {
-            BookEntity.FORMAT_EPUB -> EpubBookSource(ZipCatalog.open(open), fastEpub)
-            // 扩展名靠不住，按内容试：zip 中央目录认不出就按 tar 头读
-            else -> runCatching { ZipBookSource(ZipCatalog.open(open), rootOnly = rootOnly) }
-                .onFailure { android.util.Log.d("BookOpener", "不是 zip，改试 tar：${book.title}") }
-                .getOrNull()
-                ?: TarBookSource(TarCatalog.open(open), rootOnly = rootOnly)
-        }
     }
 
     /**
@@ -300,13 +316,39 @@ class BookOpener(private val context: Context) {
         }
     }
 
-    private fun cachedCopy(book: BookEntity, save: (File) -> Unit): File {
-        val dir = LocalCopies.remoteDir(context)
-        val name = "b${book.id}_" + book.byteSize.takeIf { it > 0 }
+    private fun cachedCopy(book: BookEntity, save: (File) -> Unit): File = fetchOnce(
+        LocalCopies.remoteDir(context),
+        "b${book.id}_" + book.byteSize.takeIf { it > 0 },
+        expected = book.byteSize,
+        save = save,
+    )
+
+    /**
+     * 取一份本地副本：有就复用，没有就下一份。
+     *
+     * 两道保险：
+     * 一、长度对不上（知道应有大小的时候）当成没有——半份文件不能拿来当完整副本用；
+     * 二、同一个键只让一个人下——书架和阅读页同时要同一本时，第二个等第一个，别各下一份。
+     */
+    private fun fetchOnce(dir: File, name: String, expected: Long, save: (File) -> Unit): File {
         val out = File(dir, name)
-        if (out.exists() && out.length() > 0) return out
-        save(out)
-        return out
+        if (usable(out, expected)) return out
+        synchronized(lockFor(out)) {
+            if (usable(out, expected)) return out
+            if (out.exists()) runCatching { out.delete() }
+            save(out)
+            return out
+        }
+    }
+
+    private fun usable(file: File, expected: Long): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        return expected <= 0L || file.length() == expected
+    }
+
+    /** 每个副本一把锁；键是绝对路径，不会随书规模无限增长到离谱 */
+    private fun lockFor(file: File): Any = synchronized(fetchLocks) {
+        fetchLocks.getOrPut(file.absolutePath) { Any() }
     }
 
     // ---- 本地（SAF）----

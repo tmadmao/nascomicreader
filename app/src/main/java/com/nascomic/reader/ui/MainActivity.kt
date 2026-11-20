@@ -401,7 +401,7 @@ class MainActivity : AppCompatActivity() {
             null
         } else {
             com.nascomic.reader.ui.shelf.ShelfTopAdapter.Resume(
-                title = shown.title,
+                title = shown.displayTitle,
                 meta = resumeMeta(shown, latest),
                 percent = readPercent(latest.pageGlobal, shown.pageTotal, latest.finished),
                 action = if (shown.chapterTotal > 0) {
@@ -497,7 +497,7 @@ class MainActivity : AppCompatActivity() {
         if (q.isEmpty()) return list
         val sourceNames = allSources.associate { it.id to it.label }
         return list.filter { book ->
-            book.title.contains(q, ignoreCase = true) ||
+            book.displayTitle.contains(q, ignoreCase = true) ||
                 sourceNames[book.sourceId]?.contains(q, ignoreCase = true) == true
         }
     }
@@ -657,7 +657,7 @@ class MainActivity : AppCompatActivity() {
         // 系列功能关着时不摆这一项，菜单里每一条都点得动
         if (prefs.seriesEnabled) items += getString(R.string.series_join_action)
         AlertDialog.Builder(this)
-            .setTitle(book.title)
+            .setTitle(book.displayTitle)
             .setItems(items.toTypedArray()) { _, which ->
                 when (which) {
                     0 -> enterSelection(book.id)

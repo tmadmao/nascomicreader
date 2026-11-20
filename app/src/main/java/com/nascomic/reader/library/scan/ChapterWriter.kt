@@ -39,7 +39,20 @@ class ChapterWriter(private val db: ReaderDatabase) {
         db.chapterDao().replaceFor(bookId, fresh)
 
         val newRefs = fresh.map { it.chapterRef }
-        if (old.isEmpty() || old.map { it.ref } == newRefs) return@withTransaction
+        if (old.map { it.ref } == newRefs) return@withTransaction
+
+        // 章回体变成了散图（章表清空）：章号失去意义，但进度与书签不该被删——
+        // 进度回到第 1 页，书签留着，用户还能自己找回去
+        if (fresh.isEmpty()) {
+            db.progressDao().forBook(bookId)?.let { p ->
+                if (p.chapterOrdinal != 0 || p.pageInChapter != 0 || p.pageGlobal != 0) {
+                    db.progressDao().upsert(
+                        p.copy(chapterOrdinal = 0, pageInChapter = 0, pageGlobal = 0)
+                    )
+                }
+            }
+            return@withTransaction
+        }
 
         db.progressDao().forBook(bookId)?.let { progress ->
             val moved = ChapterReorder.newOrdinal(old, newRefs, progress.chapterOrdinal) ?: return@let

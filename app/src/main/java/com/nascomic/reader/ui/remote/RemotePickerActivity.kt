@@ -60,6 +60,9 @@ class RemotePickerActivity : AppCompatActivity() {
     /** 走过的每一层，最后一个就是当前层。退上一层 = 弹一个 */
     private val trail = ArrayDeque<String>()
 
+    /** 用户填的地址：也是「凭据只发给这一个站点」的依据 */
+    private var endpoint: String = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityRemotePickerBinding.inflate(layoutInflater)
@@ -71,7 +74,7 @@ class RemotePickerActivity : AppCompatActivity() {
         account = intent.getStringExtra(EXTRA_ACCOUNT)?.takeIf { it.isNotBlank() }
         password = intent.getStringExtra(EXTRA_PASSWORD)
 
-        val endpoint = intent.getStringExtra(EXTRA_ENDPOINT).orEmpty()
+        endpoint = intent.getStringExtra(EXTRA_ENDPOINT).orEmpty()
         if (endpoint.isBlank() || !start(endpoint)) {
             finish()
             return
@@ -166,7 +169,7 @@ class RemotePickerActivity : AppCompatActivity() {
                 .filter { it.isDirectory }
                 .map { Folder(it.name, it.path) }
         } else {
-            val client = dav ?: WebDavClient(account, password).also { dav = it }
+            val client = dav ?: WebDavClient(account, password, endpoint).also { dav = it }
             client.list(where)
                 .filter { it.isDirectory }
                 .map { Folder(it.name, it.url.trimEnd('/')) }

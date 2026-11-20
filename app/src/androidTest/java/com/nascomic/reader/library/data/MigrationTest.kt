@@ -86,6 +86,7 @@ class MigrationTest {
         db.close()
     }
 
+    @Test
     fun `6到7加书型列_老库按连载处理`() {
         val name = "mig_6_7.db"
         createOld(name, version = 6).close()
@@ -95,6 +96,20 @@ class MigrationTest {
         assertEquals(1L, db.count("SELECT COUNT(*) FROM bookmarks"))
         // 升级前没有书型这个概念，老来源一律按连载：行为与升级前一致
         assertEquals(0L, db.count("SELECT COUNT(*) FROM sources WHERE book_mode <> 0"))
+        db.close()
+    }
+
+    @Test
+    fun `7到8加别名列_老库没有别名`() {
+        val name = "mig_7_8.db"
+        createOld(name, version = 7).close()
+
+        val db = helper.runMigrationsAndValidate(name, 8, true, *chainUpTo(8))
+        assertEquals("第一卷", db.text("SELECT title FROM books WHERE id = 1"))
+        assertEquals(1L, db.count("SELECT COUNT(*) FROM bookmarks"))
+        assertEquals(7L, db.count("SELECT page_global FROM progress WHERE book_id = 1"))
+        // 升级前没有别名：显示仍按来源标题，改名之后才写这一列
+        assertNull(db.text("SELECT alias FROM books WHERE id = 1"))
         db.close()
     }
 
@@ -110,6 +125,7 @@ class MigrationTest {
         assertEquals(7L, db.count("SELECT page_global FROM progress WHERE book_id = 1"))
         assertEquals("看到这里", db.text("SELECT note FROM bookmarks WHERE id = 1"))
         assertEquals(0L, db.count("SELECT finished FROM progress WHERE book_id = 1"))
+        assertNull(db.text("SELECT alias FROM books WHERE id = 1"))
         db.close()
     }
 

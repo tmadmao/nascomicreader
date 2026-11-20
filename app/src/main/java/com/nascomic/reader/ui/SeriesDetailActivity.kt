@@ -261,7 +261,7 @@ class SeriesDetailActivity : AppCompatActivity() {
                 .map {
                     com.nascomic.reader.ui.shelf.SearchPicker.Item(
                         id = it.id,
-                        title = it.title,
+                        title = it.displayTitle,
                         subtitle = getString(R.string.series_volume_pages, it.pageTotal),
                     )
                 }
@@ -334,7 +334,7 @@ class SeriesDetailActivity : AppCompatActivity() {
             val book = books[position]
             val p = progress[book.id]
             holder.binding.ordinal.text = (position + 1).toString().padStart(2, '0')
-            holder.binding.title.text = book.title
+            holder.binding.title.text = book.displayTitle
             holder.binding.meta.text = if (p == null) {
                 holder.binding.root.context.getString(R.string.series_volume_pages, book.pageTotal)
             } else {

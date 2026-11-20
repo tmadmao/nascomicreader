@@ -144,9 +144,12 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE source_id = :sourceId ORDER BY title_sort ASC")
     suspend fun bySourceNow(sourceId: Long): List<BookEntity>
 
-    /** 重命名：只改书库里的显示名与排序键，源文件名不动 */
-    @Query("UPDATE books SET title = :title, title_sort = :titleSort WHERE id = :id")
-    suspend fun updateTitle(id: Long, title: String, titleSort: String)
+    /**
+     * 重命名：只写用户别名与排序键，`title` 保持来源上的名字。
+     * 写 title 的话，下一次扫描比对不出差异会当成来源变了，又把文件名盖回来。
+     */
+    @Query("UPDATE books SET alias = :alias, title_sort = :titleSort WHERE id = :id")
+    suspend fun rename(id: Long, alias: String?, titleSort: String)
 
     /** 换封面：只改这一本的取图页号，下次生成缩略图就按它取 */
     @Query("UPDATE books SET cover_page = :page WHERE id = :id")

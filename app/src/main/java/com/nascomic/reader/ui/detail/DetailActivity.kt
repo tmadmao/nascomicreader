@@ -155,7 +155,7 @@ class DetailActivity : AppCompatActivity() {
 
     private fun render() {
         val b = book ?: return
-        binding.title.text = b.title
+        binding.title.text = b.displayTitle
         binding.meta.text = metaLine(b)
         binding.sourceLine.text = sourceLine(b)
 
@@ -221,7 +221,7 @@ class DetailActivity : AppCompatActivity() {
     private fun tocEntries(b: BookEntity): List<TocEntry> = when {
         chapters.isNotEmpty() -> chapters.map { TocEntry(it.ordinal, it.title, it.pageTotal) }
         // 单行本这一章的标题就是这本书的标题（扫描时从文件名取的）
-        b.isSingleVolume == 1 -> listOf(TocEntry(0, b.title, b.pageTotal))
+        b.isSingleVolume == 1 -> listOf(TocEntry(0, b.displayTitle, b.pageTotal))
         else -> emptyList()
     }
 
@@ -506,7 +506,7 @@ class DetailActivity : AppCompatActivity() {
         )
         if (appPrefs.seriesEnabled) items += getString(R.string.series_join_action)
         AlertDialog.Builder(this)
-            .setTitle(book.title)
+            .setTitle(book.displayTitle)
             .setItems(items.toTypedArray()) { _, which ->
                 when (which) {
                     0 -> openShelfSelection(book.id)

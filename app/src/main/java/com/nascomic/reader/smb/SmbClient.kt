@@ -127,13 +127,45 @@ class SmbClient(
         return if (filled == length) buffer else buffer.copyOf(filled)
     }
 
-    /** 整份下载到本地文件（PDF 与 7z/RAR 需要文件路径） */
+    /**
+     * 整份下载到本地文件（PDF 与 7z/RAR 需要文件路径）。
+     *
+     * 与 WebDAV 同一套做法：先写 `.part`，核过长度再改名。
+     * 直写最终文件时，连接一断就留下半份，而打开端只判「存在且非空」——
+     * 那本书从此打不开，也不会自己重下。
+     */
     fun download(path: String, out: File) {
         val file = open(path)
-        try {
-            out.outputStream().use { sink -> file.read(sink) }
+        val expected = runCatching { file.length }.getOrDefault(-1L)
+        val tmp = File(out.parentFile, out.name + ".part")
+        runCatching { tmp.delete() }
+        val written = try {
+            var count = 0L
+            val counter = object : java.io.FilterOutputStream(tmp.outputStream()) {
+                override fun write(b: Int) {
+                    super.write(b)
+                    count++
+                }
+
+                override fun write(b: ByteArray, off: Int, len: Int) {
+                    super.write(b, off, len)
+                    count += len
+                }
+            }
+            counter.use { file.read(it) }
+            count
         } catch (e: Exception) {
+            runCatching { tmp.delete() }
             throw classify(e, "下载失败：$path")
+        }
+        if (expected >= 0 && written != expected) {
+            runCatching { tmp.delete() }
+            throw SmbException("下载不完整：$written / $expected 字节（$path）")
+        }
+        if (out.exists()) runCatching { out.delete() }
+        if (!tmp.renameTo(out)) {
+            tmp.copyTo(out, overwrite = true)
+            runCatching { tmp.delete() }
         }
     }
 

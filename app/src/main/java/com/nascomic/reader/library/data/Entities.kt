@@ -96,8 +96,13 @@ data class BookEntity(
     /** 来源内的相对引用：zip 路径 / 目录路径 / 文件名 */
     @ColumnInfo(name = "doc_ref") val docRef: String,
     @ColumnInfo(name = "title") val title: String,
-    /** 自然序排序键，由 NaturalSort.key 生成 */
+    /** 自然序排序键，由 NaturalSort.key 生成；用户改过名时是别名的键 */
     @ColumnInfo(name = "title_sort") val titleSort: String,
+    /**
+     * 用户改的书名。`title` 永远是来源上的名字，扫描拿它比对；
+     * 别名只由用户写，重扫不会碰它——两者混在一列里，一次重扫就把改名冲掉了。
+     */
+    @ColumnInfo(name = "alias") val alias: String? = null,
     /** 从文件名解析出的作者；解析不出就空着，不猜 */
     @ColumnInfo(name = "author") val author: String? = null,
     /** 从文件名解析出的卷号；可以是数字，也可以是「上」「特别篇」这类字，解析不出就空着 */
@@ -118,6 +123,10 @@ data class BookEntity(
     @ColumnInfo(name = "scan_state") val scanState: Int = STATE_PENDING,
     @ColumnInfo(name = "error_code") val errorCode: Int? = null,
 ) {
+    /** 界面上该显示的名字：用户改过就用他的，否则用来源标题 */
+    val displayTitle: String
+        get() = alias?.takeIf { it.isNotBlank() } ?: title
+
     companion object {
         const val FORMAT_ZIP = 0
         const val FORMAT_FOLDER = 1

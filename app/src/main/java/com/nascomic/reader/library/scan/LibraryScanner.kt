@@ -165,7 +165,8 @@ class LibraryScanner(
                     db.bookDao().upsert(
                         existing.copy(
                             title = ScanRules.titleOf(candidate.node),
-                            titleSort = NaturalSort.key(ScanRules.titleOf(candidate.node)),
+                            // 用户改过名就沿用他的排序键，别被文件名顶回去
+                            titleSort = sortKeyOf(existing, ScanRules.titleOf(candidate.node)),
                             byteSize = candidate.size,
                             chapterTotal = candidate.chapters.size,
                             isSingleVolume = if (candidate.chapters.isEmpty()) 1 else 0,
@@ -175,23 +176,23 @@ class LibraryScanner(
                     existing.id
                 }
 
-                if (candidate.chapters.isNotEmpty()) {
-                    chaptered++
-                    chapters.write(
-                        bookId,
-                        candidate.chapters.map { unit ->
-                            ChapterWriter.Draft(
-                                title = ScanRules.titleOf(unit),
-                                ref = unit.docId,
-                                kind = when {
-                                    unit.isDir -> ChapterEntity.KIND_FOLDER
-                                    ScanRules.isPdf(unit.name) -> ChapterEntity.KIND_PDF
-                                    else -> ChapterEntity.KIND_ARCHIVE
-                                },
-                            )
-                        },
-                    )
-                }
+                // 章表为空也要写一次：这本书可能刚从章回体变成散图，
+                // 不写的话旧章会一直留在库里，阅读页还会照着旧章去打开
+                if (candidate.chapters.isNotEmpty()) chaptered++
+                chapters.write(
+                    bookId,
+                    candidate.chapters.map { unit ->
+                        ChapterWriter.Draft(
+                            title = ScanRules.titleOf(unit),
+                            ref = unit.docId,
+                            kind = when {
+                                unit.isDir -> ChapterEntity.KIND_FOLDER
+                                ScanRules.isPdf(unit.name) -> ChapterEntity.KIND_PDF
+                                else -> ChapterEntity.KIND_ARCHIVE
+                            },
+                        )
+                    },
+                )
             }
 
             // 清理磁盘上已经没有的条目。
@@ -202,9 +203,10 @@ class LibraryScanner(
                 .filterNot { it.docRef in present }
                 .map { it.id }
             gone.chunked(DELETE_BATCH).forEach { db.bookDao().deleteByIds(it) }
-        }
 
-        db.sourceDao().setScanState(source.id, SourceEntity.STATE_DONE, null, now)
+            // 完成状态与书本写在同一个事务里：中途失败就整轮回滚，不会留下「已完成」的假象
+            db.sourceDao().setScanState(source.id, SourceEntity.STATE_DONE, null, now)
+        }
 
         Result(
             found = found.size,
@@ -215,9 +217,8 @@ class LibraryScanner(
         )
     }
 
-    /** 远端列表里的一条：入库只需要这三样 */
     /** 远端的目录项。目录也算进来，才能认出「一个目录一本书」 */
-    private class RemoteEntry(
+    internal class RemoteEntry(
         val ref: String,
         val name: String,
         val isDir: Boolean,
@@ -242,7 +243,7 @@ class LibraryScanner(
         isCancelled: () -> Boolean = { false },
     ): Result {
         val endpoint = source.endpoint ?: throw IllegalArgumentException("来源没有地址")
-        val client = WebDavClient(source.account, secrets.get(source.secretRef))
+        val client = WebDavClient(source.account, secrets.get(source.secretRef), source.endpoint)
         val lister: (String) -> List<RemoteEntry> = { dir ->
             client.list(dir).map { RemoteEntry(it.url, it.name, it.isDirectory, it.size) }
         }
@@ -261,6 +262,18 @@ class LibraryScanner(
         }
         return scanRemote(source, target.path, lister, listener, isCancelled)
     }
+
+    /**
+     * 设备测试入口：喂一个假的列目录函数，其余流程与真远端完全一样，不碰网络。
+     *
+     * 「空清单时保住书库」这条只有走到这里才验得到——真 NAS 很难按需变空。
+     */
+    @androidx.annotation.VisibleForTesting
+    internal suspend fun scanRemoteForTest(
+        source: SourceEntity,
+        rootRef: String,
+        list: (String) -> List<RemoteEntry>,
+    ): Result = scanRemote(source, rootRef, list, null) { false }
 
     /**
      * 远端来源的公共流程：递归走目录 → 认书 → 入库 → 清掉已消失的。
@@ -295,6 +308,22 @@ class LibraryScanner(
             throw e
         }
 
+        val now = System.currentTimeMillis()
+
+        // 一次都没扫到、但库里原本有书：远端比本地更容易出现这种情况——
+        // 挂载暂时不可见时枚举会「正常结束」并给出空表，照着空表清理等于把这个书库的
+        // 书、进度、书签、系列归属一起删掉。停下来等用户确认，和本地同一条规则。
+        val before = db.bookDao().countBySource(source.id)
+        if (all.isEmpty() && before > 0) {
+            db.sourceDao().setScanState(
+                source.id,
+                SourceEntity.STATE_FAILED,
+                SourceEntity.ERROR_EMPTY_SCAN,
+                now,
+            )
+            return Result(0, 0, 0, 0, 0, keptAll = true)
+        }
+
         // 有目录这次没读到：它底下的书既没被更新也不能算「已删除」，
         // 所以这一轮跳过清理，只把变化写进去
         val skipRemoval = broken.isNotEmpty()
@@ -306,9 +335,9 @@ class LibraryScanner(
 
         if (isCancelled()) throw Cancelled()
 
-        val now = System.currentTimeMillis()
         var added = 0
         var updated = 0
+        var chaptered = 0
 
         // 一次读全这个来源已有的书，别每本查一遍库：逐本查会随库规模累积成大量查询
         val known = db.bookDao().bySourceNow(source.id).associateBy { it.docRef }
@@ -344,7 +373,8 @@ class LibraryScanner(
                 updated++
                 touched += existing.copy(
                     title = book.title,
-                    titleSort = NaturalSort.key(book.title),
+                    // 用户改过名就沿用他的排序键
+                    titleSort = sortKeyOf(existing, book.title),
                     byteSize = book.size,
                     chapterTotal = book.chapters.size,
                     isSingleVolume = singleVolume,
@@ -367,23 +397,23 @@ class LibraryScanner(
                 val gone = known.values.filter { it.docRef !in present }.map { it.id }
                 gone.chunked(DELETE_BATCH).forEach { db.bookDao().deleteByIds(it) }
             }
+            // 章要等书有了 id 才写得进去。与书、与完成状态放在同一个事务里：
+            // 否则进程在中间退出时，状态已经是「完成」，章表却还是上一次扫描的
+            val idsByRef = db.bookDao().bySourceNow(source.id).associate { it.docRef to it.id }
+            for (book in books) {
+                val bookId = idsByRef[book.docRef] ?: continue
+                if (book.chapters.isNotEmpty()) chaptered++
+                chapters.write(
+                    bookId,
+                    book.chapters.map { ch -> ChapterWriter.Draft(ch.title, ch.ref, ch.kind) },
+                )
+            }
+
             db.sourceDao().setScanState(
                 source.id,
                 SourceEntity.STATE_DONE,
                 if (skipRemoval) SourceEntity.ERROR_PARTIAL else null,
                 now,
-            )
-        }
-
-        // 章要等书有了 id 才写得进去，单独再走一遍
-        var chaptered = 0
-        val idsByRef = db.bookDao().bySourceNow(source.id).associate { it.docRef to it.id }
-        for (book in books.filter { it.chapters.isNotEmpty() }) {
-            val bookId = idsByRef[book.docRef] ?: continue
-            chaptered++
-            chapters.write(
-                bookId,
-                book.chapters.map { ch -> ChapterWriter.Draft(ch.title, ch.ref, ch.kind) },
             )
         }
 
@@ -556,6 +586,10 @@ class LibraryScanner(
     /** 卷号存成字符串：库里是 TEXT，空的就留空 */
     private fun parsedVolume(title: String): String? =
         com.nascomic.reader.library.series.VolumeNameParser.parse(title).volume?.toString()
+
+    /** 用户改过名（alias 非空）就沿用他排好的顺序，否则按来源标题现算 */
+    private fun sortKeyOf(existing: BookEntity, title: String): String =
+        if (existing.alias.isNullOrBlank()) NaturalSort.key(title) else existing.titleSort
 
     private fun formatOf(name: String): Int = when {
         ScanRules.isEpub(name) -> BookEntity.FORMAT_EPUB

@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 库版本。实体声明、导出的 schema、迁移目标都取这一处，
  * 改表只动这里一个数。
  */
-internal const val DB_VERSION = 7
+internal const val DB_VERSION = 8
 
 /**
  * 应用数据库。
@@ -97,6 +97,18 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 7→8：书加「用户别名」一列。
+         *
+         * 改名以前直接写 `title`，重扫一比对就当成来源变了，又拿文件名覆盖回去。
+         * 别名单独一列，扫描只认 `title`，改名就再也冲不掉了。
+         */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN alias TEXT")
+            }
+        }
+
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN author TEXT")
@@ -143,6 +155,7 @@ abstract class ReaderDatabase : RoomDatabase() {
             MIGRATION_4_5,
             MIGRATION_6_7,
             MIGRATION_5_6,
+            MIGRATION_7_8,
         )
 
         private fun build(context: Context): ReaderDatabase =
