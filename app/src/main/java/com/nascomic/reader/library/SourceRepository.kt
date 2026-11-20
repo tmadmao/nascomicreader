@@ -165,6 +165,13 @@ class SourceRepository(
         db.sourceDao().upsert(
             source.copy(endpoint = url, account = cleanAccount, scanState = SourceEntity.STATE_IDLE)
         )
+        // 地址或账号换了，这个来源下所有落盘副本都作废：
+        // 书 id 不变、章引用也可能一字未变，光看名字分不出是新内容还是旧内容
+        com.nascomic.reader.format.LocalCopies.evictBooks(
+            context,
+            db.bookDao().idsBySource(sourceId),
+        )
+
         if (!password.isNullOrBlank()) {
             val key = source.secretRef ?: when (source.kind) {
                 SourceEntity.KIND_SMB -> "smb_$sourceId"

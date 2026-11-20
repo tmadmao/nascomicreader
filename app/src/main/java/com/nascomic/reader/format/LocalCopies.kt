@@ -50,6 +50,27 @@ object LocalCopies {
         }
     }
 
+    /**
+     * 删掉某几本书的落盘副本。
+     *
+     * 来源改了地址、或这本书重新扫过之后，旧副本就该作废：副本名只带书 id 与条目引用，
+     * 地址换了、同路径的文件换了，名字都还是那一个，留着就会被当成「已经下好了」继续用。
+     */
+    fun evictBooks(context: Context, ids: Collection<Long>) {
+        if (ids.isEmpty()) return
+        runCatching {
+            for (dir in listOf(archivesDir(context), remoteDir(context))) {
+                dir.listFiles()?.forEach { file ->
+                    if (ids.any { file.name.belongsTo(it) }) runCatching { file.delete() }
+                }
+            }
+        }
+    }
+
+    /** 副本命名：`b<书 id>_…`（整本）、`a<书 id>_…`（章压缩包）、`p<书 id>_…`（章 PDF） */
+    private fun String.belongsTo(bookId: Long): Boolean =
+        startsWith("b${bookId}_") || startsWith("a${bookId}_") || startsWith("p${bookId}_")
+
     /** 删来源、清缓存时整体清掉：这些副本都能重新生成 */
     fun clear(context: Context) {
         runCatching { archivesDir(context).deleteRecursively() }

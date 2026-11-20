@@ -62,10 +62,25 @@ class ChapterWriter(private val db: ReaderDatabase) {
             )
         }
 
+        // 书签按「先占位、再落位」两步挪。
+        //
+        // 书签在 (书, 章号, 章内页) 上有唯一约束，而章号是一起后移的：
+        // 直接在原位一条条改，第一条要去的正是第二条还占着的章号，整轮扫描会因此回滚；
+        // 保持这些书签重试，撞的还是同一处。所以先把要挪的都挪到负数占位（真实章号不为负，
+        // 每条又各不相同，彼此不会撞），再统一写回目标章号。
+        val moves = ArrayList<Pair<Long, Int>>()
+        val dangling = ArrayList<Long>()
         for (mark in db.bookmarkDao().forBookNow(bookId)) {
-            val moved = ChapterReorder.newOrdinal(old, newRefs, mark.chapterOrdinal) ?: continue
-            if (moved != mark.chapterOrdinal) db.bookmarkDao().moveToChapter(mark.id, moved)
+            val moved = ChapterReorder.newOrdinal(old, newRefs, mark.chapterOrdinal)
+            when {
+                // 这一章已经不在了：书签指向的内容没了，留着只会在目录里挂到别的章上
+                moved == null -> dangling += mark.id
+                moved != mark.chapterOrdinal -> moves += mark.id to moved
+            }
         }
+        dangling.forEach { db.bookmarkDao().delete(it) }
+        moves.forEachIndexed { index, (id, _) -> db.bookmarkDao().moveToChapter(id, -1 - index) }
+        moves.forEach { (id, target) -> db.bookmarkDao().moveToChapter(id, target) }
     }
 
     /**

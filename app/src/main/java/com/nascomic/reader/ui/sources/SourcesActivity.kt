@@ -334,6 +334,7 @@ class SourcesActivity : AppCompatActivity() {
                 SourceEntity.ERROR_AUTH -> getString(R.string.source_state_failed_auth)
                 SourceEntity.ERROR_UNREACHABLE -> getString(R.string.source_state_failed_unreachable)
                 SourceEntity.ERROR_EMPTY_SCAN -> getString(R.string.source_state_failed_empty)
+                SourceEntity.ERROR_INTERRUPTED -> getString(R.string.source_state_failed_interrupted)
                 else -> getString(R.string.source_state_failed)
             }
             SourceEntity.STATE_DONE ->

@@ -191,6 +191,7 @@ class MainActivity : AppCompatActivity() {
         // 搜书名：敲字即筛，120ms 防抖，免得每敲一个键都查一次库
         authorFilter = intent.getStringExtra(EXTRA_AUTHOR)
         authorUnknown = intent.getBooleanExtra(EXTRA_AUTHOR_UNKNOWN, false)
+        recoverInterruptedScansOnce()
         backfillAuthorsOnce()
         binding.searchScope.setOnClickListener { askScope() }
         renderScopeChip()
@@ -794,6 +795,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 把上次没走完的扫描收拾掉：进程被杀时状态会停在「扫描中」，界面就一直转。
+     * 一个进程只跑一次——同一进程里正在跑的扫描不能被误标成中断。
+     */
+    private fun recoverInterruptedScansOnce() {
+        if (scansRecovered) return
+        scansRecovered = true
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { com.nascomic.reader.library.scan.ScanRecovery.recover(db) }
+            }
+        }
+    }
+
     /** 老书作者回填：只做一次，之后新书在扫描入库时就写好了 */
     private fun backfillAuthorsOnce() {
         if (prefs.authorBackfilled) return
@@ -913,6 +928,9 @@ class MainActivity : AppCompatActivity() {
 
         /** 从作家列表点进来时带上作者名：书架只显示这位作者的书 */
         const val EXTRA_AUTHOR = "author"
+
+        /** 扫描中断的收拾只跑一次（进程级） */
+        private var scansRecovered = false
 
         /** 点的是「未知作者」：书架只显示没写作者的书 */
         const val EXTRA_AUTHOR_UNKNOWN = "author_unknown"

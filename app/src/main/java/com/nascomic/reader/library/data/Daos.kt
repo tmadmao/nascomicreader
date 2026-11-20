@@ -35,6 +35,15 @@ interface SourceDao {
     @Query("UPDATE sources SET scan_state = :state, error_code = :errorCode, last_scan_at = :at WHERE id = :id")
     suspend fun setScanState(id: Long, state: Int, errorCode: Int?, at: Long)
 
+    /**
+     * 把「停在扫描中」的来源改成失败。
+     *
+     * 扫描开始时先标「扫描中」，这一步在入库事务之前单独提交；进程中途被杀时事务回滚了、
+     * 这个状态却留着，界面就会永远显示「扫描中」，用户既看不到进度也重试不了。
+     */
+    @Query("UPDATE sources SET scan_state = :failed, error_code = :code WHERE scan_state = :scanning")
+    suspend fun failStuckScans(scanning: Int, failed: Int, code: Int)
+
     @Query("DELETE FROM sources WHERE id = :id")
     suspend fun delete(id: Long)
 }

@@ -141,6 +141,50 @@ class RemoteScanRulesTest {
         assertNull(db.sourceDao().get(source.id)?.errorCode)
     }
 
+    @Test
+    fun `插入序章后重新扫描_书签不撞索引整轮不回滚`() = runBlocking {
+        val source = newSource()
+        val bookId = newBook(source.id, "漫画/e", "戊", format = BookEntity.FORMAT_FOLDER)
+        db.chapterDao().replaceFor(
+            bookId,
+            listOf(
+                ChapterEntity(bookId = bookId, ordinal = 0, title = "第1话", chapterRef = "漫画/e/第1话", chapterKind = ChapterEntity.KIND_FOLDER, pageTotal = 3),
+                ChapterEntity(bookId = bookId, ordinal = 1, title = "第2话", chapterRef = "漫画/e/第2话", chapterKind = ChapterEntity.KIND_FOLDER, pageTotal = 3),
+            ),
+        )
+        val first = db.bookmarkDao().insert(
+            BookmarkEntity(bookId = bookId, chapterOrdinal = 0, pageInChapter = 0, note = "甲", createdAt = 11)
+        )
+        val second = db.bookmarkDao().insert(
+            BookmarkEntity(bookId = bookId, chapterOrdinal = 1, pageInChapter = 0, note = "乙", createdAt = 22)
+        )
+
+        // 磁盘上多了一个排在最前的序章：A、B 都要后移一位
+        val result = scanner.scanRemoteForTest(source, source.endpoint!!) { dir ->
+            when (dir) {
+                source.endpoint -> listOf(LibraryScanner.RemoteEntry("漫画/e", "e", true, 0))
+                "漫画/e" -> listOf(
+                    LibraryScanner.RemoteEntry("漫画/e/序章", "序章", true, 0),
+                    LibraryScanner.RemoteEntry("漫画/e/第1话", "第1话", true, 0),
+                    LibraryScanner.RemoteEntry("漫画/e/第2话", "第2话", true, 0),
+                )
+                // 章里直接是图：这样才会被判成章回体
+                else -> listOf(LibraryScanner.RemoteEntry("$dir/01.jpg", "01.jpg", false, 10))
+            }
+        }
+
+        assertEquals("整轮不该回滚", 1, result.found)
+        assertEquals(SourceEntity.STATE_DONE, db.sourceDao().get(source.id)?.scanState)
+        assertEquals(3, db.chapterDao().forBook(bookId).size)
+
+        val marks = db.bookmarkDao().forBookNow(bookId).associateBy { it.id }
+        assertEquals(2, marks.size)
+        assertEquals(1, marks[first]?.chapterOrdinal)
+        assertEquals(2, marks[second]?.chapterOrdinal)
+        assertEquals("甲", marks[first]?.note)
+        assertEquals(22L, marks[second]?.createdAt)
+    }
+
     // ---- 造数据 ----
 
     private suspend fun newSource(): SourceEntity {

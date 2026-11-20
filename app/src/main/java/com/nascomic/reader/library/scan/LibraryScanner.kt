@@ -208,6 +208,13 @@ class LibraryScanner(
             db.sourceDao().setScanState(source.id, SourceEntity.STATE_DONE, null, now)
         }
 
+        // 扫完就把这个来源的落盘副本全部作废：同一路径的文件被换掉、大小和章数都没变时，
+        // 扫描看不出差异，副本名也不会变，留着就会一直放旧内容
+        com.nascomic.reader.format.LocalCopies.evictBooks(
+            context,
+            db.bookDao().idsBySource(source.id),
+        )
+
         Result(
             found = found.size,
             added = added,
@@ -416,6 +423,12 @@ class LibraryScanner(
                 now,
             )
         }
+
+        // 理由同上：扫描之后，这个来源的旧副本都不该再被当成当前内容
+        com.nascomic.reader.format.LocalCopies.evictBooks(
+            context,
+            db.bookDao().idsBySource(source.id),
+        )
 
         return Result(
             found = books.size,

@@ -66,6 +66,9 @@ data class SourceEntity(
 
         /** 扫描完成，但有几个远端目录这次没读到：那一部分没更新、也没删 */
         const val ERROR_PARTIAL = 14
+
+        /** 上次扫描没走完就退出了：状态停在「扫描中」，冷启动时改成这个，可重试 */
+        const val ERROR_INTERRUPTED = 15
     }
 }
 
