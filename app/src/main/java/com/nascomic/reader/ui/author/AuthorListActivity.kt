@@ -74,6 +74,16 @@ class AuthorListActivity : AppCompatActivity() {
             showBubble(letter)
         }
 
+        // 高亮跟着列表走：滚到哪一节，索引条就亮哪个字母
+        binding.list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                val first = (rv.layoutManager as? LinearLayoutManager)
+                    ?.findFirstVisibleItemPosition() ?: return
+                if (first == RecyclerView.NO_POSITION) return
+                adapter.letterAt(first)?.let { binding.indexBar.setCurrent(it) }
+            }
+        })
+
         readExtraQuery()
         load()
     }
@@ -193,8 +203,9 @@ class AuthorListActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 从作者页回来时作者数可能变了（补过作者），重读一次
-        if (all.isNotEmpty()) load()
+        // 从作者页回来时作者数可能变了（补过作者）；空库也要重读——
+        // 否则第一次进来是空库，之后新扫了书也不会长出来
+        load()
     }
 
     // ── 行 ─────────────────────────────────────────────────

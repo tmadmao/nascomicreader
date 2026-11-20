@@ -70,7 +70,14 @@ class ProgressScrubber @JvmOverloads constructor(
         this.max = max.coerceAtLeast(0)
         this.progress = progress.coerceIn(0, this.max)
         this.rtl = rtl
-        if (changed) invalidate()
+        if (changed) {
+            contentDescription = context.getString(
+                R.string.reader_scrub_desc,
+                progress + 1,
+                this.max.coerceAtLeast(1),
+            )
+            invalidate()
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

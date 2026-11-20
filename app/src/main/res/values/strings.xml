@@ -449,6 +449,7 @@
     <string name="settings_update_source_saved">已保存，下次检查更新生效</string>
 
     <string name="shelf_entry_author">作家列表</string>
+    <string name="reader_scrub_desc">第 %1$d 页，共 %2$d 页</string>
     <string name="book_author_action">设置作者</string>
     <string name="book_author_title">设置作者</string>
     <string name="book_author_desc">填在书名里没人认出来的作者；留空就归到「未知作者」</string>
@@ -466,7 +467,7 @@
     <string name="author_letter_count">%1$d 位</string>
     <string name="author_unknown">未知作者</string>
     <string name="author_unknown_hint">待补作者</string>
-    <string name="author_empty">书库里还没有作家<br/>书名里带「[作者]」的会被自动认出来</string>
+    <string name="author_empty">书库里还没有作家\n书名里带「[作者]」的会被自动认出来</string>
     <string name="author_search_hint">搜作者名</string>
     <string name="book_mode_title">新增书源</string>
     <string name="book_mode_step">第 2 步 · 共 3 步 · %1$s</string>
