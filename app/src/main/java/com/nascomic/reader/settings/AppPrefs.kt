@@ -15,6 +15,11 @@ class AppPrefs(context: Context) {
     private val sp = context.applicationContext
         .getSharedPreferences("reader_prefs", Context.MODE_PRIVATE)
 
+    /** 作者回填跑过了没有；新书在扫描时就写好作者，不需要重复回填 */
+    var authorBackfilled: Boolean
+        get() = sp.getBoolean(KEY_AUTHOR_BACKFILL, false)
+        set(value) = sp.edit().putBoolean(KEY_AUTHOR_BACKFILL, value).apply()
+
     /** 跳过详情页，点书直接继续阅读 */
     var skipDetail: Boolean
         get() = sp.getBoolean(KEY_SKIP_DETAIL, false)
@@ -116,6 +121,9 @@ class AppPrefs(context: Context) {
 
     private companion object {
         const val KEY_SKIP_DETAIL = "ui.skip_detail"
+
+        /** 老书的作者回填只做一次 */
+        const val KEY_AUTHOR_BACKFILL = "library.author_backfilled"
         const val KEY_ORIENTATION = "ui.orientation"
         const val KEY_TOC_DESCENDING = "detail.toc_descending"
         const val KEY_SHELF_SORT = "ui.shelf_sort"

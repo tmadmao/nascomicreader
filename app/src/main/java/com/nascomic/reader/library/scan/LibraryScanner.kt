@@ -140,14 +140,17 @@ class LibraryScanner(
         db.withTransaction {
             for (candidate in books) {
                 val existing = db.bookDao().findByRef(source.id, candidate.node.docId)
+                val title = ScanRules.titleOf(candidate.node)
                 val bookId: Long = if (existing == null) {
                     added++
                     db.bookDao().insert(
                         BookEntity(
                             sourceId = source.id,
                             docRef = candidate.node.docId,
-                            title = ScanRules.titleOf(candidate.node),
-                            titleSort = NaturalSort.key(ScanRules.titleOf(candidate.node)),
+                            title = title,
+                            titleSort = NaturalSort.key(title),
+                            author = parsedAuthor(title),
+                            volume = parsedVolume(title),
                             format = candidate.format,
                             byteSize = candidate.size,
                             chapterTotal = candidate.chapters.size,
@@ -323,6 +326,8 @@ class LibraryScanner(
                     docRef = book.docRef,
                     title = book.title,
                     titleSort = NaturalSort.key(book.title),
+                    author = parsedAuthor(book.title),
+                    volume = parsedVolume(book.title),
                     format = book.format,
                     byteSize = book.size,
                     chapterTotal = book.chapters.size,
@@ -543,6 +548,14 @@ class LibraryScanner(
         e is SmbException && e.authFailed -> SourceEntity.ERROR_AUTH
         else -> SourceEntity.ERROR_UNREACHABLE
     }
+
+    /** 书名里的作者：只从文件名取，读不出来就留空，不去猜 */
+    private fun parsedAuthor(title: String): String? =
+        com.nascomic.reader.library.series.VolumeNameParser.parse(title).author
+
+    /** 卷号存成字符串：库里是 TEXT，空的就留空 */
+    private fun parsedVolume(title: String): String? =
+        com.nascomic.reader.library.series.VolumeNameParser.parse(title).volume?.toString()
 
     private fun formatOf(name: String): Int = when {
         ScanRules.isEpub(name) -> BookEntity.FORMAT_EPUB

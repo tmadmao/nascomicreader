@@ -162,6 +162,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 搜书名：敲字即筛，120ms 防抖，免得每敲一个键都查一次库
+        backfillAuthorsOnce()
         binding.searchScope.setOnClickListener { askScope() }
         renderScopeChip()
         binding.searchInput.doAfterTextChanged { text ->
@@ -715,6 +716,19 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    /** 老书作者回填：只做一次，之后新书在扫描入库时就写好了 */
+    private fun backfillAuthorsOnce() {
+        if (prefs.authorBackfilled) return
+        lifecycleScope.launch {
+            val filled = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.nascomic.reader.library.author.AuthorBackfill(db).run()
+                }.getOrDefault(0)
+            }
+            if (filled > 0) prefs.authorBackfilled = true
         }
     }
 

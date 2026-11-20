@@ -42,6 +42,14 @@ interface SourceDao {
 @Dao
 interface BookDao {
 
+    /** 还没解析出作者的书：老库回填时用；写完 author 就不再被选中 */
+    @Query("SELECT * FROM books WHERE author IS NULL")
+    suspend fun withoutAuthor(): List<BookEntity>
+
+    @Query("UPDATE books SET author = :author, volume = :volume WHERE id = :id")
+    suspend fun setAuthorAndVolume(id: Long, author: String?, volume: String?)
+
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(book: BookEntity): Long
 
