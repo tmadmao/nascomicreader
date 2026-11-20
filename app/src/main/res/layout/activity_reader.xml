@@ -180,6 +180,17 @@
             android:progressDrawable="@drawable/reader_progress" />
     </LinearLayout>
 
+    <!-- 进度条：浮在底栏上方，整条可拖，右侧阅读时整条镜像 -->
+    <com.nascomic.reader.ui.widget.ProgressScrubber
+        android:id="@+id/progress_scrubber"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginBottom="68dp"
+        android:visibility="gone" />
+
     <!-- 底栏五键：上一页 · 目录 · 书签 · 设置 · 下一页 -->
     <LinearLayout
         android:id="@+id/bottom_bar"

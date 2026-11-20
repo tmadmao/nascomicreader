@@ -266,6 +266,8 @@ class ReadingActivity : AppCompatActivity() {
         binding.page.fitWidth = prefs.fitWidth
         applyEndTheme(canvas)
         binding.page.marginPx = dp(prefs.sideMarginDp)
+        binding.progressScrubber.onScrub = { target -> scrubTo(target) }
+        binding.progressScrubber.onScrubEnd = { saveProgress() }
         binding.pageLabel.isVisible = prefs.showPageLabel && !toolbarShown && !atEnd
         if (prefs.keepScreenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -713,7 +715,25 @@ class ReadingActivity : AppCompatActivity() {
     }
 
     /** 页码、章名。章回体按章内页显示 */
+    /** 进度条跟随当前页；右侧阅读时整条镜像，右端是第 1 页 */
+    private fun syncScrubber() {
+        binding.progressScrubber.setState(total, page, prefs.scrollMode == 2 && !prefs.vertical)
+    }
+
+    /**
+     * 拖进度条：直接跳页，不做翻页动画、不写进度。
+     * 写进度留给松手那一刻——拖动中每一帧都落库会白白多几百次写入。
+     */
+    private fun scrubTo(target: Int) {
+        if (target < 0 || target >= total) return
+        if (atEnd) leaveEndPage()
+        half = 0
+        page = target
+        showPage()
+    }
+
     private fun updateLabels(src: BookSource) {
+        if (toolbarShown) syncScrubber()
         val pos = src.pagePosition(page, chaptered)
         // 双页并排时一屏两页：页码写「3–4 / 12」，别只报左边那个数
         val lastShown = pos.page + (shownPages - 1).coerceAtLeast(0)
@@ -1174,6 +1194,9 @@ class ReadingActivity : AppCompatActivity() {
         binding.pageLabel.isVisible = !show && prefs.showPageLabel && !atEnd
         binding.topBar.isVisible = show
         binding.bottomBar.isVisible = show
+        // 进度条跟着菜单走；只有一页的书不给它，免得用户以为坏了
+        binding.progressScrubber.isVisible = show && total > 1 && !atEnd
+        if (show) syncScrubber()
         if (show) {
             binding.topBar.alpha = 0f
             binding.bottomBar.alpha = 0f
