@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 库版本。实体声明、导出的 schema、迁移目标都取这一处，
  * 改表只动这里一个数。
  */
-internal const val DB_VERSION = 8
+internal const val DB_VERSION = 9
 
 /**
  * 应用数据库。
@@ -109,6 +109,18 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 8→9：目录书加「内容版本」一列。
+         *
+         * 目录书的页缓存只看字节数（恒为 0）与章结构，换图但页数不变时旧页会被继续命中。
+         * 这一列由重扫成功时 +1，作为页缓存键的一环。老库默认 0。
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN content_version INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN author TEXT")
@@ -156,6 +168,7 @@ abstract class ReaderDatabase : RoomDatabase() {
             MIGRATION_6_7,
             MIGRATION_5_6,
             MIGRATION_7_8,
+            MIGRATION_8_9,
         )
 
         private fun build(context: Context): ReaderDatabase =

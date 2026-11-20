@@ -13,13 +13,20 @@ object ContentStamp {
      * @param byteSize 单文件书的字节数；目录书通常是 0
      * @param chapters 每章一个（章名, 页数），按阅读顺序
      * @param totalPages 全书页数
+     * @param contentVersion 目录书重扫时 +1 的版本号；单文件书恒为 0，不影响结果
      */
-    fun of(byteSize: Long, chapters: List<Pair<String, Int>>, totalPages: Int): Long {
+    fun of(
+        byteSize: Long,
+        chapters: List<Pair<String, Int>>,
+        totalPages: Int,
+        contentVersion: Long = 0,
+    ): Long {
         var h = byteSize
         for ((title, pages) in chapters) {
             h = h * 31 + title.hashCode()
             h = h * 31 + pages
         }
-        return h * 31 + totalPages
+        h = h * 31 + totalPages
+        return h * 31 + contentVersion
     }
 }

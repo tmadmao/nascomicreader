@@ -47,4 +47,19 @@ class ContentStampTest {
         val b = ContentStamp.of(2048, listOf("全书" to 20), 20)
         assertNotEquals(a, b)
     }
+
+    @Test
+    fun `目录书重扫版本加一_缓存键必须变`() {
+        val chapters = listOf("第1章" to 3)
+        val before = ContentStamp.of(0, chapters, 3, contentVersion = 0)
+        val after = ContentStamp.of(0, chapters, 3, contentVersion = 1)
+        assertNotEquals("换图但页数不变时，版本号是唯一的失效依据", before, after)
+    }
+
+    @Test
+    fun `单文件书版本号恒零_不误伤`() {
+        val a = ContentStamp.of(1024, listOf("全书" to 20), 20, contentVersion = 0)
+        val b = ContentStamp.of(1024, listOf("全书" to 20), 20, contentVersion = 0)
+        assertEquals(a, b)
+    }
 }

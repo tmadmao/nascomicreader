@@ -117,6 +117,11 @@ data class BookEntity(
     @ColumnInfo(name = "chapter_total") val chapterTotal: Int = 0,
     /** 封面所在全局页号（0 基），默认 0 */
     @ColumnInfo(name = "cover_page") val coverPage: Int = 0,
+    /**
+     * 目录书的内容版本。目录书字节数为 0，换图但页数不变时字节数也无从判断，
+     * 重扫成功后把它 +1，页缓存键跟着变，下次打开重新解码，不拿旧图顶新图。
+     */
+    @ColumnInfo(name = "content_version") val contentVersion: Long = 0,
     @ColumnInfo(name = "cover_ref") val coverRef: String? = null,
     @ColumnInfo(name = "added_at") val addedAt: Long,
     @ColumnInfo(name = "modified_at") val modifiedAt: Long = 0,

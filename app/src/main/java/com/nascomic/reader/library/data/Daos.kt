@@ -189,6 +189,15 @@ interface BookDao {
     @Query("UPDATE books SET page_total = :pages, chapter_total = :chapters WHERE id = :id")
     suspend fun setTotals(id: Long, pages: Int, chapters: Int)
 
+    /**
+     * 目录书重扫成功后，内容版本 +1。
+     *
+     * 目录书的字节数是 0，换图但页数不变时缓存键不会变，旧页会被继续命中。
+     * 版本 +1 让页缓存键整个换掉，下次打开重新解码，代价是一次性重解。
+     */
+    @Query("UPDATE books SET content_version = content_version + 1 WHERE id = :id")
+    suspend fun bumpContentVersion(id: Long)
+
     @Query("UPDATE books SET cover_page = :page WHERE id = :id")
     suspend fun setCoverPage(id: Long, page: Int)
 

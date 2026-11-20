@@ -113,6 +113,17 @@ class MigrationTest {
         db.close()
     }
 
+    @Test
+    fun `8到9加内容版本列_老书默认为零`() {
+        val name = "mig_8_9.db"
+        createOld(name, version = 8).close()
+
+        val db = helper.runMigrationsAndValidate(name, 9, true, *chainUpTo(9))
+        assertEquals("第一卷", db.text("SELECT title FROM books WHERE id = 1"))
+        assertEquals(0L, db.count("SELECT content_version FROM books WHERE id = 1"))
+        db.close()
+    }
+
     /** 跨过多个版本的库要能一路升上来，中间每一步都不能断 */
     @Test
     fun `从2一路升到当前版本_书与进度书签都在`() {

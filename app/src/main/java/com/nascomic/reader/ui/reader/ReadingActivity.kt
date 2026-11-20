@@ -305,6 +305,8 @@ class ReadingActivity : AppCompatActivity() {
         byteSize = book.byteSize,
         chapters = src.chapters.map { it.title to it.pageCount },
         totalPages = src.pageCount,
+        // 目录书换图后字节数仍为 0，靠重扫时 +1 的版本号让旧页失效
+        contentVersion = book.contentVersion,
     )
 
     private fun openBook() {

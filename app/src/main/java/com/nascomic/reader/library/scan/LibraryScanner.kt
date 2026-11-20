@@ -201,6 +201,9 @@ class LibraryScanner(
                         )
                     },
                 )
+                if (candidate.format == BookEntity.FORMAT_FOLDER) {
+                    db.bookDao().bumpContentVersion(bookId)
+                }
             }
 
             // 清理磁盘上已经没有的条目。
@@ -423,6 +426,10 @@ class LibraryScanner(
                     bookId,
                     book.chapters.map { ch -> ChapterWriter.Draft(ch.title, ch.ref, ch.kind) },
                 )
+                // 目录书换图后字节数仍为 0，页缓存键不变；重扫成功即视为内容可能变了
+                if (book.format == BookEntity.FORMAT_FOLDER) {
+                    db.bookDao().bumpContentVersion(bookId)
+                }
             }
 
             db.sourceDao().setScanState(
