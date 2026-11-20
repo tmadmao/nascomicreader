@@ -75,9 +75,9 @@ Android 7.0 及以上。当前版本 1.5.1。
 
 如果这个项目帮到了你，欢迎请我喝杯咖啡。支持支付宝、微信、Ko-fi。
 
-[![捐助作者](https://img.shields.io/badge/%E8%AF%B7%E6%88%91%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-%E6%94%AF%E6%8C%81%E4%BD%9C%E8%80%85-FF6B6B?style=for-the-badge&logo=ko-fi)](http://iptv.new.tg/sponsor.html)
+[![请我喝咖啡 / Buy Me a Coffee](https://raw.githubusercontent.com/tmadmao/nascomicreader/main/sponsor.png)](http://iptv.new.tg/sponsor.html)
 
-打开[赞助页面](http://iptv.new.tg/sponsor.html)随心就好；赞助不换取任何功能优先权，也不改变 issue 的处理顺序。
+[请我喝咖啡 · Buy Me a Coffee](http://iptv.new.tg/sponsor.html) — 随心就好，赞助不换取任何功能优先权，也不改变 issue 的处理顺序。
 
 ## 更新记录
 
