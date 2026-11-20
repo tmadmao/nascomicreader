@@ -157,6 +157,6 @@ class AboutActivity : AppCompatActivity() {
         const val SOURCE_URL = "https://github.com/tmadmao/nascomicreader"
 
         /** 赞助页：点击后在浏览器打开，含支付宝 / 微信 / Ko-fi 三种方式 */
-        const val SPONSOR_URL = "http://iptv.new.tg/sponsor.html"
+        const val SPONSOR_URL = "https://cdn.loli.sh/sponsor/sponsor.html"
     }
 }
