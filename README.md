@@ -75,9 +75,9 @@ Android 7.0 及以上。当前版本 1.5.2。
 
 如果这个项目帮到了你，欢迎请我喝杯咖啡。支持支付宝、微信、Ko-fi。
 
-[![请我喝咖啡 / Buy Me a Coffee](https://raw.githubusercontent.com/tmadmao/nascomicreader/main/sponsor.png)](http://iptv.new.tg/sponsor.html)
+[![请我喝咖啡 / Buy Me a Coffee](https://raw.githubusercontent.com/tmadmao/nascomicreader/main/sponsor.png)](https://cdn.loli.sh/sponsor/sponsor.html)
 
-[请我喝咖啡 · Buy Me a Coffee](http://iptv.new.tg/sponsor.html) — 随心就好，赞助不换取任何功能优先权，也不改变 issue 的处理顺序。
+[请我喝咖啡 · Buy Me a Coffee](https://cdn.loli.sh/sponsor/sponsor.html) — 随心就好，赞助不换取任何功能优先权，也不改变 issue 的处理顺序。
 
 ## 更新记录
 
