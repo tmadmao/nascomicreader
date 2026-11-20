@@ -95,6 +95,7 @@
             android:layout_weight="1"
             android:clipToPadding="false"
             android:paddingTop="6dp"
+            android:paddingEnd="22dp"
             android:paddingBottom="20dp"
             android:scrollbars="none" />
 

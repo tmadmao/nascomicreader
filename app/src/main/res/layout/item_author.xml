@@ -22,7 +22,7 @@
         android:id="@+id/count"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="18dp"
+        android:layout_marginEnd="6dp"
         android:textColor="@color/shell_ink_faint"
         android:textSize="11sp" />
 </LinearLayout>

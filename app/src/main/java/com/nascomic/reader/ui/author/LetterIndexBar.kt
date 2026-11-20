@@ -119,7 +119,8 @@ class LetterIndexBar @JvmOverloads constructor(
 
     private fun indexAt(y: Float): Int? {
         if (letters.isEmpty()) return null
-        val startY = (height - letters.size * lineHeight) / 2f
+        val total = heartHeight + letters.size * lineHeight
+        val startY = (height - total) / 2f + heartHeight
         val idx = ((y - startY) / lineHeight).toInt()
         return idx.coerceIn(0, letters.size - 1)
     }
