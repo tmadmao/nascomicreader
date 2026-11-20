@@ -99,8 +99,11 @@ class MainActivity : AppCompatActivity() {
     /** 搜索框里的关键字。本地过滤，不落库也不跨页保存 */
     private var shelfQuery = ""
 
-    /** 搜索范围：false = 当前书库（默认），true = 系列 */
-    private var seriesScope = false
+    /** 搜索范围：0 = 全部（默认），1 = 作品系列，2 = 作家 */
+    private var scope = 0
+
+    /** 从作家列表进来时的作者筛选；null = 不按作者筛 */
+    private var authorFilter: String? = null
 
     /** 继续阅读卡指向的那本；卡不在时为空 */
     private var resumeBook: BookEntity? = null
@@ -133,6 +136,13 @@ class MainActivity : AppCompatActivity() {
             onSortClick = { askSort() },
             onRecentClick = { startActivity(Intent(this, RecentActivity::class.java)) },
             onSeriesClick = { startActivity(Intent(this, SeriesActivity::class.java)) },
+            onAuthorClick = {
+                startActivity(Intent(this, com.nascomic.reader.ui.author.AuthorListActivity::class.java))
+            },
+            onAuthorClear = {
+                authorFilter = null
+                refresh()
+            },
             onSourceClick = { key ->
                 if (sourceFilter != key) {
                     sourceFilter = key
@@ -162,6 +172,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 搜书名：敲字即筛，120ms 防抖，免得每敲一个键都查一次库
+        authorFilter = intent.getStringExtra(EXTRA_AUTHOR)
         backfillAuthorsOnce()
         binding.searchScope.setOnClickListener { askScope() }
         renderScopeChip()
@@ -284,6 +295,12 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val who = intent.getStringExtra(EXTRA_AUTHOR)
+        if (who != null) {
+            intent.removeExtra(EXTRA_AUTHOR)
+            authorFilter = who
+            refresh()
+        }
         applySelectExtra()
     }
 
@@ -298,7 +315,7 @@ class MainActivity : AppCompatActivity() {
     // ── 数据 ───────────────────────────────────────────────
 
     private fun refresh() {
-        if (seriesScope) {
+        if (scope == 1) {
             loadSeries()
             return
         }
@@ -315,7 +332,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            val books = queryBooks(allBooks)
+            val books = queryBooks(allBooks).let { list ->
+                authorFilter?.let { who -> list.filter { it.author == who } } ?: list
+            }
             adapter.submit(books, progress)
             renderHeader(allBooks, progress)
 
@@ -370,7 +389,7 @@ class MainActivity : AppCompatActivity() {
                 },
             )
         }
-        header.update(card, sourceTabs(), prefs.seriesEnabled)
+        header.update(card, sourceTabs(), prefs.seriesEnabled, authorFilter)
 
         binding.shelfCount.text = getString(R.string.shelf_count_meta, allBooks.size)
     }
@@ -448,14 +467,29 @@ class MainActivity : AppCompatActivity() {
     /** 搜索范围：当前书库（书名 / 书源）/ 系列（系列名） */
     private fun askScope() {
         val labels = arrayOf(
-            getString(R.string.shelf_scope_library),
+            getString(R.string.shelf_scope_all),
             getString(R.string.shelf_scope_series),
+            getString(R.string.shelf_scope_author),
         )
         AlertDialog.Builder(this)
             .setTitle(R.string.shelf_scope_title)
-            .setSingleChoiceItems(labels, if (seriesScope) 1 else 0) { dialog, which ->
-                seriesScope = which == 1
+            .setSingleChoiceItems(labels, scope) { dialog, which ->
                 dialog.dismiss()
+                // 「作家」不是筛选方式，而是去作家列表输关键字：书架这边只负责把词带过去
+                if (which == 2) {
+                    scope = 0
+                    renderScopeChip()
+                    startActivity(
+                        Intent(this, com.nascomic.reader.ui.author.AuthorListActivity::class.java)
+                            .putExtra(
+                                com.nascomic.reader.ui.author.AuthorListActivity.EXTRA_QUERY,
+                                binding.searchInput.text?.toString().orEmpty(),
+                            )
+                    )
+                    return@setSingleChoiceItems
+                }
+                if (scope == which) return@setSingleChoiceItems
+                scope = which
                 renderScopeChip()
                 refresh()
             }
@@ -465,14 +499,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderScopeChip() {
         binding.searchScope.text = getString(
-            if (seriesScope) R.string.shelf_scope_series else R.string.shelf_scope_library
+            when (scope) {
+                1 -> R.string.shelf_scope_series
+                else -> R.string.shelf_scope_all
+            }
         )
     }
 
     /** 范围选「系列」时，网格换成系列卡；关键字只筛系列名 */
     private fun loadSeries() {
         if (!prefs.seriesEnabled) {
-            seriesScope = false
+            scope = 0
             renderScopeChip()
             refresh()
             return
@@ -835,5 +872,8 @@ class MainActivity : AppCompatActivity() {
 
         /** 从详情页跳回来时带上要勾选的书 */
         const val EXTRA_SELECT_ID = "select_id"
+
+        /** 从作家列表点进来时带上作者名：书架只显示这位作者的书 */
+        const val EXTRA_AUTHOR = "author"
     }
 }

@@ -39,12 +39,28 @@ interface SourceDao {
     suspend fun delete(id: Long)
 }
 
+/** 作者与他的书数：作家列表用 */
+data class AuthorCount(val name: String, val total: Int)
+
 @Dao
 interface BookDao {
 
     /** 还没解析出作者的书：老库回填时用；写完 author 就不再被选中 */
     @Query("SELECT * FROM books WHERE author IS NULL")
     suspend fun withoutAuthor(): List<BookEntity>
+
+    /** 每位作者有多少本；空作者不算在内 */
+    @Query(
+        "SELECT author AS name, COUNT(*) AS total FROM books " +
+            "WHERE author IS NOT NULL AND author <> '' GROUP BY author"
+    )
+    suspend fun authorCounts(): List<AuthorCount>
+
+    @Query("SELECT COUNT(*) FROM books WHERE author IS NULL OR author = ''")
+    suspend fun booksWithoutAuthor(): Int
+
+    @Query("SELECT * FROM books WHERE author = :author ORDER BY title_sort ASC")
+    suspend fun byAuthor(author: String): List<BookEntity>
 
     @Query("UPDATE books SET author = :author, volume = :volume WHERE id = :id")
     suspend fun setAuthorAndVolume(id: Long, author: String?, volume: String?)

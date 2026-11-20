@@ -64,6 +64,8 @@
     <string name="recent_empty">还没有读过的书。读过一本之后，这里按最近打开排。</string>
     <string name="shelf_section_count">%1$d 本</string>
     <string name="shelf_search_hint">搜索书名或书源</string>
+    <string name="shelf_scope_all">全部</string>
+    <string name="shelf_scope_author">作家</string>
     <string name="shelf_scope_library">当前书库</string>
     <string name="shelf_scope_series">系列</string>
     <string name="shelf_scope_title">搜索范围</string>
@@ -446,6 +448,17 @@
     <string name="settings_update_source_hint">填 update.json 的完整地址，留空恢复默认。清单换地方时改这里，不用等新版本。</string>
     <string name="settings_update_source_saved">已保存，下次检查更新生效</string>
 
+    <string name="shelf_entry_author">作家列表</string>
+    <string name="shelf_author_chip">作者：%1$s ✕</string>
+    <string name="shelf_author_empty">这位作者的书都不在书库里了</string>
+    <string name="author_page_title">作家</string>
+    <string name="author_page_subtitle">%1$d 位作者 · %2$d 本</string>
+    <string name="author_row_count">%1$d 本</string>
+    <string name="author_letter_count">%1$d 位</string>
+    <string name="author_unknown">未知作者</string>
+    <string name="author_unknown_hint">待补作者</string>
+    <string name="author_empty">书库里还没有作家<br/>书名里带「[作者]」的会被自动认出来</string>
+    <string name="author_search_hint">搜作者名</string>
     <string name="book_mode_title">新增书源</string>
     <string name="book_mode_step">第 2 步 · 共 3 步 · %1$s</string>
     <string name="book_mode_kind_local">本机文件夹</string>

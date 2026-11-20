@@ -75,7 +75,51 @@
                 android:src="@drawable/ic_chevron_right"
                 app:tint="@color/shell_ink_faint" />
         </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/entry_author"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_chip_unselected"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="13dp"
+            android:paddingEnd="9dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/shelf_entry_author"
+                android:textColor="@color/shell_ink"
+                android:textSize="12sp" />
+
+            <ImageView
+                android:layout_width="11dp"
+                android:layout_height="11dp"
+                android:layout_marginStart="4dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right"
+                app:tint="@color/shell_ink_faint" />
+        </LinearLayout>
     </LinearLayout>
+
+    <!-- 按作者筛时的一枚胶囊：点掉就回到全部 -->
+    <TextView
+        android:id="@+id/author_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="30dp"
+        android:layout_marginStart="@dimen/page_margin"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_pill_ink"
+        android:gravity="center"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:textColor="@color/shell_surface"
+        android:textSize="11.5sp"
+        android:visibility="gone" />
 
     <!-- 接着读：最近读过的那本，深色卡上压一层星球 -->
     <FrameLayout

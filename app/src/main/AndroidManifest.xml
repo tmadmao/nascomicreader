@@ -63,6 +63,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.author.AuthorListActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.sources.BookModeActivity"
             android:exported="false" />
 

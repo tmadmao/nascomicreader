@@ -26,6 +26,10 @@ class ShelfTopAdapter(
     private val onRecentClick: () -> Unit,
     /** 作品系列页；为 null 时不显示这个入口（页面还没接上） */
     private val onSeriesClick: (() -> Unit)?,
+    /** 作家列表页 */
+    private val onAuthorClick: (() -> Unit)?,
+    /** 点掉作者胶囊：回到全部 */
+    private val onAuthorClear: (() -> Unit)?,
     /** 来源键：全部为 [ALL_SOURCES] */
     private val onSourceClick: (String) -> Unit,
 ) : RecyclerView.Adapter<ShelfTopAdapter.Holder>() {
@@ -44,13 +48,16 @@ class ShelfTopAdapter(
     private var resume: Resume? = null
     private var sources: List<SourceTab> = emptyList()
     private var showSeries = false
+    private var authorName: String? = null
 
-    fun update(resume: Resume?, sources: List<SourceTab>, showSeries: Boolean) {
-        val same = this.resume == resume && this.sources == sources && this.showSeries == showSeries
+    fun update(resume: Resume?, sources: List<SourceTab>, showSeries: Boolean, authorName: String? = null) {
+        val same = this.resume == resume && this.sources == sources &&
+            this.showSeries == showSeries && this.authorName == authorName
         if (same) return
         this.resume = resume
         this.sources = sources
         this.showSeries = showSeries
+        this.authorName = authorName
         notifyItemChanged(0)
     }
 
@@ -64,6 +71,8 @@ class ShelfTopAdapter(
         val resumePlay: View = view.findViewById(R.id.resume_play)
         val entryRecent: View = view.findViewById(R.id.entry_recent)
         val entrySeries: View = view.findViewById(R.id.entry_series)
+        val entryAuthor: View = view.findViewById(R.id.entry_author)
+        val authorChip: TextView = view.findViewById(R.id.author_chip)
         val sourceRow: LinearLayout = view.findViewById(R.id.source_row)
         val sortButton: View = view.findViewById(R.id.sort_button)
     }
@@ -97,6 +106,16 @@ class ShelfTopAdapter(
         val seriesEntry = onSeriesClick
         holder.entrySeries.visibility = if (showSeries && seriesEntry != null) View.VISIBLE else View.GONE
         holder.entrySeries.setOnClickListener { seriesEntry?.invoke() }
+        val authorEntry = onAuthorClick
+        holder.entryAuthor.visibility = if (authorEntry != null) View.VISIBLE else View.GONE
+        holder.entryAuthor.setOnClickListener { authorEntry?.invoke() }
+
+        val who = authorName
+        holder.authorChip.visibility = if (who == null) View.GONE else View.VISIBLE
+        if (who != null) {
+            holder.authorChip.text = holder.itemView.context.getString(R.string.shelf_author_chip, who)
+            holder.authorChip.setOnClickListener { onAuthorClear?.invoke() }
+        }
 
         // 段数少（全部 + 来源数），每次重建比做 diff 便宜
         holder.sourceRow.removeAllViews()
