@@ -62,6 +62,25 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE author = :author ORDER BY title_sort ASC")
     suspend fun byAuthor(author: String): List<BookEntity>
 
+    /** 没有作者的书（图集常见），作家列表的「未知作者」用 */
+    @Query("SELECT * FROM books WHERE author IS NULL OR author = '' ORDER BY title_sort ASC")
+    suspend fun booksWithNoAuthor(): List<BookEntity>
+
+    @Query("UPDATE books SET author = :author WHERE id = :id")
+    suspend fun setAuthor(id: Long, author: String?)
+
+    /** 整批改名：同一作者下所有书一起换，别让同一个人分成两条 */
+    @Query("UPDATE books SET author = :fresh WHERE author = :old")
+    suspend fun renameAuthor(old: String, fresh: String)
+
+    /** 这位作者的书涉及哪些系列 */
+    @Query(
+        "SELECT * FROM series WHERE id IN (" +
+            "SELECT sb.series_id FROM series_books sb JOIN books b ON b.id = sb.book_id " +
+            "WHERE b.author = :author) ORDER BY name_sort ASC"
+    )
+    suspend fun seriesOfAuthor(author: String): List<SeriesEntity>
+
     @Query("UPDATE books SET author = :author, volume = :volume WHERE id = :id")
     suspend fun setAuthorAndVolume(id: Long, author: String?, volume: String?)
 

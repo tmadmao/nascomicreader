@@ -47,13 +47,19 @@ class AuthorListActivity : AppCompatActivity() {
         setContentView(binding.root)
         binding.root.padBySystemBars()
 
-        adapter = Adapter { name ->
-            startActivity(
-                Intent(this, MainActivity::class.java)
-                    .putExtra(MainActivity.EXTRA_AUTHOR, name)
+        adapter = Adapter(
+            onClick = { name, unknown ->
+                val intent = Intent(this, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            )
-        }
+                if (unknown) {
+                    intent.putExtra(MainActivity.EXTRA_AUTHOR_UNKNOWN, true)
+                } else {
+                    intent.putExtra(MainActivity.EXTRA_AUTHOR, name)
+                }
+                startActivity(intent)
+            },
+            onLongClick = { name -> askRename(name) },
+        )
         binding.list.layoutManager = LinearLayoutManager(this)
         binding.list.adapter = adapter
         binding.list.addItemDecoration(StickyLetter(this, adapter))
@@ -63,7 +69,10 @@ class AuthorListActivity : AppCompatActivity() {
             query = it?.toString().orEmpty().trim()
             render()
         }
-        binding.indexBar.onLetter = { letter -> scrollTo(letter) }
+        binding.indexBar.onLetter = { letter ->
+            scrollTo(letter)
+            showBubble(letter)
+        }
 
         readExtraQuery()
         load()
@@ -125,6 +134,57 @@ class AuthorListActivity : AppCompatActivity() {
         binding.indexBar.setLetters(sections.keys.toList(), null)
     }
 
+    /** 长按作者：整批改名，别让同一个人分成两条 */
+    private fun askRename(old: String) {
+        val input = android.widget.EditText(this).apply {
+            setText(old)
+            setSelection(text.length)
+            setSingleLine()
+        }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(2), dp(20), 0)
+            addView(android.widget.TextView(this@AuthorListActivity).apply {
+                text = getString(R.string.author_rename_desc)
+                textSize = 12f
+                setTextColor(getColor(R.color.shell_ink_muted))
+                setPadding(0, 0, 0, dp(10))
+            })
+            addView(input)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.author_rename_title)
+            .setView(box)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val fresh = input.text.toString().trim()
+                if (fresh.isEmpty() || fresh == old) return@setPositiveButton
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { db.bookDao().renameAuthor(old, fresh) }
+                    android.widget.Toast.makeText(
+                        this@AuthorListActivity,
+                        R.string.author_rename_done,
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                    load()
+                }
+            }
+            .show()
+    }
+
+    /** 拖动时中间浮一个大字母，停手 500ms 自己收起来 */
+    private fun showBubble(letter: String) {
+        binding.letterBubble.text = letter
+        binding.letterBubble.visibility = View.VISIBLE
+        binding.letterBubble.animate().cancel()
+        binding.letterBubble.alpha = 1f
+        binding.letterBubble.postDelayed({
+            binding.letterBubble.animate().alpha(0f).setDuration(180)
+                .withEndAction { binding.letterBubble.visibility = View.GONE }
+                .start()
+        }, 500)
+    }
+
     private fun scrollTo(letter: String) {
         val pos = adapter.positionOfLetter(letter) ?: return
         val lm = binding.list.layoutManager as LinearLayoutManager
@@ -144,7 +204,10 @@ class AuthorListActivity : AppCompatActivity() {
         class Author(val name: String, val total: Int, val unknown: Boolean = false) : Row()
     }
 
-    private class Adapter(private val onClick: (String) -> Unit) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+    private class Adapter(
+        private val onClick: (String, Boolean) -> Unit,
+        private val onLongClick: (String) -> Unit,
+    ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
         private val rows = ArrayList<Row>()
 
@@ -180,7 +243,11 @@ class AuthorListActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
             when (val row = rows[position]) {
                 is Row.Letter -> (holder as LetterHolder).bind(row)
-                is Row.Author -> (holder as AuthorHolder).bind(row) { onClick(row.name) }
+                is Row.Author -> (holder as AuthorHolder).bind(
+                    row,
+                    onClick = { onClick(row.name, row.unknown) },
+                    onLongClick = { if (!row.unknown) onLongClick(row.name) },
+                )
             }
         }
 
@@ -193,7 +260,7 @@ class AuthorListActivity : AppCompatActivity() {
         }
 
         class AuthorHolder(val binding: ItemAuthorBinding) : RecyclerView.ViewHolder(binding.root) {
-            fun bind(row: Row.Author, onClick: () -> Unit) {
+            fun bind(row: Row.Author, onClick: () -> Unit, onLongClick: () -> Unit) {
                 binding.name.text = row.name
                 binding.name.setTextColor(
                     binding.root.context.getColor(
@@ -203,6 +270,10 @@ class AuthorListActivity : AppCompatActivity() {
                 binding.count.text = binding.root.context
                     .getString(R.string.author_row_count, row.total)
                 binding.root.setOnClickListener { onClick() }
+                binding.root.setOnLongClickListener {
+                    onLongClick()
+                    true
+                }
             }
         }
     }

@@ -501,6 +501,7 @@ class DetailActivity : AppCompatActivity() {
             getString(R.string.shelf_menu_select),
             getString(R.string.shelf_menu_rename),
             getString(R.string.shelf_change_cover),
+            getString(R.string.book_author_action),
             getString(R.string.shelf_menu_delete),
         )
         if (appPrefs.seriesEnabled) items += getString(R.string.series_join_action)
@@ -511,7 +512,8 @@ class DetailActivity : AppCompatActivity() {
                     0 -> openShelfSelection(book.id)
                     1 -> bookActions.rename(book)
                     2 -> bookActions.changeCover(book)
-                    3 -> bookActions.delete(book)
+                    3 -> bookActions.setAuthor(book)
+                    4 -> bookActions.delete(book)
                     else -> seriesActions.open(book)
                 }
             }

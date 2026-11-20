@@ -105,6 +105,12 @@ class MainActivity : AppCompatActivity() {
     /** 从作家列表进来时的作者筛选；null = 不按作者筛 */
     private var authorFilter: String? = null
 
+    /** 从「未知作者」进来：只显示没写作者的书 */
+    private var authorUnknown = false
+
+    /** 这位作者名下涉及的系列数，用在作者页那条「该作者的系列」入口上 */
+    private var authorSeriesCount = 0
+
     /** 继续阅读卡指向的那本；卡不在时为空 */
     private var resumeBook: BookEntity? = null
 
@@ -141,7 +147,18 @@ class MainActivity : AppCompatActivity() {
             },
             onAuthorClear = {
                 authorFilter = null
+                authorUnknown = false
+                authorSeriesCount = 0
                 refresh()
+            },
+            onAuthorSeries = {
+                val who = authorFilter
+                if (who != null) {
+                    startActivity(
+                        Intent(this, SeriesActivity::class.java)
+                            .putExtra(SeriesActivity.EXTRA_AUTHOR, who)
+                    )
+                }
             },
             onSourceClick = { key ->
                 if (sourceFilter != key) {
@@ -173,6 +190,7 @@ class MainActivity : AppCompatActivity() {
 
         // 搜书名：敲字即筛，120ms 防抖，免得每敲一个键都查一次库
         authorFilter = intent.getStringExtra(EXTRA_AUTHOR)
+        authorUnknown = intent.getBooleanExtra(EXTRA_AUTHOR_UNKNOWN, false)
         backfillAuthorsOnce()
         binding.searchScope.setOnClickListener { askScope() }
         renderScopeChip()
@@ -296,9 +314,12 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val who = intent.getStringExtra(EXTRA_AUTHOR)
-        if (who != null) {
+        val unknown = intent.getBooleanExtra(EXTRA_AUTHOR_UNKNOWN, false)
+        if (who != null || unknown) {
             intent.removeExtra(EXTRA_AUTHOR)
+            intent.removeExtra(EXTRA_AUTHOR_UNKNOWN)
             authorFilter = who
+            authorUnknown = unknown
             refresh()
         }
         applySelectExtra()
@@ -333,7 +354,16 @@ class MainActivity : AppCompatActivity() {
             }
 
             val books = queryBooks(allBooks).let { list ->
-                authorFilter?.let { who -> list.filter { it.author == who } } ?: list
+                when {
+                    authorUnknown -> list.filter { it.author.isNullOrBlank() }
+                    authorFilter != null -> list.filter { it.author == authorFilter }
+                    else -> list
+                }
+            }
+            authorSeriesCount = when {
+                authorUnknown -> 0
+                authorFilter != null -> db.bookDao().seriesOfAuthor(authorFilter!!).size
+                else -> 0
             }
             adapter.submit(books, progress)
             renderHeader(allBooks, progress)
@@ -389,7 +419,15 @@ class MainActivity : AppCompatActivity() {
                 },
             )
         }
-        header.update(card, sourceTabs(), prefs.seriesEnabled, authorFilter)
+        // 按作者筛时先把继续阅读卡收起来：那本大概率不是这位作者的
+        val resumeCard = if (authorFilter != null || authorUnknown) null else card
+        header.update(
+            resumeCard,
+            sourceTabs(),
+            prefs.seriesEnabled,
+            if (authorUnknown) getString(R.string.author_unknown) else authorFilter,
+            authorSeriesCount,
+        )
 
         binding.shelfCount.text = getString(R.string.shelf_count_meta, allBooks.size)
     }
@@ -875,5 +913,8 @@ class MainActivity : AppCompatActivity() {
 
         /** 从作家列表点进来时带上作者名：书架只显示这位作者的书 */
         const val EXTRA_AUTHOR = "author"
+
+        /** 点的是「未知作者」：书架只显示没写作者的书 */
+        const val EXTRA_AUTHOR_UNKNOWN = "author_unknown"
     }
 }

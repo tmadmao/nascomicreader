@@ -449,6 +449,15 @@
     <string name="settings_update_source_saved">已保存，下次检查更新生效</string>
 
     <string name="shelf_entry_author">作家列表</string>
+    <string name="book_author_action">设置作者</string>
+    <string name="book_author_title">设置作者</string>
+    <string name="book_author_desc">填在书名里没人认出来的作者；留空就归到「未知作者」</string>
+    <string name="book_author_hint">作者名</string>
+    <string name="book_author_done">已更新作者</string>
+    <string name="author_rename_title">改作者名</string>
+    <string name="author_rename_desc">这位名下的书会一起改成新名字</string>
+    <string name="author_rename_done">已改名</string>
+    <string name="author_series_entry">该作者的系列 · %1$d 个 ›</string>
     <string name="shelf_author_chip">作者：%1$s ✕</string>
     <string name="shelf_author_empty">这位作者的书都不在书库里了</string>
     <string name="author_page_title">作家</string>

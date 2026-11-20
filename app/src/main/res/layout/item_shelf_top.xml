@@ -121,6 +121,21 @@
         android:textSize="11.5sp"
         android:visibility="gone" />
 
+    <!-- 作者页里：这位作者名下的系列入口 -->
+    <TextView
+        android:id="@+id/author_series"
+        android:layout_width="wrap_content"
+        android:layout_height="30dp"
+        android:layout_marginStart="@dimen/page_margin"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_chip_unselected"
+        android:gravity="center"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:textColor="@color/shell_ink"
+        android:textSize="11.5sp"
+        android:visibility="gone" />
+
     <!-- 接着读：最近读过的那本，深色卡上压一层星球 -->
     <FrameLayout
         android:id="@+id/resume_card"

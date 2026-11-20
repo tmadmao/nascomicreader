@@ -76,6 +76,40 @@ class BookActions(
             .show()
     }
 
+    /** 手动补/改作者；留空就是清掉，之后归到「未知作者」 */
+    fun setAuthor(book: BookEntity) {
+        val input = EditText(activity).apply {
+            setText(book.author.orEmpty())
+            setSelection(text.length)
+            setSingleLine()
+            hint = activity.getString(R.string.book_author_hint)
+        }
+        val box = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(2), dp(20), 0)
+            addView(TextView(activity).apply {
+                text = activity.getString(R.string.book_author_desc)
+                textSize = 12f
+                setTextColor(activity.getColor(R.color.shell_ink_muted))
+                setPadding(0, 0, 0, dp(10))
+            })
+            addView(input)
+        }
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.book_author_title)
+            .setView(box)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val name = input.text.toString().trim().ifEmpty { null }
+                activity.lifecycleScope.launch {
+                    db.bookDao().setAuthor(book.id, name)
+                    onChanged()
+                    Toast.makeText(activity, R.string.book_author_done, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
     fun changeCover(book: BookEntity) {
         val pages = book.pageTotal
         val input = EditText(activity).apply {

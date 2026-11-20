@@ -111,6 +111,19 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- 拖索引条时中间浮一个当前字母 -->
+    <TextView
+        android:id="@+id/letter_bubble"
+        android:layout_width="76dp"
+        android:layout_height="76dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_letter_bubble"
+        android:gravity="center"
+        android:textColor="@color/shell_surface"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <com.nascomic.reader.ui.author.LetterIndexBar
         android:id="@+id/index_bar"
         android:layout_width="20dp"

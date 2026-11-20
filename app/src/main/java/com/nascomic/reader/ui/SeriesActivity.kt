@@ -34,6 +34,11 @@ import kotlinx.coroutines.withContext
  */
 class SeriesActivity : AppCompatActivity() {
 
+    companion object {
+        /** 从作者页进来时只显示这位作者的系列 */
+        const val EXTRA_AUTHOR = "author"
+    }
+
     private lateinit var binding: ActivitySeriesListBinding
     private val db by lazy { ReaderDatabase.get(this) }
     private val repo by lazy { SeriesRepository(db) }
@@ -77,7 +82,9 @@ class SeriesActivity : AppCompatActivity() {
 
     private fun load() {
         lifecycleScope.launch {
-            val series = repo.all()
+            // 从作者页进来就只看这位作者的系列
+            val who = intent.getStringExtra(EXTRA_AUTHOR)
+            val series = if (who.isNullOrEmpty()) repo.all() else db.bookDao().seriesOfAuthor(who)
             val cards = series.map { entity ->
                 val volumes = repo.volumes(entity.id)
                 SeriesCardAdapter.Card(
