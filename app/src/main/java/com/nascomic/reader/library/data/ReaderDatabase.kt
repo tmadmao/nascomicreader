@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 库版本。实体声明、导出的 schema、迁移目标都取这一处，
  * 改表只动这里一个数。
  */
-internal const val DB_VERSION = 9
+internal const val DB_VERSION = 10
 
 /**
  * 应用数据库。
@@ -121,6 +121,18 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 9→10：书加「包内元数据读过没有」一列。
+         *
+         * 详情页原先只在页数为 0 时才打开书，已经量过页的旧书因此永远轮不到读 ComicInfo。
+         * 有了这一列，详情页在页数已知时也能补读一次；读完置 1（读不到也算读过），不再重复开书。
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN meta_version INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN author TEXT")
@@ -169,6 +181,7 @@ abstract class ReaderDatabase : RoomDatabase() {
             MIGRATION_5_6,
             MIGRATION_7_8,
             MIGRATION_8_9,
+            MIGRATION_9_10,
         )
 
         private fun build(context: Context): ReaderDatabase =

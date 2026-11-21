@@ -122,16 +122,20 @@ class DetailActivity : AppCompatActivity() {
             render()
             loadCover()
 
-            // 首次进来页数是 0，需要打开书量一次
-            if (book!!.pageTotal <= 0 && src != null) {
-                binding.tocHint.text = getString(R.string.detail_counting)
+            // 页数还没量过、或者包内元数据还没读过，都要开一次书。
+            // 后者是为老书准备的：它们在建库时页数已经是好的，不补这一步就永远读不到 ComicInfo
+            val needPages = book!!.pageTotal <= 0
+            val needMeta = book!!.metaVersion == 0
+            if ((needPages || needMeta) && src != null) {
+                if (needPages) binding.tocHint.text = getString(R.string.detail_counting)
                 val detail = loader.load(book!!, src, chapters, opener)
                 book = db.bookDao().get(bookId)
                 chapters = db.chapterDao().forBook(bookId)
                 progress = db.progressDao().forBook(bookId)
                 bookmarks = db.bookmarkDao().forBookNow(bookId)
 
-                if (detail == null) {
+                // 只为补元数据而开书时，页数本来就有，失败不该说成「统计失败」
+                if (detail == null && needPages) {
                     countFailed = true
                     binding.tocHint.text = getString(R.string.detail_count_failed)
                 }

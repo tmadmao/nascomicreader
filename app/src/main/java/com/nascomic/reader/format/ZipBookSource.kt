@@ -1,5 +1,7 @@
 package com.nascomic.reader.format
 
+import com.nascomic.reader.format.comic.ComicInfoReader
+import com.nascomic.reader.format.comic.ComicMeta
 import com.nascomic.reader.format.zip.ZipCatalog
 import java.io.InputStream
 
@@ -33,6 +35,13 @@ class ZipBookSource internal constructor(
     override fun firstPageOfChapter(chapter: Int): Int = layout.firstPageOfChapter(chapter)
 
     override fun close() = catalog.close()
+
+    /** 包里的 ComicInfo.xml；读过一次就记住，翻页时不再重复解析 */
+    override val meta: ComicMeta? by lazy {
+        ComicInfoReader.read(catalog.entries.map { it.name }) { name ->
+            catalog.entries.firstOrNull { it.name == name }?.let { catalog.open(it) }
+        }
+    }
 
     companion object {
         fun open(data: com.nascomic.reader.format.zip.RandomAccessData, fallbackTitle: String = "") =

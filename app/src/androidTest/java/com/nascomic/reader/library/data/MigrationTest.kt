@@ -124,6 +124,18 @@ class MigrationTest {
         db.close()
     }
 
+    @Test
+    fun `9到10加元数据版本列_老书默认为零`() {
+        val name = "mig_9_10.db"
+        createOld(name, version = 9).close()
+
+        val db = helper.runMigrationsAndValidate(name, 10, true, *chainUpTo(10))
+        assertEquals("第一卷", db.text("SELECT title FROM books WHERE id = 1"))
+        // 0 = 还没读过包内元数据，升级后第一次打开这本书会补读一次
+        assertEquals(0L, db.count("SELECT meta_version FROM books WHERE id = 1"))
+        db.close()
+    }
+
     /** 跨过多个版本的库要能一路升上来，中间每一步都不能断 */
     @Test
     fun `从2一路升到当前版本_书与进度书签都在`() {
@@ -150,11 +162,14 @@ class MigrationTest {
                 "INSERT INTO sources (id, kind, label, added_at, scan_state) " +
                     "VALUES (1, 0, '本地目录', 1000, 2)"
             )
+            // 9 版起 books 多了 content_version，它是 NOT NULL 且没有 SQL 默认值，插数据必须给上
+            val contentColumn = if (version >= 9) ", content_version" else ""
+            val contentValue = if (version >= 9) ", 0" else ""
             execSQL(
                 "INSERT INTO books (id, source_id, doc_ref, title, title_sort, format, byte_size, " +
                     "page_total, chapter_total, cover_page, added_at, modified_at, is_single_volume, " +
-                    "scan_state) VALUES (1, 1, '漫画/第一卷.zip', '第一卷', 'diyijuan', 0, 1024, " +
-                    "20, 1, 0, 1000, 1000, 1, 1)"
+                    "scan_state$contentColumn) VALUES (1, 1, '漫画/第一卷.zip', '第一卷', 'diyijuan', 0, 1024, " +
+                    "20, 1, 0, 1000, 1000, 1, 1$contentValue)"
             )
             execSQL(
                 "INSERT INTO chapters (id, book_id, ordinal, title, entry_prefix, chapter_ref, " +

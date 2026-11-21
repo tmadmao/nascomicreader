@@ -68,6 +68,9 @@ class ReadingActivity : AppCompatActivity() {
         /** 预载并发数：两个够把单核解码的时间藏起来，再多会抢主线程的 CPU */
         private const val PREFETCH_WORKERS = 2
 
+        /** 低清预览按目标尺寸的几分之一解：二分之后面积是四分之一，够看出画面是什么 */
+        private const val PREVIEW_DIVISOR = 2
+
         /** 竖向窗口：当前页前留一页、后留四页，滚到头再按需接下一张 */
         private const val VERTICAL_BACK = 1
         private const val VERTICAL_AHEAD = 4
@@ -147,6 +150,24 @@ class ReadingActivity : AppCompatActivity() {
 
     /** 首屏不淡入：刚进来就闪一下容易被当成加载失败 */
     private var drawnOnce = false
+
+    /**
+     * 正在解的那一页如果明显大于屏幕，先把一张低清交给它，让画面先出来。
+     * 只对 [previewFor] 这一页生效，交过一次就清掉——预载的别的页不会把它吃掉。
+     */
+    @Volatile
+    private var onPreviewReady: ((PageCache.Entry) -> Unit)? = null
+
+    /** 预览回调认的这一页；-1 表示当前没在预览 */
+    @Volatile
+    private var previewFor = -1
+
+    /**
+     * 请求代次：每次 showPage 自增。回到主线程画预览前要核对它，
+     * 否则用户连续翻页时，上一页的低清可能在几帧后盖到新页上。
+     */
+    @Volatile
+    private var previewGeneration = 0
 
     /** 分区提示每次进阅读只闪一次 */
     private var zoneHintShown = false
@@ -432,10 +453,38 @@ class ReadingActivity : AppCompatActivity() {
 
         loading = true
         binding.loading.isVisible = true
+        // 大图解码要等：先给一张低清让画面出来，正片解完再换上去。
+        // 双页与跳过空白页要一次定两页的顺序，预览会打乱配对；原尺寸解码本来就要全细节，
+        // 先给糊的一眼没有意义。这三种情况都不给。
+        previewGeneration++
+        val requestGeneration = previewGeneration
+        val requestPage = page
+        val requestHalf = half
+        onPreviewReady = if (!prefs.nativeDecode && !prefs.dualPage && !prefs.skipBlank) {
+            { preview ->
+                runOnUiThread {
+                    // 代次、页号、半页三者都对上才画：任何一项变了说明用户已经翻走或换了半页。
+                    // 还要排除正在销毁的旧实例——转屏时旧 Activity 的 isFinishing 仍是 false，
+                    // 只靠它挡不住回调继续碰已经不要的视图
+                    if (loading && !atEnd && !isFinishing && !isDestroyed &&
+                        requestGeneration == previewGeneration &&
+                        page == requestPage && half == requestHalf
+                    ) {
+                        binding.page.setPages(listOf(pageOf(preview)))
+                        binding.loading.isVisible = false
+                    }
+                }
+            }
+        } else {
+            null
+        }
+        previewFor = if (onPreviewReady != null) page else -1
 
         lifecycleScope.launch {
             // 跳过空白页会改页码，所以整段在 IO 线程里定下来再回来更新界面
             val spread = withContext(Dispatchers.IO) { resolveSpread(src, targetW, targetH) }
+            onPreviewReady = null
+            previewFor = -1
             if (spread.pages.isEmpty()) {
                 showError(getString(R.string.reader_page_failed, spread.index + 1))
             } else {
@@ -884,6 +933,7 @@ class ReadingActivity : AppCompatActivity() {
     /** 解一页并量出裁边范围。画当前页与后台预载都走这条路，两边存的必须是同一种东西 */
     private fun decodePage(src: BookSource, index: Int, targetW: Int, targetH: Int): PageCache.Entry? {
         if (sourceClosed) return null
+        val preview = if (index == previewFor) onPreviewReady else null
         val bitmap = runCatching {
             // 与 closeSource 互斥：关源时若有人正在读，native 侧会踩空
             sourceLock.withLock {
@@ -892,13 +942,53 @@ class ReadingActivity : AppCompatActivity() {
                 } else {
                     // 现画来源先渲染；章回体里图片章的页渲染不了（返回 null），退回字节流
                     (src as? RenderedPageSource)?.renderPage(index, targetW, targetH)
-                        ?: PageBitmapLoader.load(src.openPage(index), targetW, targetH, decodeConfig())
+                        ?: decodeWithPreview(src, index, targetW, targetH, preview)
                 }
             }
         }.getOrNull() ?: return null
 
         val full = boundsOf(bitmap)
         return PageCache.Entry(bitmap, full, full.width() > full.height() * 1.2f)
+    }
+
+    /**
+     * 解一页；原图明显大于目标尺寸时，先把一张低清交给界面，再去解正片。
+     *
+     * 字节只读一遍，两次解码共用——否则远端会为这一眼多下一次图，比不等还慢。
+     * 低清不进缓存：缓存里永远只有按目标尺寸解好的那一整张。
+     */
+    private fun decodeWithPreview(
+        src: BookSource,
+        index: Int,
+        targetW: Int,
+        targetH: Int,
+        onPreview: ((PageCache.Entry) -> Unit)?,
+    ): Bitmap? {
+        val bytes = src.openPage(index).use { it.readBytes() }
+        val bounds = PageBitmapLoader.measure(bytes)
+        if (onPreview != null && bounds != null &&
+            PageBitmapLoader.needsPreview(bounds.first, bounds.second, targetW, targetH)
+        ) {
+            // 交过一次就清掉，一屏只预览一张
+            onPreviewReady = null
+            previewFor = -1
+            val small = PageBitmapLoader.load(
+                bytes,
+                (targetW / PREVIEW_DIVISOR).coerceAtLeast(1),
+                (targetH / PREVIEW_DIVISOR).coerceAtLeast(1),
+                decodeConfig(),
+            )
+            if (small != null) {
+                onPreview(
+                    PageCache.Entry(
+                        small,
+                        Rect(0, 0, small.width, small.height),
+                        small.width > small.height * 1.2f,
+                    )
+                )
+            }
+        }
+        return PageBitmapLoader.load(bytes, targetW, targetH, decodeConfig())
     }
 
     /** 把缓存里的那一页摆成这一屏要的样子：跨页拆分按 [half] 取左半或右半 */

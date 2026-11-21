@@ -93,6 +93,22 @@ interface BookDao {
     @Query("UPDATE books SET author = :author, volume = :volume WHERE id = :id")
     suspend fun setAuthorAndVolume(id: Long, author: String?, volume: String?)
 
+    /**
+     * 只在「库里的值仍是读元数据那一刻的样子」时写入。
+     *
+     * 远端读一份元数据要几秒，这期间用户可能已经手动改过作者或卷号；无条件写回会把他的改动盖掉。
+     * 影响 0 行就说明这一栏期间被动过，放弃这次写入。
+     */
+    @Query("UPDATE books SET author = :author WHERE id = :id AND author IS :expected")
+    suspend fun setAuthorIfUnchanged(id: Long, author: String?, expected: String?)
+
+    @Query("UPDATE books SET volume = :volume WHERE id = :id AND volume IS :expected")
+    suspend fun setVolumeIfUnchanged(id: Long, volume: String?, expected: String?)
+
+    /** 包内元数据试过了（读到了、包里没有、解析失败都算），下次进详情不必再开一次书 */
+    @Query("UPDATE books SET meta_version = 1 WHERE id = :id")
+    suspend fun markMetaRead(id: Long)
+
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(book: BookEntity): Long

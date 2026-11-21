@@ -3,9 +3,11 @@ package com.nascomic.reader.library.detail
 import android.content.Context
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.ChapterInfo
+import com.nascomic.reader.format.comic.ComicMeta
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ChapterEntity
 import com.nascomic.reader.library.data.ReaderDatabase
+import com.nascomic.reader.library.series.VolumeNameParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -53,11 +55,42 @@ class BookDetailLoader(
                         }
                     )
                 }
+                // 包里有 ComicInfo 就顺手把作者与卷号修准；读不动不影响量页，也不阻塞界面。
+                // 无论读到还是没读到都记一笔：包里没有这个文件的占多数，不能让它们每次进详情都白开一次书
+                runCatching { src.meta }.getOrNull()?.let { applyMeta(book, it) }
+                db.bookDao().markMetaRead(book.id)
                 Detail(total, infos, starts)
             }
         }.onFailure {
             // 量页失败不阻塞界面（详情页照常显示），但要留下原因，否则远端问题无从查起
             android.util.Log.w("BookDetail", "量页失败：${book.title}", it)
         }.getOrNull()
+    }
+
+    /**
+     * 把包内声明落到库里。
+     *
+     * 只覆盖「还停在文件名解析值」的那一栏：用户改过的（`author` 与文件名解析结果不一致、
+     * 或本来就是他自己设的）一律不动。卷号同理。
+     */
+    private suspend fun applyMeta(book: BookEntity, meta: ComicMeta) {
+        val parsed = VolumeNameParser.parse(book.title)
+        val author = when {
+            meta.writer == null -> null
+            book.author.isNullOrBlank() -> meta.writer
+            book.author == parsed.author -> meta.writer
+            else -> null
+        }
+        val parsedVolume = parsed.volume?.toString()
+        val volume = when {
+            meta.volume == null -> null
+            book.volume.isNullOrBlank() -> meta.volume
+            book.volume == parsedVolume -> meta.volume
+            else -> null
+        }
+        // 两栏各写各的，并且只在「库里的值还等于进来时的快照」时才落库：
+        // 远端读元数据要几秒，这期间用户可能已经手动改过其中一栏，不能把他的改动盖回去
+        if (author != null) db.bookDao().setAuthorIfUnchanged(book.id, author, book.author)
+        if (volume != null) db.bookDao().setVolumeIfUnchanged(book.id, volume, book.volume)
     }
 }

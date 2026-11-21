@@ -130,6 +130,13 @@ data class BookEntity(
     /** 0=待解析 1=可读 2=损坏 */
     @ColumnInfo(name = "scan_state") val scanState: Int = STATE_PENDING,
     @ColumnInfo(name = "error_code") val errorCode: Int? = null,
+    /**
+     * 包内元数据（`ComicInfo.xml`）读过没有：0 = 没读过，1 = 读过。
+     *
+     * 「读过」包含「包里没有这个文件」与「解析失败」——都算试过了，不必每次进详情再开一次书。
+     * 老库默认 0，所以升级后第一次打开这本书会补读一次。
+     */
+    @ColumnInfo(name = "meta_version", defaultValue = "0") val metaVersion: Int = 0,
 ) {
     /** 界面上该显示的名字：用户改过就用他的，否则用来源标题 */
     val displayTitle: String

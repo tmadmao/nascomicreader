@@ -3,7 +3,8 @@ package com.nascomic.reader.library.series
 /**
  * 从书名里拆出作者、作品名、卷号。
  *
- * 只认文件名里写着的东西：不联网、不读包内元数据、不留汉化组。
+ * 只认文件名里写着的东西：不联网、不留汉化组。包内的 `ComicInfo.xml` 不走这里——
+ * 那条路在 [com.nascomic.reader.format.comic.ComicInfoReader]。
  * 拆不出来就留空，不猜——猜错会把不相干的书并到一起，比不并更糟。
  */
 object VolumeNameParser {

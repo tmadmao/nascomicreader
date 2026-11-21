@@ -1,6 +1,8 @@
 package com.nascomic.reader.format
 
 import com.nascomic.reader.format.archive.LibArchiveCatalog
+import com.nascomic.reader.format.comic.ComicInfoReader
+import com.nascomic.reader.format.comic.ComicMeta
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 
@@ -38,4 +40,12 @@ class LibArchiveBookSource internal constructor(
     override fun firstPageOfChapter(chapter: Int): Int = layout.firstPageOfChapter(chapter)
 
     override fun close() = catalog.close()
+
+    /** 包里的 ComicInfo.xml；libarchive 是单向流，读这个条目要额外走一遍 */
+    override val meta: ComicMeta? by lazy {
+        ComicInfoReader.read(catalog.entries.map { it.name }) { name ->
+            catalog.entries.firstOrNull { it.name == name }
+                ?.let { ByteArrayInputStream(catalog.read(it)) }
+        }
+    }
 }

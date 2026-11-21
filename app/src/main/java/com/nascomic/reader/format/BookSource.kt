@@ -2,6 +2,7 @@ package com.nascomic.reader.format
 
 import java.io.Closeable
 import java.io.InputStream
+import com.nascomic.reader.format.comic.ComicMeta
 
 /**
  * 一本书的页序列来源。上层（阅读器、扫描器）只认这个接口，不关心书是压缩包还是目录。
@@ -27,6 +28,14 @@ interface BookSource : Closeable {
 
     /** 第 [chapter] 章的第一页全局页号 */
     fun firstPageOfChapter(chapter: Int): Int
+
+    /**
+     * 包内嵌的元数据（`ComicInfo.xml`）。只有单文件压缩包会读；
+     * 目录书、PDF、EPUB、章回体合集一律返回 null——它们要么没有这个文件，要么章与章各带一份，
+     * 认哪一份都是猜。
+     */
+    val meta: ComicMeta?
+        get() = null
 }
 
 data class ChapterInfo(
