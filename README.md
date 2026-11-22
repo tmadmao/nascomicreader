@@ -102,10 +102,10 @@
 
 ## 捐助
 
-如果这个项目帮到了你，欢迎请我喝杯咖啡 ☕。支持支付宝、微信、Ko-fi。  
+如果这个项目帮到了你，欢迎[请我喝咖啡 ☕](https://cdn.loli.sh/sponsor/sponsor.html)。支持支付宝、微信、Ko-fi。  
 随心就好，赞助不换取任何功能优先权，也不改变 issue 的处理顺序。
 
-![请我喝咖啡 / Buy Me a Coffee](https://raw.githubusercontent.com/tmadmao/nascomicreader/main/sponsor.png)
+<a href="https://cdn.loli.sh/sponsor/sponsor.html"><img src="https://raw.githubusercontent.com/tmadmao/nascomicreader/main/sponsor.png" alt="请我喝咖啡 / Buy Me a Coffee"></a>
 
 ## 更多
 
