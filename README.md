@@ -8,10 +8,6 @@
     <a href="LICENSE"><img alt="许可" src="https://img.shields.io/github/license/tmadmao/nascomicreader" style="display:inline"></a>
   </p>
   <p><a href="https://github.com/tmadmao/nascomicreader/stargazers"><sub>⭐ 觉得好用，点个 Star 吧</sub></a></p>
-  <p>
-    <em>把漫画收进书架，剩下的交给阅读器。</em><br>
-    <sub>—— 本地优先，随取随读</sub>
-  </p>
 </div>
 
 > 手机目录、WebDAV、SMB 都能当书库；压缩包不用解压，点开就是书。  
