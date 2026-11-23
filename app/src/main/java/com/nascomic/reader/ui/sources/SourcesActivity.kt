@@ -25,6 +25,9 @@ import com.nascomic.reader.library.RelativeTime
 import com.nascomic.reader.library.SourceRepository
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
+import com.nascomic.reader.library.health.FileHealthCheck
+import com.nascomic.reader.library.health.HealthIssue
+import com.nascomic.reader.library.health.HealthReport
 import com.nascomic.reader.library.scan.LibraryScanner
 import com.nascomic.reader.smb.SmbTarget
 import com.nascomic.reader.ui.remote.RemotePickerActivity
@@ -49,6 +52,7 @@ class SourcesActivity : AppCompatActivity() {
     private val db by lazy { ReaderDatabase.get(this) }
     private val repository by lazy { SourceRepository(this, db) }
     private val scanner by lazy { LibraryScanner(this, db) }
+    private val checker by lazy { FileHealthCheck(this, db) }
     private val appPrefs by lazy { com.nascomic.reader.settings.AppPrefs(this) }
 
     /** 选中要新增哪一类；为 null 表示选中的是某个已有书源 */
@@ -443,6 +447,120 @@ class SourcesActivity : AppCompatActivity() {
     }
 
     /**
+     * 检查文件：只读一遍这个来源下的书，找出打不开、没有图片页、页数与库里对不上的。
+     * 不改任何库数据——修复留给用户自己决定，报告看完就丢。
+     */
+    private fun runCheck(source: SourceEntity) {
+        if (scanning) return
+        showCheckProgress(source.label)
+        lifecycleScope.launch {
+            try {
+                val report = checker.check(source, checkListener()) { scanCancelled }
+                when {
+                    report.total == 0 -> showSuccess(getString(R.string.health_empty))
+                    report.issues.isEmpty() && !report.stoppedEarly -> {
+                        val text = if (report.skipped > 0) {
+                            getString(
+                                R.string.health_ok_skipped,
+                                source.label, report.checked, report.skipped,
+                            )
+                        } else {
+                            getString(R.string.health_ok, source.label, report.checked)
+                        }
+                        showSuccess(text)
+                    }
+                    else -> showHealthReport(report)
+                }
+            } catch (e: FileHealthCheck.Cancelled) {
+                Toast.makeText(this@SourcesActivity, R.string.health_cancelled, Toast.LENGTH_SHORT)
+                    .show()
+            } catch (e: Exception) {
+                showFailure(remoteErrorText(this@SourcesActivity, e), R.string.health_failed)
+            } finally {
+                scanning = false
+                binding.progressPanel.isVisible = false
+                binding.progressCancel.text = getString(R.string.scan_cancel)
+                loadSources()
+            }
+        }
+    }
+
+    private fun showCheckProgress(label: String) {
+        scanCancelled = false
+        binding.progressCancel.isEnabled = true
+        binding.progressCancel.text = getString(R.string.health_cancel)
+        scanning = true
+        binding.successPanel.isVisible = false
+        binding.progressPanel.isVisible = true
+        binding.progressTitle.text = getString(R.string.sources_checking, label)
+        binding.progressDetail.text = getString(R.string.health_starting)
+        binding.progressPercent.text = ""
+        binding.progressBar.progress = 0
+        binding.progressSpinner.isVisible = true
+    }
+
+    private fun checkListener() = object : FileHealthCheck.Listener {
+        override fun onStart(total: Int) = onUi {
+            binding.progressDetail.text = getString(R.string.health_starting_count, total)
+        }
+
+        override fun onProgress(title: String, done: Int, total: Int) = onUi {
+            if (total <= 0) return@onUi
+            val percent = (done * 100 / total).coerceIn(0, 100)
+            binding.progressSpinner.isVisible = false
+            binding.progressDetail.text = if (title.isEmpty()) {
+                getString(R.string.health_progress, done, total)
+            } else {
+                getString(R.string.health_progress_book, done, total, title)
+            }
+            binding.progressPercent.text = "$percent%"
+            binding.progressBar.progress = percent
+        }
+    }
+
+    /** 结论弹窗：上面一句总账，下面一本一行，只报事实 */
+    private fun showHealthReport(report: HealthReport) {
+        val header = when {
+            report.stoppedEarly -> getString(
+                R.string.health_summary_stopped,
+                report.checked, report.issues.size, report.skipped,
+            )
+            report.skipped > 0 -> getString(
+                R.string.health_summary_skipped,
+                report.checked, report.issues.size, report.skipped,
+            )
+            else -> getString(R.string.health_summary, report.checked, report.issues.size)
+        }
+        val lines = report.issues.map { issue ->
+            getString(R.string.health_issue_line, issue.title, issueText(issue))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.health_title)
+            .setMessage((listOf(header) + lines).joinToString("\n"))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun issueText(issue: HealthIssue): String = when (issue.kind) {
+        HealthIssue.Kind.UNREADABLE -> getString(
+            R.string.health_unreadable,
+            getString(
+                when (issue.cause) {
+                    HealthIssue.Cause.CORRUPT -> R.string.health_cause_corrupt
+                    HealthIssue.Cause.MISSING -> R.string.health_cause_missing
+                    HealthIssue.Cause.PERMISSION -> R.string.health_cause_permission
+                    HealthIssue.Cause.FORMAT -> R.string.health_cause_format
+                    HealthIssue.Cause.OTHER -> R.string.health_cause_other
+                }
+            ),
+        )
+        HealthIssue.Kind.NO_IMAGES -> getString(R.string.health_no_images)
+        HealthIssue.Kind.PAGE_MISMATCH ->
+            getString(R.string.health_pages, issue.storedPages, issue.actualPages)
+    }
+
+
+    /**
      * 扫完顺手跑一次自动归入：开关关着就什么都不做。
      * 只落高置信的组，认不准的留给人（D 阶段）。
      */
@@ -484,6 +602,7 @@ class SourcesActivity : AppCompatActivity() {
     private fun showProgress(label: String) {
         scanCancelled = false
         binding.progressCancel.isEnabled = true
+        binding.progressCancel.text = getString(R.string.scan_cancel)
         scanning = true
         binding.successPanel.isVisible = false
         binding.progressPanel.isVisible = true
@@ -502,8 +621,8 @@ class SourcesActivity : AppCompatActivity() {
         }, 4000)
     }
 
-    private fun showFailure(reason: String) {
-        binding.successText.text = getString(R.string.sources_scan_failed, reason)
+    private fun showFailure(reason: String, prefix: Int = R.string.sources_scan_failed) {
+        binding.successText.text = getString(prefix, reason)
         binding.successPanel.isVisible = true
     }
 
@@ -776,13 +895,14 @@ class SourcesActivity : AppCompatActivity() {
 
     // ── 来源操作 ───────────────────────────────────────────
 
-    /** 长按来源：重扫、改书型、改名、改地址账号或删掉 */
+    /** 长按来源：重扫、检查文件、改书型、改名、改地址账号或删掉 */
     private fun showSourceActions(source: SourceEntity) {
         val actions = ArrayList<Pair<String, () -> Unit>>()
         actions += getString(R.string.sources_action_update) to {
             selectSource(source)
             runScan(source)
         }
+        actions += getString(R.string.sources_action_check) to { runCheck(source) }
         actions += getString(R.string.source_mode_label, modeLabel(source.bookMode)) to {
             changeBookMode(source)
         }
@@ -945,6 +1065,8 @@ class SourcesActivity : AppCompatActivity() {
                     // 先记下这门来源下的书，删完把它们的页缓存一起清掉
                     val doomed = db.bookDao().idsBySource(source.id)
                     repository.remove(source.id)
+                    // 上一次扫描/检查的结论说的是这门来源，删了就别留在页面上
+                    binding.successPanel.isVisible = false
                     withContext(Dispatchers.IO) {
                         val cache = com.nascomic.reader.ui.reader.DiskPageCache(this@SourcesActivity)
                         doomed.forEach { cache.clearBook(it) }

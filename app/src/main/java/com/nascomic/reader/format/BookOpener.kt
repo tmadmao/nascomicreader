@@ -46,23 +46,45 @@ class BookOpener(private val context: Context) {
         val fetchLocks = Array(32) { Any() }
     }
 
-    fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource {
+    /** 阅读路径：章页数信库里记的，省掉逐章打开 */
+    fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource =
+        open(book, source, chapters, trustStoredPages = true)
+
+    /**
+     * 核对路径：章页数一律重数。
+     *
+     * 健康检查是拿实际页数去比库里的记录；沿用库里那几列，等于自己跟自己比，
+     * 文件被换掉、页数变了也永远看不出来。
+     */
+    fun openForAudit(
+        book: BookEntity,
+        source: SourceEntity,
+        chapters: List<ChapterEntity>,
+    ): BookSource = open(book, source, chapters, trustStoredPages = false)
+
+    private fun open(
+        book: BookEntity,
+        source: SourceEntity,
+        chapters: List<ChapterEntity>,
+        trustStoredPages: Boolean,
+    ): BookSource {
         // 落盘副本只在打开时才需要，顺手按总量收一次：进一本新书是天然的检查点
         runCatching { LocalCopies.trim(context) }
         return when (source.kind) {
             SourceEntity.KIND_WEBDAV -> {
                 val client = WebDavClient(source.account, secrets.get(source.secretRef), source.endpoint)
-                openWith(WebDavBackend(client)) { openRemote(book, chapters, it) }
+                openWith(WebDavBackend(client)) { openRemote(book, chapters, it, trustStoredPages) }
             }
             SourceEntity.KIND_SMB -> {
                 val target = SmbTarget.parse(source.endpoint ?: error("这个来源没有地址"))
                 val client = SmbClient(target, source.account, secrets.get(source.secretRef))
-                openWith(SmbBackend(client)) { openRemote(book, chapters, it) }
+                openWith(SmbBackend(client)) { openRemote(book, chapters, it, trustStoredPages) }
             }
             else -> openLocal(
                 book,
                 source.treeUri ?: error("这个来源没有目录授权"),
                 chapters,
+                trustStoredPages,
             )
         }
     }
@@ -173,10 +195,11 @@ class BookOpener(private val context: Context) {
         book: BookEntity,
         chapters: List<ChapterEntity>,
         backend: RemoteBackend,
+        trustStoredPages: Boolean,
     ): BookSource {
         if (book.format == BookEntity.FORMAT_FOLDER) {
             if (chapters.isEmpty()) return remoteFolder(backend, book.docRef, book.title)
-            return openChaptered(chapters) { ch -> remoteChapter(backend, ch, book) }
+            return openChaptered(chapters, trustStoredPages) { ch -> remoteChapter(backend, ch, book) }
         }
         return when (book.format) {
             // 压缩包按内容判：zip → tar → 落盘交给 libarchive（7z / RAR / CBR）。
@@ -367,7 +390,12 @@ class BookOpener(private val context: Context) {
 
     // ---- 本地（SAF）----
 
-    private fun openLocal(book: BookEntity, treeUri: String, chapters: List<ChapterEntity>): BookSource {
+    private fun openLocal(
+        book: BookEntity,
+        treeUri: String,
+        chapters: List<ChapterEntity>,
+        trustStoredPages: Boolean,
+    ): BookSource {
         val walker = SafWalker(context, Uri.parse(treeUri))
         return when (book.format) {
             BookEntity.FORMAT_ZIP -> openArchive(walker, book.docRef)
@@ -377,7 +405,7 @@ class BookOpener(private val context: Context) {
                 if (chapters.isEmpty()) {
                     openFolder(walker, book.docRef, book.title)
                 } else {
-                    openChaptered(walker, chapters)
+                    openChaptered(walker, chapters, trustStoredPages)
                 }
             else -> throw UnsupportedOperationException("暂不支持这种格式：${book.format}")
         }
@@ -439,7 +467,7 @@ class BookOpener(private val context: Context) {
 
     private fun openPfd(uri: Uri, docId: String): ParcelFileDescriptor =
         context.contentResolver.openFileDescriptor(uri, "r")
-            ?: throw IllegalStateException("打不开文件：$docId")
+            ?: throw java.io.FileNotFoundException("打不开文件：$docId")
 
     /** 打开为压缩包目录（epub 也是 zip） */
     private fun openCatalog(uri: Uri): ZipCatalog {
@@ -462,8 +490,12 @@ class BookOpener(private val context: Context) {
         }
     }
 
-    private fun openChaptered(walker: SafWalker, chapters: List<ChapterEntity>): BookSource =
-        openChaptered(chapters) { ch -> openLocalChapter(walker, ch) }
+    private fun openChaptered(
+        walker: SafWalker,
+        chapters: List<ChapterEntity>,
+        trustStoredPages: Boolean,
+    ): BookSource =
+        openChaptered(chapters, trustStoredPages) { ch -> openLocalChapter(walker, ch) }
 
     /** 本地的一章：目录、压缩包或 PDF */
     private fun openLocalChapter(walker: SafWalker, ch: ChapterEntity): BookSource = when (ch.chapterKind) {
@@ -477,15 +509,21 @@ class BookOpener(private val context: Context) {
      *
      * 章的书源用到才建：库里有上次数出来的页数（[ChapterEntity.pageTotal]）就先信它，
      * 这样回来看第二遍不必把每一章都打开一次。第一次看没有页数，才会逐章打开数页。
+     * [trustStoredPages] 为 false 时一律重数（健康检查用）。
      */
     private fun openChaptered(
         chapters: List<ChapterEntity>,
+        trustStoredPages: Boolean,
         open: (ChapterEntity) -> BookSource,
     ): BookSource {
         val parts = chapters.sortedBy { it.ordinal }.map { ch ->
             MultiChapterSource.Part(
                 title = ch.title,
-                declaredPages = ch.pageTotal.takeIf { it > 0 } ?: -1,
+                declaredPages = if (trustStoredPages) {
+                    ch.pageTotal.takeIf { it > 0 } ?: -1
+                } else {
+                    -1
+                },
             ) { open(ch) }
         }
         return MultiChapterSource(parts)

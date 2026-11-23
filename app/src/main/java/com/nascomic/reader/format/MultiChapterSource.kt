@@ -54,11 +54,17 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource, RenderedPa
         starts = IntArray(parts.size)
         var acc = 0
         val infos = ArrayList<ChapterInfo>(parts.size)
-        for ((i, part) in parts.withIndex()) {
-            starts[i] = acc
-            val pages = part.pages
-            infos += ChapterInfo(ordinal = i, title = part.title, pageCount = pages)
-            acc += pages
+        try {
+            for ((i, part) in parts.withIndex()) {
+                starts[i] = acc
+                val pages = part.pages
+                infos += ChapterInfo(ordinal = i, title = part.title, pageCount = pages)
+                acc += pages
+            }
+        } catch (e: Throwable) {
+            // 有一章打不开，整本也建不起来：把已经开过的章关掉，别把连接和描述符漏在这里
+            parts.forEach { it.close() }
+            throw e
         }
         chapters = infos
     }
