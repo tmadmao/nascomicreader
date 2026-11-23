@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import com.nascomic.reader.core.fs.SystemDirs
 
 /**
  * 走系统文件选择器授权进来的目录，列出子项。
@@ -27,6 +28,9 @@ class SafWalker(private val context: Context, private val treeUri: Uri) {
      * 扫描器要靠这个区别决定「这本来源空了」还是「这次没读到」，
      * 两者混在一起会把整库的书连同进度书签一起删掉。
      * 空目录返回空表，与读失败区分得开。
+     *
+     * 系统目录（`#recycle`、`@eaDir` 等）在这里就丢掉：扫描、打开目录和检查文件
+     * 都走这个方法，只挡扫描器会让另外两条路径仍然看得到回收站里的旧书。
      */
     fun list(parentDocId: String): List<ScanNode>? {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
@@ -59,7 +63,11 @@ class SafWalker(private val context: Context, private val treeUri: Uri) {
             // 目录已被删除
             return null
         }
-        return out
+        return SystemDirs.withoutIgnoredDirectories(
+            items = out,
+            nameOf = { it.name },
+            isDirectory = { it.isDir },
+        )
     }
 
     /** 打开某个文档的读流 */

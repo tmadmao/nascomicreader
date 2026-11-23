@@ -28,7 +28,7 @@
 
 | 渠道                                                                           | 说明                                  |
 | ---------------------------------------------------------------------------- | ----------------------------------- |
-| [GitHub Releases](https://github.com/tmadmao/nascomicreader/releases/latest) | 最新正式版，当前 **1.7.0**（versionCode 33）  |
+| [GitHub Releases](https://github.com/tmadmao/nascomicreader/releases/latest) | 最新正式版，当前 **1.7.1**（versionCode 34）  |
 | 应用内「检查更新」                                                                    | 读取更新清单，下载后校验 SHA-256 与签名证书，再交给系统安装器 |
 
 需要 Android 7.0 及以上。
@@ -44,6 +44,8 @@
 ### 书库
 
 - 三种来源：本机目录（系统文件选择器授权一次）、WebDAV、SMB2/3；重扫可增量更新，也可中途取消
+- 扫描自动跳过 NAS 系统目录：Synology `#recycle` / `#snapshot` / `@eaDir`、QNAP `@Recycle`、
+  Samba `.recycle`、`$RECYCLE.BIN`、`.Trash*` 等，回收站里的旧书不会重新入库
 - 新增来源必须选书型：**连载漫画**（子文件夹 / 压缩包 / PDF 当章）或 **单行本·图集**（每个含图目录各自成书）
 - 书架：大标题 + 通栏搜索（按书名或来源，范围可切全部 / 作品系列 / 作家）+ 最近阅读 / 作品系列 / 作家列表入口 + 继续阅读卡 + 书源分段 + 3 / 6 列封面网格
 - 长按可多选、重命名、换封面、从书库删除、加入系列；这些只动应用里的记录，**不碰硬盘或 NAS 上的源文件**

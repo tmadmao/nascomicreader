@@ -5,6 +5,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.nascomic.reader.core.fs.SystemDirs
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
@@ -35,7 +36,7 @@ class WebDavClient(
 
     private val client: OkHttpClient get() = shared
 
-    /** 列一层。返回结果里不含被查询目录自身 */
+    /** 列一层。返回结果里不含被查询目录自身，也不含 NAS 的系统目录 */
     fun list(dirUrl: String): List<Entry> {
         // 集合地址补上结尾斜杠：不少服务端对 /dav 直接 404，对 /dav/ 才认
         val target = if (dirUrl.endsWith("/")) dirUrl else "$dirUrl/"
@@ -55,7 +56,11 @@ class WebDavClient(
             if (RESPONSE.find(xml) == null) {
                 throw WebDavException(response.code, "列目录的响应不是 WebDAV 列表")
             }
-            return parseMultiStatus(xml, target).filter { normalize(it.url) != normalize(target) }
+            return SystemDirs.withoutIgnoredDirectories(
+                items = parseMultiStatus(xml, target).filter { normalize(it.url) != normalize(target) },
+                nameOf = { it.name },
+                isDirectory = { it.isDirectory },
+            )
         }
     }
 

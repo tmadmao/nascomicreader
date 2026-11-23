@@ -11,6 +11,7 @@ import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File as SmbFile
+import com.nascomic.reader.core.fs.SystemDirs
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -76,7 +77,7 @@ class SmbClient(
         return AuthenticationContext(user, password.orEmpty().toCharArray(), domain)
     }
 
-    /** 列一层。路径用共享内相对路径，共享根传空串 */
+    /** 列一层。路径用共享内相对路径，共享根传空串；NAS 的系统目录不返回 */
     fun list(dirPath: String): List<Entry> {
         val entries = try {
             share().list(dirPath)
@@ -94,6 +95,7 @@ class SmbClient(
                     size = info.endOfFile,
                 )
             }
+            .filterNot { it.isDirectory && SystemDirs.isIgnoredDirectory(it.name) }
             .toList()
     }
 

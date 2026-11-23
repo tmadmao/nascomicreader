@@ -194,6 +194,31 @@ class WebDavClientHttpTest {
     }
 
     @Test
+    fun `列目录过滤回收站与系统目录_同名文件保留`() {
+        listingXml = {
+            multiStatus(
+                "/dav/",
+                """
+                <D:response><D:href>/dav/%23recycle/</D:href>
+                <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat></D:response>
+                <D:response><D:href>/dav/@eaDir/</D:href>
+                <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat></D:response>
+                <D:response><D:href>/dav/.Trash-1000/</D:href>
+                <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat></D:response>
+                <D:response><D:href>/dav/%23recycle.zip</D:href>
+                <D:propstat><D:prop><D:resourcetype/>
+                <D:getcontentlength>10</D:getcontentlength></D:prop></D:propstat></D:response>
+                """.trimIndent(),
+            )
+        }
+        val client = WebDavClient("u", "p", origin())
+        val entries = client.list(origin() + "/dav/")
+
+        assertEquals(listOf("#recycle.zip"), entries.map { it.name })
+        assertFalse(entries[0].isDirectory)
+    }
+
+    @Test
     fun `没有站点信息时不额外限制`() {
         // 手动浏览远端目录时还不知道站点，行为与改动前一致
         listingXml = { multiStatus("/dav/") }
