@@ -109,6 +109,8 @@
     <string name="detail_meta_line">%1$s · %2$s · 剩 %3$d 话</string>
     <string name="detail_meta_line_pages">%1$s · %2$s · 共 %3$d 页</string>
     <string name="detail_source_line">来自 %1$s</string>
+    <string name="detail_path_label">漫画文件路径</string>
+    <string name="detail_path_copied">已复制文件路径</string>
     <string name="detail_current_chapter_pages">读到 %1$d 页</string>
     <string name="format_archive">压缩包</string>
     <string name="format_pdf">PDF</string>

@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.detail
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
@@ -16,6 +18,7 @@ import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivityDetailBinding
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.readPercent
+import com.nascomic.reader.library.BookLocation
 import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.BookmarkEntity
@@ -84,6 +87,10 @@ class DetailActivity : AppCompatActivity() {
             return
         }
         binding.back.setOnClickListener { finish() }
+        binding.pathLine.setOnLongClickListener {
+            copyPath()
+            true
+        }
         // 作品系列关着时不摆这个入口，免得点了没反应
         binding.more.visibility = if (appPrefs.seriesEnabled) View.VISIBLE else View.GONE
         binding.more.setOnClickListener { showActions() }
@@ -162,6 +169,9 @@ class DetailActivity : AppCompatActivity() {
         binding.title.text = b.displayTitle
         binding.meta.text = metaLine(b)
         binding.sourceLine.text = sourceLine(b)
+        val location = BookLocation.displayPath(b, source)
+        binding.pathLine.isVisible = location.isNotEmpty()
+        binding.pathLine.text = location
 
         val entries = tocEntries(b)
         val isChaptered = b.isSingleVolume == 0 && chapters.isNotEmpty()
@@ -261,6 +271,17 @@ class DetailActivity : AppCompatActivity() {
         } else {
             getString(R.string.detail_source_line, name)
         }
+    }
+
+    /** 路径常比一行长，选中不好点；长按直接整段复制，拿去文件管理器里搜 */
+    private fun copyPath() {
+        val path = binding.pathLine.text?.toString().orEmpty()
+        if (path.isEmpty()) return
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard?.setPrimaryClip(
+            ClipData.newPlainText(getString(R.string.detail_path_label), path)
+        )
+        Toast.makeText(this, R.string.detail_path_copied, Toast.LENGTH_SHORT).show()
     }
 
     private fun formatSize(bytes: Long): String = when {

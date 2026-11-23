@@ -134,6 +134,19 @@
                     android:maxLines="1"
                     android:textColor="@color/shell_ink_muted"
                     android:textSize="11sp" />
+
+                <!-- 真实文件 / 文件夹路径：长按可复制，找书时能直接对到文件管理器 -->
+                <TextView
+                    android:id="@+id/path_line"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:ellipsize="middle"
+                    android:fontFamily="monospace"
+                    android:longClickable="true"
+                    android:maxLines="3"
+                    android:textColor="@color/shell_ink_faint"
+                    android:textSize="10sp" />
             </LinearLayout>
 
             <!-- 阅读进度：橙调浅卡 -->
