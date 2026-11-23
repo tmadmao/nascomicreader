@@ -51,40 +51,43 @@ class BookOpener(private val context: Context) {
         open(book, source, chapters, trustStoredPages = true)
 
     /**
-     * 核对路径：章页数一律重数。
+     * 核对路径：章页数一律重数，并且读当前源文件。
      *
      * 健康检查是拿实际页数去比库里的记录；沿用库里那几列，等于自己跟自己比，
-     * 文件被换掉、页数变了也永远看不出来。
+     * 文件被换掉、页数变了也永远看不出来。PDF / 7z / RAR 平时会用落盘副本，
+     * 审计必须跳过这些副本重新取一份，否则源文件换了也还是在数旧文件。
      */
     fun openForAudit(
         book: BookEntity,
         source: SourceEntity,
         chapters: List<ChapterEntity>,
-    ): BookSource = open(book, source, chapters, trustStoredPages = false)
+    ): BookSource = open(book, source, chapters, trustStoredPages = false, audit = true)
 
     private fun open(
         book: BookEntity,
         source: SourceEntity,
         chapters: List<ChapterEntity>,
         trustStoredPages: Boolean,
+        audit: Boolean = false,
     ): BookSource {
         // 落盘副本只在打开时才需要，顺手按总量收一次：进一本新书是天然的检查点
         runCatching { LocalCopies.trim(context) }
         return when (source.kind) {
             SourceEntity.KIND_WEBDAV -> {
                 val client = WebDavClient(source.account, secrets.get(source.secretRef), source.endpoint)
-                openWith(WebDavBackend(client)) { openRemote(book, chapters, it, trustStoredPages) }
+                openWith(WebDavBackend(client)) { openRemote(book, chapters, it, trustStoredPages, audit) }
             }
             SourceEntity.KIND_SMB -> {
                 val target = SmbTarget.parse(source.endpoint ?: error("这个来源没有地址"))
                 val client = SmbClient(target, source.account, secrets.get(source.secretRef))
-                openWith(SmbBackend(client)) { openRemote(book, chapters, it, trustStoredPages) }
+                openWith(SmbBackend(client)) { openRemote(book, chapters, it, trustStoredPages, audit) }
             }
             else -> openLocal(
                 book,
                 source.treeUri ?: error("这个来源没有目录授权"),
                 chapters,
                 trustStoredPages,
+                audit,
             )
         }
     }
@@ -196,19 +199,20 @@ class BookOpener(private val context: Context) {
         chapters: List<ChapterEntity>,
         backend: RemoteBackend,
         trustStoredPages: Boolean,
+        audit: Boolean,
     ): BookSource {
         if (book.format == BookEntity.FORMAT_FOLDER) {
             if (chapters.isEmpty()) return remoteFolder(backend, book.docRef, book.title)
-            return openChaptered(chapters, trustStoredPages) { ch -> remoteChapter(backend, ch, book) }
+            return openChaptered(chapters, trustStoredPages) { ch -> remoteChapter(backend, ch, book, audit) }
         }
         return when (book.format) {
             // 压缩包按内容判：zip → tar → 落盘交给 libarchive（7z / RAR / CBR）。
             // 只试 zip 与 tar 的话，远端那本 7z 永远打不开
-            BookEntity.FORMAT_ZIP -> remoteArchive(book, book.docRef, backend)
+            BookEntity.FORMAT_ZIP -> remoteArchive(book, book.docRef, backend, audit)
             BookEntity.FORMAT_EPUB ->
                 EpubBookSource(ZipCatalog.open(backend.randomAccess(book.docRef)), fastEpub)
             // PDF 要文件描述符，得先落到本地
-            else -> openLocalCopy(book) { backend.download(book.docRef, it) }
+            else -> openLocalCopy(book, refresh = audit) { backend.download(book.docRef, it) }
         }
     }
 
@@ -242,16 +246,17 @@ class BookOpener(private val context: Context) {
         when (source.kind) {
             SourceEntity.KIND_WEBDAV -> {
                 val client = WebDavClient(source.account, secrets.get(source.secretRef), source.endpoint)
-                openWith(WebDavBackend(client)) { remoteChapter(it, ch, book) }
+                openWith(WebDavBackend(client)) { remoteChapter(it, ch, book, audit = false) }
             }
             SourceEntity.KIND_SMB -> {
                 val target = SmbTarget.parse(source.endpoint ?: error("这个来源没有地址"))
                 val client = SmbClient(target, source.account, secrets.get(source.secretRef))
-                openWith(SmbBackend(client)) { remoteChapter(it, ch, book) }
+                openWith(SmbBackend(client)) { remoteChapter(it, ch, book, audit = false) }
             }
             else -> openLocalChapter(
                 SafWalker(context, Uri.parse(source.treeUri ?: error("这个来源没有目录授权"))),
                 ch,
+                audit = false,
             )
         }
 
@@ -260,10 +265,13 @@ class BookOpener(private val context: Context) {
         backend: RemoteBackend,
         ch: ChapterEntity,
         book: BookEntity,
+        audit: Boolean,
     ): BookSource = when (ch.chapterKind) {
         ChapterEntity.KIND_FOLDER -> remoteFolder(backend, ch.chapterRef, ch.title)
-        ChapterEntity.KIND_PDF -> openPdfCopy(book.id, ch.chapterRef) { backend.download(ch.chapterRef, it) }
-        else -> remoteArchive(book, ch.chapterRef, backend)
+        ChapterEntity.KIND_PDF -> openPdfCopy(book.id, ch.chapterRef, refresh = audit) {
+            backend.download(ch.chapterRef, it)
+        }
+        else -> remoteArchive(book, ch.chapterRef, backend, audit)
     }
 
     /**
@@ -272,7 +280,12 @@ class BookOpener(private val context: Context) {
      * 独立的一本 7z / RAR / CBR 与「章是一本 7z」走的是同一条路——
      * 以前前者只试 zip 与 tar，于是远端那种书根本打不开。
      */
-    private fun remoteArchive(book: BookEntity, ref: String, backend: RemoteBackend): BookSource {
+    private fun remoteArchive(
+        book: BookEntity,
+        ref: String,
+        backend: RemoteBackend,
+        audit: Boolean,
+    ): BookSource {
         runCatching { ZipBookSource(ZipCatalog.open(backend.randomAccess(ref)), rootOnly = rootOnly) }
             .getOrNull()?.let { return it }
 
@@ -280,15 +293,20 @@ class BookOpener(private val context: Context) {
             .getOrNull()?.let { return it }
 
         // 副本名带上书的 id：两个来源里相对路径相同的章，不能共用同一份文件
-        return openRemoteArchiveCopy(book.id, ref) { backend.download(ref, it) }
+        return openRemoteArchiveCopy(book.id, ref, refresh = audit) { backend.download(ref, it) }
     }
 
-    internal fun openRemoteArchiveCopy(bookId: Long, ref: String, download: (File) -> Unit): BookSource {
+    internal fun openRemoteArchiveCopy(
+        bookId: Long,
+        ref: String,
+        refresh: Boolean = false,
+        download: (File) -> Unit,
+    ): BookSource {
         val dir = LocalCopies.remoteDir(context)
         val name = "a${bookId}_" + ref.hashCode().toUInt().toString(16)
         val file = File(dir, name)
         fun openCopy(): LibArchiveBookSource {
-            val local = fetchOnce(dir, name, -1L, download)
+            val local = fetchOnce(dir, name, -1L, refresh, download)
             return LibArchiveBookSource(LibArchiveCatalog.open(local, pinCopy = true), rootOnly = rootOnly)
         }
         return synchronized(lockFor(file)) {
@@ -329,11 +347,17 @@ class BookOpener(private val context: Context) {
     }
 
     /** 远程 PDF 章：下一份到本地再交给系统渲染 */
-    private fun openPdfCopy(bookId: Long, ref: String, save: (File) -> Unit): BookSource {
+    private fun openPdfCopy(
+        bookId: Long,
+        ref: String,
+        refresh: Boolean = false,
+        save: (File) -> Unit,
+    ): BookSource {
         val local = fetchOnce(
             LocalCopies.remoteDir(context),
             "p${bookId}_" + ref.hashCode().toUInt().toString(16),
             expected = -1L,
+            refresh = refresh,
             save = save,
         )
         return PdfBookSource(
@@ -345,9 +369,15 @@ class BookOpener(private val context: Context) {
     /**
      * 必须落到本地文件的格式：PDF 走 `ParcelFileDescriptor`、libarchive 只认文件名。
      * 缓存名带书的 id 与大小，远端文件换了会重新下一份。
+     * [refresh] 为 true 时跳过副本，重新取一份当前源文件（健康检查用）。
      */
-    private fun openLocalCopy(book: BookEntity, save: (File) -> Unit): BookSource {
-        val local = cachedCopy(book, save)
+    @androidx.annotation.VisibleForTesting
+    internal fun openLocalCopy(
+        book: BookEntity,
+        refresh: Boolean = false,
+        save: (File) -> Unit,
+    ): BookSource {
+        val local = cachedCopy(book, refresh, save)
         return when (book.format) {
             BookEntity.FORMAT_PDF ->
                 PdfBookSource(ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY), pdfQuality)
@@ -355,25 +385,33 @@ class BookOpener(private val context: Context) {
         }
     }
 
-    private fun cachedCopy(book: BookEntity, save: (File) -> Unit): File = fetchOnce(
+    private fun cachedCopy(book: BookEntity, refresh: Boolean, save: (File) -> Unit): File = fetchOnce(
         LocalCopies.remoteDir(context),
         "b${book.id}_" + book.byteSize.takeIf { it > 0 },
         expected = book.byteSize,
+        refresh = refresh,
         save = save,
     )
 
     /**
      * 取一份本地副本：有就复用，没有就下一份。
      *
-     * 两道保险：
+     * 三道保险：
      * 一、长度对不上（知道应有大小的时候）当成没有——半份文件不能拿来当完整副本用；
-     * 二、同一个键只让一个人下——书架和阅读页同时要同一本时，第二个等第一个，别各下一份。
+     * 二、同一个键只让一个人下——书架和阅读页同时要同一本时，第二个等第一个，别各下一份；
+     * 三、健康检查要求 [refresh]：先删旧副本再下，宁可多花一次下载，也不能拿旧文件充数。
      */
-    private fun fetchOnce(dir: File, name: String, expected: Long, save: (File) -> Unit): File {
+    private fun fetchOnce(
+        dir: File,
+        name: String,
+        expected: Long,
+        refresh: Boolean,
+        save: (File) -> Unit,
+    ): File {
         val out = File(dir, name)
-        if (usable(out, expected)) return out
+        if (!refresh && usable(out, expected)) return out
         synchronized(lockFor(out)) {
-            if (usable(out, expected)) return out
+            if (!refresh && usable(out, expected)) return out
             if (out.exists()) runCatching { out.delete() }
             save(out)
             return out
@@ -395,17 +433,18 @@ class BookOpener(private val context: Context) {
         treeUri: String,
         chapters: List<ChapterEntity>,
         trustStoredPages: Boolean,
+        audit: Boolean,
     ): BookSource {
         val walker = SafWalker(context, Uri.parse(treeUri))
         return when (book.format) {
-            BookEntity.FORMAT_ZIP -> openArchive(walker, book.docRef)
+            BookEntity.FORMAT_ZIP -> openArchive(walker, book.docRef, refresh = audit)
             BookEntity.FORMAT_PDF -> openPdf(walker, book.docRef)
             BookEntity.FORMAT_EPUB -> EpubBookSource(openCatalog(documentUri(walker, book.docRef)), fastEpub)
             BookEntity.FORMAT_FOLDER ->
                 if (chapters.isEmpty()) {
-                    openFolder(walker, book.docRef, book.title)
+                    openFolder(walker, book.docRef, book.title, strict = audit)
                 } else {
-                    openChaptered(walker, chapters, trustStoredPages)
+                    openChaptered(walker, chapters, trustStoredPages, audit)
                 }
             else -> throw UnsupportedOperationException("暂不支持这种格式：${book.format}")
         }
@@ -415,7 +454,7 @@ class BookOpener(private val context: Context) {
      * 压缩包类书源。扩展名不可靠（cbz 里装 rar、tar 改名 .zip 都常见），
      * 所以按内容判断：zip 中央目录 → tar 头 → 交给 libarchive（7z / RAR）。
      */
-    private fun openArchive(walker: SafWalker, docId: String): BookSource {
+    private fun openArchive(walker: SafWalker, docId: String, refresh: Boolean = false): BookSource {
         val uri = documentUri(walker, docId)
 
         val zip = runCatching { ZipBookSource(openCatalog(uri), rootOnly = rootOnly) }.getOrNull()
@@ -427,14 +466,15 @@ class BookOpener(private val context: Context) {
         runCatching { pfd.close() }
 
         // libarchive 只能按文件名重开，先把文件放到本地缓存
-        val local = copyToCache(uri, docId)
+        val local = copyToCache(uri, docId, refresh)
         return LibArchiveBookSource(LibArchiveCatalog.open(local), rootOnly = rootOnly)
     }
 
     /**
      * 把 SAF 里的文件复制到 cacheDir。名字带上大小与修改时间，文件变了就换一份。
+     * [refresh] 为 true 时是健康检查：即使名字没变也删掉重拷，保证读的是当前文件。
      */
-    private fun copyToCache(uri: Uri, docId: String): File {
+    private fun copyToCache(uri: Uri, docId: String, refresh: Boolean): File {
         val dir = LocalCopies.archivesDir(context)
         val stamp = runCatching {
             context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -449,6 +489,7 @@ class BookOpener(private val context: Context) {
 
         val name = docId.hashCode().toUInt().toString(16) + "_" + stamp
         val out = File(dir, name)
+        if (refresh && out.exists()) runCatching { out.delete() }
         if (out.exists() && out.length() > 0) return out
 
         val pfd = openPfd(uri, docId)
@@ -483,8 +524,8 @@ class BookOpener(private val context: Context) {
     private fun openPdf(walker: SafWalker, docId: String): BookSource =
         PdfBookSource(openPfd(documentUri(walker, docId), docId), pdfQuality)
 
-    private fun openFolder(walker: SafWalker, docId: String, title: String): BookSource {
-        val entries = listImages(walker, docId, prefix = "")
+    private fun openFolder(walker: SafWalker, docId: String, title: String, strict: Boolean = false): BookSource {
+        val entries = listImages(walker, docId, prefix = "", strict = strict)
         return FolderBookSource.from(entries, title) { ref ->
             walker.open(ref) ?: throw IllegalStateException("打不开图片：$ref")
         }
@@ -494,14 +535,19 @@ class BookOpener(private val context: Context) {
         walker: SafWalker,
         chapters: List<ChapterEntity>,
         trustStoredPages: Boolean,
+        audit: Boolean,
     ): BookSource =
-        openChaptered(chapters, trustStoredPages) { ch -> openLocalChapter(walker, ch) }
+        openChaptered(chapters, trustStoredPages) { ch -> openLocalChapter(walker, ch, audit) }
 
     /** 本地的一章：目录、压缩包或 PDF */
-    private fun openLocalChapter(walker: SafWalker, ch: ChapterEntity): BookSource = when (ch.chapterKind) {
-        ChapterEntity.KIND_ARCHIVE -> openArchive(walker, ch.chapterRef)
+    private fun openLocalChapter(
+        walker: SafWalker,
+        ch: ChapterEntity,
+        audit: Boolean,
+    ): BookSource = when (ch.chapterKind) {
+        ChapterEntity.KIND_ARCHIVE -> openArchive(walker, ch.chapterRef, refresh = audit)
         ChapterEntity.KIND_PDF -> openPdf(walker, ch.chapterRef)
-        else -> openFolder(walker, ch.chapterRef, ch.title)
+        else -> openFolder(walker, ch.chapterRef, ch.title, strict = audit)
     }
 
     /**
@@ -538,15 +584,21 @@ class BookOpener(private val context: Context) {
         dirId: String,
         prefix: String,
         depth: Int = 0,
+        strict: Boolean = false,
     ): List<Pair<String, String>> {
         if (depth > 2) return emptyList()
         val out = ArrayList<Pair<String, String>>()
-        // 读不到就当作这一层没有图：阅读路径上页少一页比整个书打不开好，
-        // 扫描路径用 SafWalker 的 null 自行判断要不要报错
-        for (node in walker.list(dirId).orEmpty()) {
+        // 阅读路径上读不到就当作这一层没有图：页少一页比整个书打不开好。
+        // 健康检查（strict）相反——读不到必须报错，不能把「目录删了 / 没权限」说成「没有图片页」。
+        val nodes = walker.list(dirId)
+        if (nodes == null) {
+            if (strict) throw java.io.IOException("目录读不到：$dirId")
+            return emptyList()
+        }
+        for (node in nodes) {
             val path = if (prefix.isEmpty()) node.name else "$prefix/${node.name}"
             when {
-                node.isDir -> out += listImages(walker, node.docId, path, depth + 1)
+                node.isDir -> out += listImages(walker, node.docId, path, depth + 1, strict)
                 ImageNames.isImage(node.name) -> out += path to node.docId
             }
         }

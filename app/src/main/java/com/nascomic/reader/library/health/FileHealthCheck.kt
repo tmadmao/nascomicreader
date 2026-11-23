@@ -53,45 +53,26 @@ class FileHealthCheck(
         val books = db.bookDao().bySourceNow(source.id)
 
         // 连不上就别逐本试：那样每一本都会被记成坏包
+        ensureActive(isCancelled)
         probe(source)
+        ensureActive(isCancelled)
 
         val issues = ArrayList<HealthIssue>()
         if (books.isEmpty()) return@withContext HealthReport(0, 0, 0, issues)
 
-        listener?.onStart(books.size)
-        var checked = 0
-        var skipped = 0
-        var stoppedEarly = false
-
-        for (book in books) {
-            if (isCancelled()) throw Cancelled()
-            listener?.onProgress(book.displayTitle, checked, books.size)
-
-            val chapters = chaptersOf(book)
-            when (val outcome = inspect(book, source, chapters)) {
-                Outcome.Clean -> Unit
-                is Outcome.Bad -> issues += outcome.issue
-                Outcome.Unsure -> {
-                    skipped++
-                    // 书源整个失联时，别把剩下上百本都当坏包；已经查出来的照常报
-                    if (!probeQuiet(source)) {
-                        stoppedEarly = true
-                        checked++
-                        break
-                    }
-                }
-            }
-            checked++
-        }
-
-        listener?.onProgress("", checked, books.size)
-        HealthReport(books.size, checked, skipped, issues, stoppedEarly)
+        runHealthCheck(
+            books = books,
+            listener = listener,
+            isCancelled = isCancelled,
+            inspect = { book -> inspect(book, source, chaptersOf(book), isCancelled) },
+            probeQuiet = { probeQuiet(source) },
+        )
     }
 
     private suspend fun chaptersOf(book: BookEntity): List<ChapterEntity> =
         if (book.isSingleVolume == 1) emptyList() else db.chapterDao().forBook(book.id)
 
-    private sealed class Outcome {
+    internal sealed class Outcome {
         object Clean : Outcome()
         class Bad(val issue: HealthIssue) : Outcome()
 
@@ -107,14 +88,19 @@ class FileHealthCheck(
         book: BookEntity,
         source: SourceEntity,
         chapters: List<ChapterEntity>,
+        isCancelled: () -> Boolean,
     ): Outcome {
         // 两次失败的原因取「最具体」的那个：末尾那次多半是 libarchive 兜底报的「读不出来」，
         // 把它盖在「不是 zip」上面，用户就看不到真正的成因
         var cause = HealthIssue.Cause.OTHER
         repeat(2) { attempt ->
+            ensureActive(isCancelled)
             try {
                 opener.openForAudit(book, source, chapters).use { src ->
+                    // 打开归档可能已花掉几秒：先看取消，再决定要不要数页
+                    ensureActive(isCancelled)
                     val actual = src.pageCount
+                    ensureActive(isCancelled)
                     val kind = FileHealthRules.judge(book.pageTotal, actual)
                     return if (kind == null) {
                         Outcome.Clean
@@ -130,16 +116,23 @@ class FileHealthCheck(
                         )
                     }
                 }
+            } catch (e: Cancelled) {
+                throw e
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 val found = FileHealthRules.causeOf(e, book.format)
                 if (cause == HealthIssue.Cause.OTHER) cause = found
-                if (attempt == 0) Thread.sleep(200)
+                if (attempt == 0) {
+                    Thread.sleep(200)
+                    ensureActive(isCancelled)
+                }
             }
         }
 
+        ensureActive(isCancelled)
         if (!probeQuiet(source)) return Outcome.Unsure
+        ensureActive(isCancelled)
         return Outcome.Bad(
             HealthIssue(
                 bookId = book.id,
@@ -178,4 +171,56 @@ class FileHealthCheck(
 
     private fun probeQuiet(source: SourceEntity): Boolean =
         runCatching { probe(source) }.isSuccess
+}
+
+internal fun ensureActive(isCancelled: () -> Boolean) {
+    if (isCancelled()) throw FileHealthCheck.Cancelled()
+}
+
+/**
+ * 逐本检查的循环，抽出来是为了能在 JVM 单测里塞一个假 [inspect] 验取消。
+ *
+ * 取消点有三处：每本开始前、一本检查完、全部检查完。最后这处不能省——
+ * 用户可能在最后一本检查期间按取消，此时若直接返回报告，界面会当成「检查完成」。
+ */
+internal suspend fun runHealthCheck(
+    books: List<BookEntity>,
+    listener: FileHealthCheck.Listener?,
+    isCancelled: () -> Boolean,
+    inspect: suspend (BookEntity) -> FileHealthCheck.Outcome,
+    probeQuiet: () -> Boolean,
+): HealthReport {
+    val issues = ArrayList<HealthIssue>()
+    listener?.onStart(books.size)
+    var checked = 0
+    var skipped = 0
+    var stoppedEarly = false
+
+    for (book in books) {
+        ensureActive(isCancelled)
+        listener?.onProgress(book.displayTitle, checked, books.size)
+
+        val outcome = inspect(book)
+        // 检查一本期间用户可能已经按了取消：这本的结论不再入账，直接收手
+        ensureActive(isCancelled)
+        when (outcome) {
+            FileHealthCheck.Outcome.Clean -> Unit
+            is FileHealthCheck.Outcome.Bad -> issues += outcome.issue
+            FileHealthCheck.Outcome.Unsure -> {
+                skipped++
+                // 书源整个失联时，别把剩下上百本都当坏包；已经查出来的照常报
+                if (!probeQuiet()) {
+                    stoppedEarly = true
+                    checked++
+                    break
+                }
+            }
+        }
+        checked++
+    }
+
+    // 最后一本检查完也要再看一次：此时按取消不能被当成「检查完成」
+    ensureActive(isCancelled)
+    listener?.onProgress("", checked, books.size)
+    return HealthReport(books.size, checked, skipped, issues, stoppedEarly)
 }

@@ -135,7 +135,7 @@
                     android:textColor="@color/shell_ink_muted"
                     android:textSize="11sp" />
 
-                <!-- 真实文件 / 文件夹路径：长按可复制，找书时能直接对到文件管理器 -->
+                <!-- 真实文件 / 文件夹路径：单行中间省略，头尾都看得见；长按可复制 -->
                 <TextView
                     android:id="@+id/path_line"
                     android:layout_width="match_parent"
@@ -144,7 +144,8 @@
                     android:ellipsize="middle"
                     android:fontFamily="monospace"
                     android:longClickable="true"
-                    android:maxLines="3"
+                    android:maxLines="1"
+                    android:singleLine="true"
                     android:textColor="@color/shell_ink_faint"
                     android:textSize="10sp" />
             </LinearLayout>
