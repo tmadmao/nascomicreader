@@ -7,12 +7,12 @@ import com.nascomic.reader.library.data.SourceEntity
  * 书在来源里的真实位置，详情页用它回答「这本来得到底来自哪个文件」。
  *
  * 三种来源的 `doc_ref` 口径不同：
- * - 本地：SAF 文档 id，形如 `primary:Download/漫画/海贼王01卷.zip`
+ * - 本地：SAF 文档 id，形如 `primary:Download/漫画/示例漫画01卷.zip`
  * - WebDAV：完整 URL
  * - SMB：共享内相对路径
  *
  * 这里统一成「从存储卷 / 共享根算起」的路径，用户选的那层目录保留在路径里，
- * 所以 `漫画/海贼王01卷.zip` 能直接对到文件管理器里看到的层级。
+ * 所以 `漫画/示例漫画01卷.zip` 能直接对到文件管理器里看到的层级。
  */
 object BookLocation {
 

@@ -10,9 +10,9 @@ class BookLocationTest {
     @Test
     fun `本地书去掉卷前缀，保留选的那层目录`() {
         assertEquals(
-            "Download/漫画/海贼王01卷.zip",
+            "Download/漫画/示例漫画01卷.zip",
             BookLocation.displayPath(
-                "primary:Download/漫画/海贼王01卷.zip",
+                "primary:Download/漫画/示例漫画01卷.zip",
                 BookEntity.FORMAT_ZIP,
                 SourceEntity.KIND_LOCAL,
             ),
@@ -22,18 +22,18 @@ class BookLocationTest {
     @Test
     fun `目录书带尾斜杠`() {
         assertEquals(
-            "Download/漫画/海贼王/",
+            "Download/漫画/示例漫画/",
             BookLocation.displayPath(
-                "primary:Download/漫画/海贼王",
+                "primary:Download/漫画/示例漫画",
                 BookEntity.FORMAT_FOLDER,
                 SourceEntity.KIND_LOCAL,
             ),
         )
         // 本来就是尾斜杠的别再加一条
         assertEquals(
-            "Download/漫画/海贼王/",
+            "Download/漫画/示例漫画/",
             BookLocation.displayPath(
-                "primary:Download/漫画/海贼王/",
+                "primary:Download/漫画/示例漫画/",
                 BookEntity.FORMAT_FOLDER,
                 SourceEntity.KIND_LOCAL,
             ),

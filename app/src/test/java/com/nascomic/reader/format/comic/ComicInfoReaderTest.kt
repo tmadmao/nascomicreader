@@ -18,13 +18,13 @@ class ComicInfoReaderTest {
     fun `作者与卷号`() {
         val meta = ComicInfoReader.parse(xml(
             """
-            <Series>海贼王</Series>
+            <Series>示例系列</Series>
             <Number>3</Number>
             <Volume>2020</Volume>
-            <Writer>尾田荣一郎</Writer>
+            <Writer>示例作者</Writer>
             """.trimIndent()
         ))
-        assertEquals("尾田荣一郎", meta.writer)
+        assertEquals("示例作者", meta.writer)
         // Number 是册号，优先于 Volume；2020 那种年份 Volume 本就不该当卷号
         assertEquals("3", meta.volume)
     }
