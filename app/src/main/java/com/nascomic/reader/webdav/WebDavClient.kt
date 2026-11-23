@@ -106,29 +106,92 @@ class WebDavClient(
      * 先写同目录的 `.part`，长度核对通过再改名到最终路径。
      * 直写最终文件的话，一次中断就会留下半份，而打开端只判「存在且非空」——
      * 那本书从此再也打不开，网络恢复也不会重下。
+     *
+     * [isCancelled] 为真时由看门线程调 `Call.cancel()`，把阻塞中的 socket 读直接断开；
+     * 只靠拷贝循环里查标志挡不住服务器不发数据的情况。
      */
-    fun download(url: String, out: java.io.File) {
-        client.newCall(request(url).build()).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw WebDavException(response.code, "下载失败：HTTP ${response.code}")
+    fun download(
+        url: String,
+        out: java.io.File,
+        isCancelled: () -> Boolean = { false },
+    ) {
+        val call = client.newCall(request(url).build())
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        val watcher = Thread({
+            while (!finished.get()) {
+                if (isCancelled()) {
+                    call.cancel()
+                    return@Thread
+                }
+                try {
+                    Thread.sleep(100)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
             }
-            val body = response.body ?: throw WebDavException(response.code, "响应为空")
-            val expected = response.header("Content-Length")?.toLongOrNull() ?: -1L
-            val tmp = java.io.File(out.parentFile, out.name + ".part")
-            runCatching { tmp.delete() }
-            val written = try {
-                tmp.outputStream().use { sink -> body.byteStream().copyTo(sink) }
-            } catch (e: Exception) {
+        }, "dav-download-cancel").apply {
+            isDaemon = true
+            start()
+        }
+
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw WebDavException(response.code, "下载失败：HTTP ${response.code}")
+                }
+                val body = response.body ?: throw WebDavException(response.code, "响应为空")
+                val expected = response.header("Content-Length")?.toLongOrNull() ?: -1L
+                val tmp = java.io.File(out.parentFile, out.name + ".part")
                 runCatching { tmp.delete() }
-                if (e is WebDavException) throw e
-                // 连接中途断了：换成自家异常，界面才好按「网络问题」说话
-                throw WebDavException(0, "下载中断：${e.message ?: e.javaClass.simpleName}")
+                val written = try {
+                    tmp.outputStream().use { sink ->
+                        body.byteStream().use { input ->
+                            copyCheckingCancel(input, sink, isCancelled)
+                        }
+                    }
+                } catch (e: Exception) {
+                    runCatching { tmp.delete() }
+                    if (isCancelled()) throw java.io.InterruptedIOException("已取消")
+                    if (e is WebDavException) throw e
+                    // 连接中途断了：换成自家异常，界面才好按「网络问题」说话
+                    throw WebDavException(0, "下载中断：${e.message ?: e.javaClass.simpleName}")
+                }
+                if (isCancelled()) {
+                    runCatching { tmp.delete() }
+                    throw java.io.InterruptedIOException("已取消")
+                }
+                if (expected >= 0 && written != expected) {
+                    runCatching { tmp.delete() }
+                    throw WebDavException(response.code, "下载不完整：$written / $expected 字节")
+                }
+                publish(tmp, out)
             }
-            if (expected >= 0 && written != expected) {
-                runCatching { tmp.delete() }
-                throw WebDavException(response.code, "下载不完整：$written / $expected 字节")
-            }
-            publish(tmp, out)
+        } catch (e: WebDavException) {
+            if (isCancelled()) throw java.io.InterruptedIOException("已取消")
+            throw e
+        } catch (e: Exception) {
+            if (isCancelled()) throw java.io.InterruptedIOException("已取消")
+            throw e
+        } finally {
+            finished.set(true)
+            watcher.interrupt()
+        }
+    }
+
+    /** 边拷边看取消标志：服务器慢慢发数据时，至少每个缓冲块都有一次机会 */
+    private fun copyCheckingCancel(
+        input: java.io.InputStream,
+        sink: java.io.OutputStream,
+        isCancelled: () -> Boolean,
+    ): Long {
+        val buffer = ByteArray(8192)
+        var total = 0L
+        while (true) {
+            if (isCancelled()) throw java.io.InterruptedIOException("已取消")
+            val n = input.read(buffer)
+            if (n < 0) return total
+            sink.write(buffer, 0, n)
+            total += n
         }
     }
 

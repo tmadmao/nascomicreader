@@ -133,13 +133,41 @@ class SmbClient(
      * 与 WebDAV 同一套做法：先写 `.part`，核过长度再改名。
      * 直写最终文件时，连接一断就留下半份，而打开端只判「存在且非空」——
      * 那本书从此打不开，也不会自己重下。
+     *
+     * smbj 的 `read` 没有取消入口，所以起一个看门线程；用户按取消时直接断开会话，
+     * 让阻塞中的读立刻失败。只查循环标志的话，服务器不发数据时会一直卡在那里。
      */
-    fun download(path: String, out: File) {
+    fun download(
+        path: String,
+        out: File,
+        isCancelled: () -> Boolean = { false },
+    ) {
         val file = open(path)
         val expected = runCatching { file.length }.getOrDefault(-1L)
         val tmp = File(out.parentFile, out.name + ".part")
         runCatching { tmp.delete() }
-        val written = try {
+
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        val watcher = Thread({
+            while (!finished.get()) {
+                if (isCancelled()) {
+                    // 先掐传输层：file.close() 要等服务端回 close 响应，服务器不发数据时
+                    // 它自己也可能卡住；直接关 socket 才能让阻塞中的 read 立刻失败
+                    runCatching { client.close() }
+                    return@Thread
+                }
+                try {
+                    Thread.sleep(100)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+            }
+        }, "smb-download-cancel").apply {
+            isDaemon = true
+            start()
+        }
+
+        try {
             var count = 0L
             val counter = object : java.io.FilterOutputStream(tmp.outputStream()) {
                 override fun write(b: Int) {
@@ -153,19 +181,23 @@ class SmbClient(
                 }
             }
             counter.use { file.read(it) }
-            count
+            if (isCancelled()) throw java.io.InterruptedIOException("已取消")
+            if (expected >= 0 && count != expected) {
+                runCatching { tmp.delete() }
+                throw SmbException("下载不完整：$count / $expected 字节（$path）")
+            }
+            if (out.exists()) runCatching { out.delete() }
+            if (!tmp.renameTo(out)) {
+                tmp.copyTo(out, overwrite = true)
+                runCatching { tmp.delete() }
+            }
         } catch (e: Exception) {
             runCatching { tmp.delete() }
+            if (isCancelled()) throw java.io.InterruptedIOException("已取消")
             throw classify(e, "下载失败：$path")
-        }
-        if (expected >= 0 && written != expected) {
-            runCatching { tmp.delete() }
-            throw SmbException("下载不完整：$written / $expected 字节（$path）")
-        }
-        if (out.exists()) runCatching { out.delete() }
-        if (!tmp.renameTo(out)) {
-            tmp.copyTo(out, overwrite = true)
-            runCatching { tmp.delete() }
+        } finally {
+            finished.set(true)
+            watcher.interrupt()
         }
     }
 

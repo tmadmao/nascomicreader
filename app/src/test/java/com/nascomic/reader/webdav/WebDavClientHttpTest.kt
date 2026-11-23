@@ -11,7 +11,11 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.net.InetSocketAddress
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 /**
  * 对着真的 HTTP 服务验证客户端行为——不是拿假数据调解析函数。
@@ -38,6 +42,14 @@ class WebDavClientHttpTest {
     private var fileBytes: ByteArray = ByteArray(0)
     private var sendHalf = false
 
+    /** 逐小块慢发，模拟 NAS 传大文件时用户按了取消 */
+    private var slowStream = false
+
+    /** 发完响应头后一个字节都不发：只有掐断连接才能让 read 返回 */
+    private var stallAfterHeaders = false
+    private val headersSent = CountDownLatch(1)
+    private val releaseStall = CountDownLatch(1)
+
     @Before
     fun setUp() {
         primary = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -59,6 +71,7 @@ class WebDavClientHttpTest {
 
     @After
     fun tearDown() {
+        releaseStall.countDown()
         primary.stop(0)
         other.stop(0)
     }
@@ -126,6 +139,61 @@ class WebDavClientHttpTest {
     }
 
     @Test
+    fun `取消能中断慢下载并清掉半份文件`() {
+        fileBytes = ByteArray(2 * 1024 * 1024) { it.toByte() }
+        sendHalf = false
+        slowStream = true
+        val out = File.createTempFile("dav-cancel", ".bin").apply { delete() }
+        val client = WebDavClient("u", "p", origin())
+        val deadline = System.currentTimeMillis() + 150
+
+        // 看门线程会调 Call.cancel()，阻塞在 read 时也能立刻断开，不用等服务器发完
+        val error = runCatching {
+            client.download(origin() + "/dav/a.7z", out) {
+                System.currentTimeMillis() > deadline
+            }
+        }.exceptionOrNull()
+
+        assertTrue("取消应报中断，实际是 $error", error is java.io.InterruptedIOException)
+        assertFalse("取消后不能留下最终文件", out.exists())
+        assertFalse("取消后不能留下 .part", File(out.parentFile, out.name + ".part").exists())
+    }
+
+    @Test
+    fun `取消能打断服务器完全不发数据的下载`() {
+        fileBytes = ByteArray(1024 * 1024) { it.toByte() }
+        sendHalf = false
+        stallAfterHeaders = true
+        val out = File.createTempFile("dav-stall", ".bin").apply { delete() }
+        val client = WebDavClient("u", "p", origin())
+        val cancelled = AtomicBoolean(false)
+        var error: Throwable? = null
+        val worker = thread(name = "dav-stall-test") {
+            error = runCatching {
+                client.download(origin() + "/dav/a.7z", out) { cancelled.get() }
+            }.exceptionOrNull()
+        }
+        try {
+            // 响应头已经回来、正文一个字节都没有：此时线程一定阻塞在 read 上
+            assertTrue("服务端应已发出响应头", headersSent.await(2, TimeUnit.SECONDS))
+            Thread.sleep(100)
+            val started = System.currentTimeMillis()
+            cancelled.set(true)
+            worker.join(1500)
+            val elapsed = System.currentTimeMillis() - started
+
+            assertFalse("取消后下载线程仍在 read 上阻塞", worker.isAlive)
+            assertTrue("取消应报中断，实际是 $error", error is java.io.InterruptedIOException)
+            assertTrue("取消后应秒级返回，实际 $elapsed ms", elapsed < 1000)
+            assertFalse("取消后不能留下最终文件", out.exists())
+            assertFalse("取消后不能留下 .part", File(out.parentFile, out.name + ".part").exists())
+        } finally {
+            releaseStall.countDown()
+            worker.join(500)
+        }
+    }
+
+    @Test
     fun `没有站点信息时不额外限制`() {
         // 手动浏览远端目录时还不知道站点，行为与改动前一致
         listingXml = { multiStatus("/dav/") }
@@ -163,8 +231,24 @@ class WebDavClientHttpTest {
                 if (ex.requestMethod != "HEAD") {
                     val send = if (sendHalf) total / 2 else total
                     runCatching {
-                        ex.responseBody.write(fileBytes, 0, send)
-                        ex.responseBody.flush()
+                        if (stallAfterHeaders) {
+                            headersSent.countDown()
+                            // 等测试取消；不取消就一直扣着，正文一个字节也不发
+                            releaseStall.await(5, TimeUnit.SECONDS)
+                        } else if (slowStream) {
+                            val chunk = 16 * 1024
+                            var offset = 0
+                            while (offset < send) {
+                                val n = minOf(chunk, send - offset)
+                                ex.responseBody.write(fileBytes, offset, n)
+                                ex.responseBody.flush()
+                                offset += n
+                                Thread.sleep(20)
+                            }
+                        } else {
+                            ex.responseBody.write(fileBytes, 0, send)
+                            ex.responseBody.flush()
+                        }
                     }
                 }
                 // 少发一半就关门：模拟网络中断

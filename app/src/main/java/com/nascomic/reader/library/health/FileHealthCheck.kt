@@ -96,7 +96,7 @@ class FileHealthCheck(
         repeat(2) { attempt ->
             ensureActive(isCancelled)
             try {
-                opener.openForAudit(book, source, chapters).use { src ->
+                opener.openForAudit(book, source, chapters, isCancelled).use { src ->
                     // 打开归档可能已花掉几秒：先看取消，再决定要不要数页
                     ensureActive(isCancelled)
                     val actual = src.pageCount
@@ -121,6 +121,9 @@ class FileHealthCheck(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // 下载被取消时，底下的 socket/句柄会抛各种不同的异常；
+                // 先看取消标志，别把「用户按了取消」误报成「这本书打不开」
+                if (isCancelled()) throw Cancelled()
                 val found = FileHealthRules.causeOf(e, book.format)
                 if (cause == HealthIssue.Cause.OTHER) cause = found
                 if (attempt == 0) {
