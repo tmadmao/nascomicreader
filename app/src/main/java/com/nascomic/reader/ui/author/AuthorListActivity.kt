@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.author
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -9,6 +11,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.snackbar.Snackbar
+import com.nascomic.reader.library.author.AuthorMerger
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.nascomic.reader.R
@@ -20,6 +26,7 @@ import com.nascomic.reader.library.author.AuthorIndex
 import com.nascomic.reader.library.data.AuthorCount
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.ui.MainActivity
+import com.nascomic.reader.ui.widget.AppDialogs
 import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -35,6 +42,7 @@ class AuthorListActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAuthorListBinding
     private val db by lazy { ReaderDatabase.get(this) }
+    private val merger by lazy { AuthorMerger(db) }
     private lateinit var adapter: Adapter
 
     private var all: List<AuthorCount> = emptyList()
@@ -58,7 +66,7 @@ class AuthorListActivity : AppCompatActivity() {
                 }
                 startActivity(intent)
             },
-            onLongClick = { name -> askRename(name) },
+            onLongClick = { name -> showAuthorMenu(name) },
         )
         binding.list.layoutManager = LinearLayoutManager(this)
         binding.list.adapter = adapter
@@ -85,7 +93,7 @@ class AuthorListActivity : AppCompatActivity() {
         })
 
         readExtraQuery()
-        load()
+        observeMerge()
     }
 
     private fun readExtraQuery() {
@@ -102,20 +110,39 @@ class AuthorListActivity : AppCompatActivity() {
             val unknown = withContext(Dispatchers.IO) { db.bookDao().booksWithoutAuthor() }
             all = data
             unknownTotal = unknown
-            binding.subtitle.text = getString(
-                R.string.author_page_subtitle,
-                data.size,
-                data.sumOf { it.total } + unknown,
-            )
             render()
         }
     }
 
-    private fun render() {
-        val visible = if (query.isEmpty()) {
-            all
+    /**
+     * 还没提交的合并先在列表上「预演」出来。
+     *
+     * 5 秒窗口内库里还没改，但用户点了合并就得立刻看到结果。
+     */
+    private fun withPendingMerge(list: List<AuthorCount>): List<AuthorCount> {
+        val p = merger.pending() ?: return list
+        val moved = list.firstOrNull { it.name == p.from } ?: return list
+        val rest = list.filterNot { it.name == p.from }
+        val hit = rest.firstOrNull { it.name == p.canonical }
+        return if (hit == null) {
+            // 正名是新起的名字：补一行
+            rest + AuthorCount(p.canonical, moved.total)
         } else {
-            all.filter { it.name.contains(query, ignoreCase = true) }
+            rest.map { if (it.name == p.canonical) AuthorCount(p.canonical, it.total + moved.total) else it }
+        }
+    }
+
+    private fun render() {
+        val merged = withPendingMerge(all)
+        binding.subtitle.text = getString(
+            R.string.author_page_subtitle,
+            merged.size,
+            merged.sumOf { it.total } + unknownTotal,
+        )
+        val visible = if (query.isEmpty()) {
+            merged
+        } else {
+            merged.filter { it.name.contains(query, ignoreCase = true) }
         }
         val sections = visible
             .groupBy { AuthorIndex.letter(it.name) }
@@ -141,7 +168,92 @@ class AuthorListActivity : AppCompatActivity() {
         binding.list.isVisible = rows.isNotEmpty()
         binding.indexBar.isVisible = rows.isNotEmpty()
         binding.empty.isVisible = rows.isEmpty() && query.isEmpty()
-        binding.indexBar.setLetters(sections.keys.toList(), null)
+        // 索引条只认「页面上真有的节」：# 节是上面另外补出来的一行，
+        // 不并进来，全是未知作者时条子就是一条空胶囊，按不动也看不见
+        val barLetters = sections.keys.toMutableList()
+        if (query.isEmpty() && unknownTotal > 0 && AuthorIndex.OTHER !in barLetters) {
+            barLetters += AuthorIndex.OTHER
+        }
+        binding.indexBar.setLetters(barLetters, null)
+    }
+
+    /** 长按作者：改名，或把这条并到另一位作者名下 */
+    private fun showAuthorMenu(name: String) {
+        val actions = arrayOf(
+            getString(R.string.author_menu_rename),
+            getString(R.string.author_menu_merge),
+        )
+        AppDialogs.menu(this, name, actions.toList()) { which ->
+            if (which == 0) askRename(name) else askMerge(name)
+        }
+    }
+
+    /**
+     * 合并面板：选已有作者或输入新名字。
+     *
+     * 名单用页面上已经读到的全量作者（不受搜索框过滤影响）——合并的目标不该被
+     * 当前页面的搜索范围限制。
+     */
+    private fun askMerge(old: String) {
+        AuthorMergeSheet(
+            context = this,
+            source = old,
+            candidates = all,
+            onConfirm = { target -> mergeInto(old, target) },
+        ).show()
+    }
+
+    /**
+     * 5 秒撤销窗口：界面先按「合并后」显示，到点才落库。
+     *
+     * 窗口内点撤销等于取消这次合并——库里一个字都没改，所以不存在「回退到哪一份快照」
+     * 的问题：窗口里扫进来的书和用户早先手动改过的书都不会被误伤。
+     */
+    private fun mergeInto(from: String, to: String) {
+        lifecycleScope.launch {
+            if (merger.prepare(from, to) == null) {
+                val message = if (merger.pending() != null) R.string.author_merge_busy
+                    else R.string.author_merge_need_target
+                android.widget.Toast.makeText(this@AuthorListActivity, message, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun observeMerge() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var bar: Snackbar? = null
+                var shown: AuthorMerger.Pending? = null
+                try {
+                    merger.window.collect { state ->
+                        render()
+                        val pending = state.pending?.takeUnless { state.committing }
+                        if (shown !== pending) {
+                            bar?.dismiss()
+                            shown = pending
+                            bar = pending?.let { ticket ->
+                                val remaining = ticket.remainingMs().toInt()
+                                if (remaining == 0) null else Snackbar.make(binding.root,
+                                    getString(R.string.author_merge_done, ticket.from, ticket.canonical), remaining)
+                                    .setAction(R.string.author_merge_undo) {
+                                        if (merger.cancelWindow(ticket)) {
+                                            android.widget.Toast.makeText(this@AuthorListActivity,
+                                                R.string.author_merge_undo_done, android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }.also { it.show() }
+                            }
+                        }
+                        if (state.pending == null || all.isEmpty()) load()
+                        state.failed?.takeIf(merger::consumeFailure)?.let {
+                            android.widget.Toast.makeText(this@AuthorListActivity,
+                                R.string.author_merge_failed, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } finally {
+                    bar?.dismiss()
+                }
+            }
+        }
     }
 
     /** 长按作者：整批改名，别让同一个人分成两条 */
@@ -162,7 +274,7 @@ class AuthorListActivity : AppCompatActivity() {
             })
             addView(input)
         }
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.author_rename_title)
             .setView(box)
             .setNegativeButton(R.string.action_cancel, null)

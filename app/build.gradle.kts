@@ -32,8 +32,8 @@ android {
         applicationId = "com.nascomic.reader"
         minSdk = 24
         targetSdk = 37
-        versionCode = 34
-        versionName = "1.7.1"
+        versionCode = 40
+        versionName = "2.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

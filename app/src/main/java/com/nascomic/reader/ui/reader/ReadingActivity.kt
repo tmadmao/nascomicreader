@@ -4,19 +4,23 @@ import android.content.res.Configuration
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.os.Bundle
-import android.view.WindowManager
-import android.widget.Toast
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import android.widget.ArrayAdapter
+import android.widget.Spinner
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
@@ -25,7 +29,9 @@ import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.tabs.TabLayout
 import com.nascomic.reader.R
 import com.nascomic.reader.databinding.ActivityReaderBinding
 import com.nascomic.reader.format.BookOpener
@@ -34,13 +40,20 @@ import com.nascomic.reader.format.RenderedPageSource
 import com.nascomic.reader.format.pagePosition
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.BookmarkEntity
+import com.nascomic.reader.library.data.PageEditEntity
 import com.nascomic.reader.library.data.ProgressEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.ReaderPrefs
 import com.nascomic.reader.settings.applyOrientation
+import com.nascomic.reader.ui.reader.PageEdits.Companion.isEmpty
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,14 +84,14 @@ class ReadingActivity : AppCompatActivity() {
         /** 低清预览按目标尺寸的几分之一解：二分之后面积是四分之一，够看出画面是什么 */
         private const val PREVIEW_DIVISOR = 2
 
-        /** 竖向窗口：当前页前留一页、后留四页，滚到头再按需接下一张 */
+            /** 竖向窗口：当前页前留一页、后留四页，滚到头再按需接下一张 */
         private const val VERTICAL_BACK = 1
         private const val VERTICAL_AHEAD = 4
 
-        /** 竖排窗口最多留几页：超过这个数怎么也要收，再多滚动本身也变笨重 */
+        /** 竖排窗口的收窗阈值（按段）：超过时优先裁视口外的整页 */
         private const val VERTICAL_MAX_PAGES = 12
 
-        /** 竖排窗口至少留几页：太少了接页会一顿一顿 */
+        /** 竖排窗口至少留几段：太少了接页会一顿一顿 */
         private const val VERTICAL_MIN_PAGES = 3
 
         /** 横向滑动翻页的最低速度（px/s）：太慢的滑动当作没滑 */
@@ -90,6 +103,18 @@ class ReadingActivity : AppCompatActivity() {
         /** 竖排惯性滑动的时长，以及一帧按多少秒折算位移 */
         private const val VERTICAL_FLING_MS = 520L
         private const val FRAME_SECONDS = 0.016f
+
+        /** 横置页判定用的小图长边：判定只看字行走向，不需要细节 */
+        private const val JUDGE_SIDE = 320
+
+        /** 横置页提示停留多久：够看清，又不长期压着画面 */
+        private const val SIDEWAYS_HINT_MS = 6000L
+
+        /** 暖色薄膜的淡入淡出时长：短到不挡视线，长到看得出是「开了」 */
+        private const val WARM_TINT_MS = 160L
+
+        /** 自动下滑的计时周期：animator 每 1 秒循环一轮，帧间差值折算位移 */
+        private const val AUTO_TICK_MS = 1000L
     }
 
     private lateinit var binding: ActivityReaderBinding
@@ -101,6 +126,12 @@ class ReadingActivity : AppCompatActivity() {
     private lateinit var prefs: ReaderPrefs
     private val appPrefs by lazy { AppPrefs(this) }
 
+    /**
+     * 只读全局的那一份。护眼暖色是一层整屏薄膜，不是一本书的版面，
+     * 换本书还开着才符合直觉，所以读写都走全局。
+     */
+    private val globalPrefs by lazy { ReaderPrefs(this) }
+
     private var source: BookSource? = null
 
     /** 解码与关源互斥用的锁；关源后 [sourceClosed] 置真，后续解码直接放弃 */
@@ -111,18 +142,50 @@ class ReadingActivity : AppCompatActivity() {
     private var bookId: Long = 0
     private var requestedPage: Int = -1
     private var page = 0
+    private var exactJumpPage = -1
     private var total = 0
 
     /** 是否有章的概念。单行本没有，页码按全书算 */
     private var chaptered = false
+    private var opening = true
     private var loading = false
     private var toolbarShown = false
     /** 当前这一屏画了几页：双页开启时可能是 2，翻页步进跟着变 */
     private var shownPages = 1
     /** 跨页拆分：0 看左半，1 看右半。只在宽图上生效 */
     private var half = 0
-    /** 当前页是不是宽图 */
-    private var currentWide = false
+    /** 当前屏是不是拆页的一半 */
+    private var currentSplit = false
+
+    /**
+     * 横置页：一页横着扫进来，内容要转 90° 才是正的。
+     * 提示过的页和尚未确认的角度只活在本次阅读里。
+     */
+    private val hintedPages = HashSet<Int>()
+    private val rotatedDegrees = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+    /** 这一页已经转过几次，用来兜住「转满一圈还在转」的误判 */
+    private var keepHintOnShow = false
+    @Volatile private var pageEdits = PageEdits.Empty
+    @Volatile private var checkedEditPages = emptySet<Int>()
+    private val verifiedProofs = HashMap<Int, String>() // 只在 IO 上顺序读写
+    private var editing = false
+    private var bookAtOpen: BookEntity? = null
+
+    /** 这一条手势是按在横置提示卡上起的，整条都不当翻页手势处理 */
+    private var touchOnSidewaysHint = false
+    private var sidewaysHintPage = -1
+
+    /** 转过的那一页只留一份，翻走再翻回来不用重转 */
+    private var rotatedIndex = -1
+    private var rotatedAngle = 0
+    private var rotatedEntry: PageCache.Entry? = null
+    /** 旋转结果是哪张源图转出来的：预览小图与高清正片不是同一张，不能互相顶替 */
+    private var rotatedSource: Bitmap? = null
+    /** 旋转时用的裁边参数：同一张图上改了裁边，旧旋转结果也要作废 */
+    private var rotatedTrimKey: String? = null
+
+    private val hideSidewaysHintRunnable = Runnable { if (binding.sidewaysHint.isVisible) hideSidewaysHint() }
     /** 当前页有没有书签 */
     private var bookmarked = false
     /** 是否停在「书的尾」整屏空态上 */
@@ -172,8 +235,14 @@ class ReadingActivity : AppCompatActivity() {
     /** 分区提示每次进阅读只闪一次 */
     private var zoneHintShown = false
 
-    /** 竖向窗口里第一页的全局页号，页码与进度都按它换算 */
-    private var verticalFirst = 0
+    /** 竖向窗口的槽位 ↔ 全局页号映射：宽图拆上下时一页占两段，页码与接页都经这张表换算 */
+    private val verticalSlots = PageSlots()
+
+    /** 正在后台解码待接的页：自动下滑每一帧都会问边界页，同一页不能反复发起解码 */
+    private val attachingPages = HashSet<Int>()
+
+    /** 后台返回重建竖向窗口时落回页内原处，而不是该页开头（拆页下半段不停回上半段） */
+    private var keepVerticalOffset = false
     private var lastSaveAt = 0L
 
     /** 上一屏还在解的时候又翻了一次：解完立刻补画，别把这次点击丢掉 */
@@ -209,8 +278,14 @@ class ReadingActivity : AppCompatActivity() {
         prefs = ReaderPrefs(this, bookId)
         binding.back.setOnClickListener { finish() }
         binding.openToc.setOnClickListener { showTocSheet() }
+        binding.editPage.setOnClickListener { choosePageEdit() }
         binding.toc.setOnClickListener { showTocSheet() }
         binding.bookmark.setOnClickListener { toggleBookmark() }
+        binding.warm.setOnClickListener { toggleWarmTint() }
+        binding.auto.setOnClickListener { toggleAutoScroll() }
+        binding.autoSlower.setOnClickListener { adjustAutoSpeed(-1) }
+        binding.autoFaster.setOnClickListener { adjustAutoSpeed(1) }
+        binding.autoStop.setOnClickListener { stopAutoScroll() }
         binding.prevPage.setOnClickListener { turnBackward() }
         binding.nextPage.setOnClickListener { turnForward() }
         binding.openSettings.setOnClickListener {
@@ -227,6 +302,12 @@ class ReadingActivity : AppCompatActivity() {
             )
         }
         binding.endBack.setOnClickListener { backToShelf() }
+        binding.sidewaysRotate.setOnClickListener { rotateCurrentPage() }
+        binding.sidewaysSkip.setOnClickListener {
+            val angle = rotatedDegrees[page]
+            if (page == sidewaysHintPage && angle != null) savePageEdit(page, PageEdits.AUTO, angle, PageEdits.AUTO)
+            hideSidewaysHint()
+        }
         // 返回：工具栏开着先收起，收着才退出阅读。
         // 走 OnBackPressedDispatcher 而不是重写 onBackPressed——后者在 Android 16
         // 的预测性返回下不再被调用，返回手势会直接退出阅读
@@ -261,6 +342,12 @@ class ReadingActivity : AppCompatActivity() {
             binding.pageLabel.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                 bottomMargin = dp(20) + bars.bottom
             }
+            binding.sidewaysHint.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                bottomMargin = dp(24) + bars.bottom
+            }
+            binding.autoSpeedBar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                bottomMargin = dp(24) + bars.bottom
+            }
             insets
         }
     }
@@ -279,15 +366,23 @@ class ReadingActivity : AppCompatActivity() {
         val key = "${prefs.trimBorder}|${prefs.trimLevel}|${prefs.dualPage}|${prefs.splitMode}|" +
             "${prefs.trimIgnoreSides}|${prefs.trimIgnorePx}|${prefs.trimProtect}|${prefs.trimAlgo}|" +
             "${prefs.spreadOrder}|${prefs.spreadDirection}|" +
-            "${prefs.fitWidth}|${prefs.canvas}|${prefs.nativeDecode}|${prefs.argb8888}"
+            "${prefs.fitWidth}|${prefs.canvas}|${prefs.nativeDecode}|${prefs.argb8888}|${prefs.vertical}|${prefs.detectSideways}"
         if (key != displayKey) {
-            if (displayKey != null) pageCache.clear()
+            if (displayKey != null) {
+                pageCache.clear()
+                clearRotatedCache()
+            }
             displayKey = key
         }
         binding.page.canvasColor = canvas
         binding.page.fitWidth = prefs.fitWidth
         applyEndTheme(canvas)
         binding.page.marginPx = dp(prefs.sideMarginDp)
+        // 自动下滑只属于竖向连贯；切走方向就停，入口也只在竖向时露出
+        binding.auto.isVisible = prefs.vertical
+        if (!prefs.vertical) stopAutoScroll()
+        syncAutoButton()
+        applyWarmTint()
         binding.progressScrubber.onScrub = { target -> scrubTo(target) }
         binding.progressScrubber.onScrubEnd = { saveProgress() }
         binding.pageLabel.isVisible = prefs.showPageLabel && !toolbarShown && !atEnd
@@ -295,6 +390,37 @@ class ReadingActivity : AppCompatActivity() {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    /**
+     * 护眼暖色：一层暖橙薄膜盖在画面上，不碰系统亮度。
+     * 回到阅读页时按当前值直接落位，不做过渡——那一下淡入没必要。
+     */
+    private fun applyWarmTint() {
+        val on = globalPrefs.warmTint
+        binding.warmIcon.setImageResource(if (on) R.drawable.ic_warm_on else R.drawable.ic_warm)
+        binding.warmTint.animate().cancel()
+        binding.warmTint.alpha = if (on) 1f else 0f
+        binding.warmTint.isVisible = on
+    }
+
+    /** 在阅读页菜单里直接开关暖色：改的是全局值，下一本书照样生效 */
+    private fun toggleWarmTint() {
+        val on = !globalPrefs.warmTint
+        globalPrefs.warmTint = on
+        binding.warmIcon.setImageResource(if (on) R.drawable.ic_warm_on else R.drawable.ic_warm)
+        val tint = binding.warmTint
+        tint.animate().cancel()
+        if (on) {
+            tint.isVisible = true
+            tint.alpha = 0f
+            tint.animate().alpha(1f).setDuration(WARM_TINT_MS).start()
+        } else {
+            tint.animate().alpha(0f).setDuration(WARM_TINT_MS).withEndAction {
+                tint.isVisible = false
+                tint.alpha = 0f
+            }.start()
         }
     }
 
@@ -358,6 +484,7 @@ class ReadingActivity : AppCompatActivity() {
                 }
 
                 bookTitle = book.displayTitle
+                bookAtOpen = book
                 bookStamp = contentStamp(book, opened)
                 binding.bookTitle.text = book.displayTitle
                 chaptered = book.isSingleVolume == 0 && opened.chapters.isNotEmpty()
@@ -367,6 +494,8 @@ class ReadingActivity : AppCompatActivity() {
                 // 页数只在真正打开时才知道，这里补写回库。
                 // 单行本没有章的概念，章数记 0，免得界面把它显示成章回体
                 val chapterCount = if (chaptered) opened.chapters.size else 0
+                val rows = db.pageEditDao().forBook(bookId)
+                pageEdits = withContext(Dispatchers.IO) { verifyPageEdits(opened, rows) }
                 db.bookDao().setTotals(bookId, total, chapterCount)
 
                 val saved = db.progressDao().forBook(bookId)
@@ -377,10 +506,14 @@ class ReadingActivity : AppCompatActivity() {
                 } else {
                     saved?.pageGlobal?.coerceIn(0, total - 1) ?: 0
                 }
+                opening = false
                 if (restart) saveProgress()
+                half = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false)
+                binding.editPage.isEnabled = true
                 showPage()
-                saveProgress()
                 binding.page.postDelayed({ showZoneHint() }, 350)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // 打不开很常见（包损坏、授权丢了、远端断开）。界面只给一句人话，
                 // 具体是哪个库报的什么错，留给日志——原生库的原文还是英文
@@ -394,7 +527,7 @@ class ReadingActivity : AppCompatActivity() {
 
     private fun showPage() {
         val src = source ?: return
-        if (loading) return
+        if (opening || loading) return
         // 书的尾占着屏时不画页面，等往回翻再重解
         if (atEnd) return
         // 首帧还没量出尺寸，等布局完再画，否则解码目标会算成 1px
@@ -402,6 +535,9 @@ class ReadingActivity : AppCompatActivity() {
             binding.page.post { showPage() }
             return
         }
+        // 换页就把上一条横置提示收掉；手动转正那一刻除外，提示要留着改方向
+        if (!keepHintOnShow) hideSidewaysHint()
+        keepHintOnShow = false
 
         val viewW = binding.page.width.coerceAtLeast(1)
         val viewH = binding.page.height.coerceAtLeast(1)
@@ -432,10 +568,10 @@ class ReadingActivity : AppCompatActivity() {
         // 翻页最招人烦的就是缓存明明有、还要先亮一下加载圈再出图。
         spreadFromCache()?.let { spread ->
             page = spread.index
-            updateLabels(src)
             binding.error.isVisible = false
             shownPages = spread.pages.size
-            currentWide = spread.pages.first().wide
+            updateLabels(src)
+            currentSplit = spread.pages.singleOrNull()?.split == true
             if (page + shownPages >= total) finishedOnce = true
             binding.page.setPages(spread.pages)
             if (prefs.turnAnimation && drawnOnce) {
@@ -448,6 +584,7 @@ class ReadingActivity : AppCompatActivity() {
             binding.loading.isVisible = false
             saveProgress()
             startPrefetch(src, targetW, targetH)
+            maybeHintSideways(spread.index)
             return
         }
 
@@ -460,7 +597,10 @@ class ReadingActivity : AppCompatActivity() {
         val requestGeneration = previewGeneration
         val requestPage = page
         val requestHalf = half
-        onPreviewReady = if (!prefs.nativeDecode && !prefs.dualPage && !prefs.skipBlank) {
+        val exact = requestPage == exactJumpPage
+        onPreviewReady = if (!prefs.nativeDecode && !prefs.dualPage && !prefs.skipBlank &&
+            pageEdits.pairedWith(requestPage) == null
+        ) {
             { preview ->
                 runOnUiThread {
                     // 代次、页号、半页三者都对上才画：任何一项变了说明用户已经翻走或换了半页。
@@ -470,7 +610,7 @@ class ReadingActivity : AppCompatActivity() {
                         requestGeneration == previewGeneration &&
                         page == requestPage && half == requestHalf
                     ) {
-                        binding.page.setPages(listOf(pageOf(preview)))
+                        binding.page.setPages(listOf(pageOf(preview, page)))
                         binding.loading.isVisible = false
                     }
                 }
@@ -482,17 +622,24 @@ class ReadingActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             // 跳过空白页会改页码，所以整段在 IO 线程里定下来再回来更新界面
-            val spread = withContext(Dispatchers.IO) { resolveSpread(src, targetW, targetH) }
+            val spread = withContext(Dispatchers.IO) {
+                resolveSpread(src, requestPage, requestHalf, targetW, targetH, exact)
+            }
             onPreviewReady = null
             previewFor = -1
+            loading = false
+            if (showPendingPage()) return@launch
+            if (atEnd) return@launch
             if (spread.pages.isEmpty()) {
                 showError(getString(R.string.reader_page_failed, spread.index + 1))
+                return@launch
             } else {
+                if (spread.index != requestPage) half = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false)
                 page = spread.index
-                updateLabels(src)
                 binding.error.isVisible = false
                 shownPages = spread.pages.size
-                currentWide = spread.pages.first().wide
+                updateLabels(src)
+                currentSplit = spread.pages.singleOrNull()?.split == true
                 // 这一屏已经含最后一页，往后翻就是书的尾
                 if (page + shownPages >= total) finishedOnce = true
                 binding.page.setPages(spread.pages)
@@ -503,15 +650,18 @@ class ReadingActivity : AppCompatActivity() {
                 drawnOnce = true
             }
             binding.loading.isVisible = false
-            loading = false
             saveProgress()
             startPrefetch(src, targetW, targetH)
-            // 这一屏还在解的时候用户又翻了：现在接着画最新那一页
-            if (pendingShow) {
-                pendingShow = false
-                showPage()
-            }
+            maybeHintSideways(spread.index)
         }
+    }
+
+    /** 旧的一屏解完时，别让它覆盖加载期间指定的新页。 */
+    private fun showPendingPage(): Boolean {
+        if (!pendingShow) return false
+        pendingShow = false
+        showPage()
+        return true
     }
 
     /** 一屏的内容，以及它实际对应哪一页（跳过空白页后可能不等于进来时的页码） */
@@ -522,56 +672,70 @@ class ReadingActivity : AppCompatActivity() {
      * 跳过空白页要真看像素，不走这条路。
      */
     private fun spreadFromCache(): Spread? {
-        if (prefs.skipBlank) return null
-        val range = spreadRange(source ?: return null, page)
-        val pages = ArrayList<ReaderPage>(2)
-        for (p in range) {
-            val entry = pageCache[p] ?: break
-            val built = pageOf(entry)
-            if (built.wide && pages.isNotEmpty()) break
-            pages += built
-            if (pages.size == 2) break
-        }
-        if (pages.isEmpty()) return null
-        val ordered = if (prefs.spreadDirection == 1 && pages.size == 2) pages.reversed() else pages
-        return Spread(ordered, range.first)
+        val exact = page == exactJumpPage
+        if (prefs.skipBlank && !exact) return null
+        return assembleSpread(source ?: return null, page, half, exact, cacheOnly = true) { pageCache[it] }
     }
 
     /**
      * 竖向连贯：以当前页为中心摆一窗，滚到窗口两头再由 [handleVerticalScroll] 接上一张。
-     * 双页并排与跨页拆分在竖排里没有意义，这里一律按单页铺满宽度。
+     * 双页并排在竖排里没有意义；跨页拆分在竖排里表现为上下两段接着看（见 [pagesOf]）。
      */
     private fun showVerticalWindow(src: BookSource, targetW: Int, targetH: Int) {
+        // 重建前记下页内偏移：同一页重摆窗口（后台返回）要落回原处，换页 / 跳页则从页头开始
+        val restoring = keepVerticalOffset && binding.page.vertical
+        val restoreOffset = if (restoring) {
+            val slot = verticalSlots.firstSlotOf(page)
+            if (slot >= 0) binding.page.offsetFromSlot(slot) else 0f
+        } else {
+            0f
+        }
+        // 短页跨屏：屏顶/屏底可见页可能超出锚点页前1后4，窗口须接得住恢复前的整个视口
+        val topPage = if (restoring) verticalSlots.pageAt(binding.page.topIndex) ?: page else page
+        val bottomPage = if (restoring) verticalSlots.pageAt(binding.page.bottomIndex) ?: page else page
+        keepVerticalOffset = false
+        val requestPage = page
+        val exact = requestPage == exactJumpPage
         loading = true
         binding.loading.isVisible = true
         lifecycleScope.launch {
-            val from = (page - VERTICAL_BACK).coerceAtLeast(0)
-            val to = (page + VERTICAL_AHEAD).coerceAtMost(total - 1)
-            val pages = withContext(Dispatchers.IO) {
-                (from..to).mapNotNull { buildPage(src, it, targetW, targetH) }
+            val range = PageSlots.windowRange(requestPage, topPage, bottomPage, VERTICAL_BACK, VERTICAL_AHEAD, total)
+            // 跳到末尾附近的短页时，从目标开始排窗；否则视口会被钳回前一页。
+            val from = if (exact && !restoring) requestPage else range.first
+            val to = range.last
+            val built = ArrayList<ReaderPage>()
+            val ids = ArrayList<Int>()
+            withContext(Dispatchers.IO) {
+                for (index in from..to) {
+                    val entry = buildEntry(src, index, targetW, targetH) ?: continue
+                    for (part in pagesOf(entry, index)) {
+                        built += part
+                        ids += index
+                    }
+                }
             }
-            if (pages.isEmpty()) {
+            loading = false
+            if (showPendingPage()) return@launch
+            if (atEnd) return@launch
+            if (built.isEmpty() || (exact && requestPage !in ids)) {
                 showError(getString(R.string.reader_page_failed, page + 1))
-                loading = false
                 return@launch
             }
-            verticalFirst = from
-            half = 0
+            verticalSlots.rebuild(ids)
+            synchronized(attachingPages) { attachingPages.clear() }
+            half = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false)
             binding.page.vertical = true
-            binding.page.setPages(pages)
-            binding.page.scrollToIndex((page - from).coerceIn(0, pages.size - 1))
+            binding.page.setPages(built)
+            val slot = verticalSlots.firstSlotOf(page).coerceAtLeast(0)
+            // 有符号偏移：即使屏顶在锚点页之前，窗口也覆盖原落点。
+            binding.page.scrollToSlotOffset(slot, restoreOffset)
+            shownPages = 1
             updateLabels(src)
             binding.error.isVisible = false
-            shownPages = 1
-            currentWide = false
+            currentSplit = false
             binding.loading.isVisible = false
-            loading = false
             saveProgress()
             startPrefetch(src, targetW, targetH)
-            if (pendingShow) {
-                pendingShow = false
-                showPage()
-            }
         }
     }
 
@@ -583,53 +747,75 @@ class ReadingActivity : AppCompatActivity() {
         }
         // dy > 0 是手指往上滑，看的是后面的内容
         if (dy > 0f) {
-            val next = verticalFirst + binding.page.pageCount
+            val next = (verticalSlots.lastPage() ?: page) + 1
             if (next >= total) {
                 showEndPage()
                 return
             }
             attachVerticalPage(next, prepend = false)
         } else {
-            if (verticalFirst <= 0) return
-            attachVerticalPage(verticalFirst - 1, prepend = true)
+            val first = verticalSlots.firstPage() ?: page
+            if (first <= 0) return
+            attachVerticalPage(first - 1, prepend = true)
         }
     }
 
     /**
      * 接一页到窗口上：缓存里有就立刻接，没有就后台解完再接。
      * 竖排滚到头时不能因为「这一页还没解好」就卡在边界上不动。
+     * 同一页在解的时候重复请求直接忽略——自动下滑每一帧都会问到边界页。
+     * [thenScroll] 非零时接好再滚这段距离：按键翻页在边界处接页后接着走，不吞掉这一跳。
      */
-    private fun attachVerticalPage(index: Int, prepend: Boolean) {
+    private fun attachVerticalPage(index: Int, prepend: Boolean, thenScroll: Float = 0f) {
         val cached = pageCache[index]
         if (cached != null) {
-            attachNow(index, cached, prepend)
+            if (attachNow(index, cached, prepend) && thenScroll != 0f) {
+                scrollVerticalBy(thenScroll)
+            }
             return
         }
         val src = source ?: return
+        synchronized(attachingPages) {
+            if (!attachingPages.add(index)) return
+        }
         lifecycleScope.launch {
-            val entry = withContext(Dispatchers.IO) {
-                runCatching { loadPage(src, index, prefetchTargetW, prefetchTargetH) }.getOrNull()
-            } ?: return@launch
-            pageCache.put(index, entry)
-            attachNow(index, entry, prepend)
+            try {
+                val entry = withContext(Dispatchers.IO) {
+                    runCatching { loadPage(src, index, prefetchTargetW, prefetchTargetH) }.getOrNull()
+                } ?: return@launch
+                pageCache.put(index, entry)
+                if (attachNow(index, entry, prepend) && thenScroll != 0f) {
+                    scrollVerticalBy(thenScroll)
+                }
+            } finally {
+                synchronized(attachingPages) { attachingPages.remove(index) }
+            }
         }
     }
 
-    /** 真正插进窗口。期间页码又变了就不接，免得接错位置 */
-    private fun attachNow(index: Int, entry: PageCache.Entry, prepend: Boolean) {
+    /** 真正插进窗口。期间页码又变了就不接，免得接错位置；一页可能占多个槽位（拆上下）。返回是否接上 */
+    private fun attachNow(index: Int, entry: PageCache.Entry, prepend: Boolean): Boolean {
+        if (atEnd || loading) return false
         if (prepend) {
-            if (index != verticalFirst - 1) return
-            binding.page.prependPage(pageOf(entry))
-            verticalFirst = index
+            if (index != (verticalSlots.firstPage() ?: page) - 1) return false
+            // 头部插多段时先插后读的那段，落位后的上下顺序才与阅读顺序一致
+            for (part in pagesOf(entry, index).asReversed()) {
+                binding.page.prependPage(part)
+                verticalSlots.prepend(index, 1)
+            }
         } else {
-            if (index != verticalFirst + binding.page.pageCount) return
-            binding.page.appendPage(pageOf(entry))
+            if (index != (verticalSlots.lastPage() ?: page) + 1) return false
+            for (part in pagesOf(entry, index)) {
+                binding.page.appendPage(part)
+                verticalSlots.append(index, 1)
+            }
         }
+        return true
     }
 
     /** 滚动后把页码、进度、预载都跟着挪 */
     private fun syncVerticalPage() {
-        val global = verticalFirst + binding.page.currentIndex
+        val global = verticalSlots.pageAt(binding.page.currentIndex) ?: page
         if (global == page) {
             trimVerticalWindow()
             return
@@ -647,41 +833,33 @@ class ReadingActivity : AppCompatActivity() {
      *
      * 按页数封顶假设了每页大小固定，实际条漫单页远大于普通页，页数一多就把堆顶穿；
      * 小图则相反，按页数收会白白多解几张。
-     * 所以先看字节：超了就从身后最远处丢，丢到预算内为止；身后没得丢才丢末尾。
+     * 超限就从身后最远处丢，身后没得丢才丢末尾；两端都可见时暂缓。
      * 单页就比半个预算还大时，允许窗口只剩一页——宁可不预读，也不能闪退。
      */
     private fun trimVerticalWindow() {
         val budget = prefs.cacheBudgetBytes()
         val biggest = binding.page.maxPageBytes()
-        val minPages = if (biggest * 2 > budget) 1 else VERTICAL_MIN_PAGES
+        val minSlots = if (biggest * 2 > budget) 1 else VERTICAL_MIN_PAGES
 
         var guard = 0
-        while (binding.page.pageCount > minPages && guard++ < VERTICAL_MAX_PAGES * 2) {
+        while (binding.page.pageCount > minSlots && guard++ < VERTICAL_MAX_PAGES * 2) {
             val size = binding.page.pageCount
             val overPages = size > VERTICAL_MAX_PAGES
             val overBytes = binding.page.bitmapBytes() > budget
             if (!overPages && !overBytes) return
 
-            val current = binding.page.currentIndex
-            // 身后留几页供往回翻，多出来的先丢
-            val behind = (current - VERTICAL_BACK).coerceAtLeast(0)
-            val need = if (overBytes) {
-                (size - minPages).coerceAtLeast(1)
-            } else {
-                (size - VERTICAL_MAX_PAGES).coerceAtLeast(1)
+            // 锚点离屏顶可能隔好几短页；收窗不能裁掉还在视口内的半段。
+            when (verticalSlots.trimSide(
+                top = binding.page.topIndex,
+                anchor = binding.page.currentIndex,
+                bottom = binding.page.bottomIndex,
+                back = VERTICAL_BACK,
+                minSlots = minSlots,
+            )) {
+                PageSlots.TrimSide.START -> binding.page.dropFirst(verticalSlots.dropFirstPages(1))
+                PageSlots.TrimSide.END -> binding.page.dropLast(verticalSlots.dropLastPages(1))
+                null -> return
             }
-            val drop = minOf(need, behind, size - minPages)
-            if (drop > 0) {
-                binding.page.dropFirst(drop)
-                verticalFirst += drop
-                continue
-            }
-            // 身后没得丢：丢最远的那张。当前页是最后一页时不丢，免得把正看的页丢掉
-            if (size > minPages && current < size - 1) {
-                binding.page.dropLast(1)
-                continue
-            }
-            return
         }
     }
 
@@ -696,24 +874,29 @@ class ReadingActivity : AppCompatActivity() {
     /**
      * 取这一屏要画的内容。开了跳过空白页就继续往后找，最多连跳 20 页防止整本都空。
      */
-    private fun resolveSpread(src: BookSource, targetW: Int, targetH: Int): Spread {
-        var index = page
-        var pages = loadSpread(src, index, targetW, targetH)
+    private fun resolveSpread(
+        src: BookSource, requested: Int, requestedHalf: Int, targetW: Int, targetH: Int, exact: Boolean,
+    ): Spread {
+        fun load(index: Int, half: Int, exact: Boolean) =
+            assembleSpread(src, index, half, exact, cacheOnly = false) { buildEntry(src, it, targetW, targetH) }
+                ?: Spread(emptyList(), index)
+        var spread = load(requested, requestedHalf, exact)
         // 双页并排时不跳：一次两张，跳掉一张会让配对错乱
-        val canSkip = prefs.skipBlank && !prefs.dualPage
+        val canSkip = prefs.skipBlank && !prefs.dualPage && !exact
         var guard = 0
-        while (canSkip && guard < 20 && index < total - 1 &&
-            pages.firstOrNull()?.let(::isBlankPage) == true
+        while (canSkip && guard < 20 && spread.index < total - 1 && spread.pages.size == 1 &&
+            pageEdits[spread.index] == null && pageEdits.pairedWith(spread.index) == null &&
+            spread.pages.firstOrNull()?.let(::isBlankPage) == true
         ) {
             // 规格是「从第 N 张起每隔一张跳」，不是一路跳到有内容为止
             val from = prefs.skipBlankFrom
-            if (index < from || (index - from) % 2 != 0) break
-            index = spreadRange(src, index + 1).first
-            half = 0
-            pages = loadSpread(src, index, targetW, targetH)
+            if (spread.index < from || (spread.index - from) % 2 != 0) break
+            val next = spread.index + 1
+            val firstHalf = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false)
+            spread = load(next, firstHalf, exact = true)
             guard++
         }
-        return Spread(pages, index)
+        return spread
     }
 
     private fun isBlankPage(page: ReaderPage): Boolean =
@@ -785,8 +968,9 @@ class ReadingActivity : AppCompatActivity() {
      */
     private fun scrubTo(target: Int) {
         if (target < 0 || target >= total) return
-        if (atEnd) leaveEndPage()
-        half = 0
+        hideEndPage()
+        exactJumpPage = -1
+        half = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false)
         page = target
         showPage()
     }
@@ -825,22 +1009,27 @@ class ReadingActivity : AppCompatActivity() {
      * 另外不跨章组屏：一章最后一页不和下一章第一页拼在一屏，
      * 否则「章」的边界在阅读里就看不出来了。
      */
-    private fun loadSpread(src: BookSource, index: Int, targetW: Int, targetH: Int): List<ReaderPage> {
-        val range = spreadRange(src, index)
-        val pages = ArrayList<ReaderPage>(2)
-        for (p in range) {
-            val built = buildPage(src, p, targetW, targetH) ?: continue
-            // 宽图本身就是跨页大图，并排会挤成两条：它自己占一屏
-            if (built.wide) {
-                if (pages.isEmpty()) pages += built
-                break
-            }
-            pages += built
-            if (pages.size == 2) break
+    private fun assembleSpread(
+        src: BookSource, index: Int, pageHalf: Int, exact: Boolean, cacheOnly: Boolean,
+        fetch: (Int) -> PageCache.Entry?,
+    ): Spread? {
+        val range = spreadRange(src, index, exact)
+        val first = range.first
+        val last = range.last
+        val forced = pageEdits.pairedWith(first) == last && first != last
+        val a = fetch(first)?.let { pageOf(it, first, pageHalf, forced) }
+        if (a == null && (cacheOnly || first == index)) return null
+        if (first == last || (first == index && a?.wide == true)) {
+            return a?.let { Spread(listOf(it), first) }
         }
-        if (pages.isEmpty()) return emptyList()
-        // 右→左：两页左右对调，占位格不动
-        return if (prefs.spreadDirection == 1 && pages.size == 2) pages.reversed() else pages
+        val b = fetch(last)?.let { pageOf(it, last, pageHalf, forced) }
+        if (b == null && (cacheOnly || last == index)) return null
+        if (a != null && b != null && !a.wide && !b.wide) {
+            return Spread(if (prefs.spreadDirection == 1) listOf(b, a) else listOf(a, b), first)
+        }
+        // 前半被宽图截断时，仍须能落在用户要看的后半页。
+        return if (index == last) b?.let { Spread(listOf(it), last) }
+        else a?.let { Spread(listOf(it), first) }
     }
 
     /**
@@ -849,7 +1038,11 @@ class ReadingActivity : AppCompatActivity() {
      * 章边界按「本章第一页到下一章前一页」算，组屏规则交给 [SpreadPlan]——
      * 那边是纯函数，边界情况在 JVM 单测里试完了。
      */
-    private fun spreadRange(src: BookSource, index: Int): IntRange {
+    private fun spreadRange(src: BookSource, index: Int, exact: Boolean = false): IntRange {
+        pageEdits.pairedWith(index)?.let { other ->
+            return if (exact && other < index) index..index else minOf(index, other)..maxOf(index, other)
+        }
+        if (pageEdits.pairingAt(index) == PageEdits.SOLO) return index..index
         val chapter = if (chaptered) src.chapterOf(index) else 0
         val chapterFirst = if (chaptered) src.firstPageOfChapter(chapter) else 0
         val chapterLast = if (chaptered) {
@@ -860,20 +1053,21 @@ class ReadingActivity : AppCompatActivity() {
             total - 1
         }
         val order = if (prefs.dualPage) prefs.spreadOrder else SpreadPlan.ORDER_NONE
-        return SpreadPlan.range(index, chapterFirst, chapterLast, order)
+        val range = SpreadPlan.range(index, chapterFirst, chapterLast, order)
+        val first = if (exact || (range.first != index && pageEdits.pairingAt(range.first) != PageEdits.AUTO)) {
+            index
+        } else range.first
+        val last = if (range.last != index && pageEdits.pairingAt(range.last) != PageEdits.AUTO) index else range.last
+        return first..last
     }
 
-    /**
-     * 取一页：内存 → 磁盘 → 解一次并写回两处。
-     * 裁白边与跨页拆分都只改源矩形，不复制位图，所以缓存里放的是「解好的整页」。
-     */
-    private fun buildPage(src: BookSource, index: Int, targetW: Int, targetH: Int): ReaderPage? {
-        val entry = pageCache.get(index) ?: run {
+    /** 只取解好的整页，不摆版面：竖向窗口要按拆分结果决定一页摆几段 */
+    private fun buildEntry(src: BookSource, index: Int, targetW: Int, targetH: Int): PageCache.Entry? {
+        return pageCache.get(index) ?: run {
             val loaded = loadPage(src, index, targetW, targetH) ?: return null
             pageCache.put(index, loaded)
             loaded
         }
-        return pageOf(entry)
     }
 
     /**
@@ -891,9 +1085,10 @@ class ReadingActivity : AppCompatActivity() {
             quality = quality,
             stamp = bookStamp,
         )
-        if (cacheToDisk) {
+        val useDisk = cacheToDisk && index !in checkedEditPages
+        if (useDisk) {
             diskCache.load(bookId, key)?.let { bitmap ->
-                return PageCache.Entry(bitmap, boundsOf(bitmap), bitmap.width > bitmap.height * 1.2f)
+                return pageEntry(bitmap)
             }
         }
         val decoded = decodePage(src, index, targetW, targetH) ?: return null
@@ -947,8 +1142,15 @@ class ReadingActivity : AppCompatActivity() {
             }
         }.getOrNull() ?: return null
 
+        return pageEntry(bitmap)
+    }
+
+    private fun pageEntry(bitmap: Bitmap): PageCache.Entry {
         val full = boundsOf(bitmap)
-        return PageCache.Entry(bitmap, full, full.width() > full.height() * 1.2f)
+        val verdict = if (prefs.detectSideways && !prefs.vertical && bitmap.width >= bitmap.height * 1.25f) {
+            lumaOf(bitmap)?.let { SidewaysPage.judge(it.first, it.second, it.third) } ?: SidewaysPage.Verdict.UNKNOWN
+        } else SidewaysPage.Verdict.NONE
+        return PageCache.Entry(bitmap, full, full.width() > full.height() * 1.2f, verdict)
     }
 
     /**
@@ -991,19 +1193,362 @@ class ReadingActivity : AppCompatActivity() {
         return PageBitmapLoader.load(bytes, targetW, targetH, decodeConfig())
     }
 
-    /** 把缓存里的那一页摆成这一屏要的样子：跨页拆分按 [half] 取左半或右半 */
-    private fun pageOf(entry: PageCache.Entry): ReaderPage {
-        val full = entry.bounds
-        if (entry.wide && prefs.splitMode != 0) {
-            val mid = full.left + full.width() / 2
-            val part = if (half == 1) {
-                Rect(mid, full.top, full.right, full.bottom)
-            } else {
-                Rect(full.left, full.top, mid, full.bottom)
-            }
-            return ReaderPage(entry.bitmap, part, wide = true)
+    /**
+     * 把缓存里的那一页摆成横向一屏要的样子。
+     *
+     * 手动转过的页先转到目标角度，再和其余页走同一条拆分流程：
+     * 转成竖图（90°/270°）自然不再是宽图、不会被拆；180° 仍是宽图，就照旧按 [half] 取左半或右半。
+     * 显示与翻页用的是同一个 [splitActive] 口径，不会出现「画面整图、导航却按半页走」的错位。
+     */
+    private fun pageOf(entry: PageCache.Entry, index: Int, pageHalf: Int = half, paired: Boolean = false): ReaderPage {
+        val base = baseEntryFor(entry, index)
+        val full = base.bounds
+        if (paired || pageEdits.pairedWith(index) != null) return ReaderPage(base.bitmap, full, wide = false)
+        val wide = shouldTreatAsSpread(base, index)
+        if (wide && prefs.splitMode != 0) {
+            val part = WideSplit.halfAt(full.toBox(), pageHalf)
+            return ReaderPage(base.bitmap, part.toRect(), wide = true, split = true)
         }
-        return ReaderPage(entry.bitmap, full, wide = entry.wide)
+        return ReaderPage(base.bitmap, full, wide = wide || isUnrotatedSideways(base, index))
+    }
+
+    /**
+     * 竖向窗口里这一页占的全部段：普通页一段；宽图开着拆分时两段（上下），
+     * 先后按「先看左半 / 先看右半」独立设置排，不随阅读方向自动反转。
+     * 每段都铺满屏宽，跨页大图等效放大一倍逐段看。
+     */
+    private fun pagesOf(entry: PageCache.Entry, index: Int): List<ReaderPage> {
+        val base = baseEntryFor(entry, index)
+        val full = base.bounds
+        if (shouldTreatAsSpread(base, index) && prefs.splitMode != 0) {
+            return WideSplit.orderedHalves(full.toBox(), prefs.splitFirstHalf).map {
+                ReaderPage(base.bitmap, it.toRect(), wide = true)
+            }
+        }
+        return listOf(ReaderPage(base.bitmap, full, wide = base.wide))
+    }
+
+    /** 摆版面前的公共一步：手动转过的页先换成转过后的位图与裁边范围 */
+    private fun baseEntryFor(entry: PageCache.Entry, index: Int): PageCache.Entry {
+        val angle = rotatedDegrees[index] ?: pageEdits[index]?.rotation ?: 0
+        return if (angle != 0) rotatedEntryFor(index, angle, entry.bitmap) else entry
+    }
+
+    private fun shouldTreatAsSpread(entry: PageCache.Entry, index: Int): Boolean = when (pageEdits[index]?.kind) {
+        PageEdits.NORMAL -> false
+        PageEdits.SPREAD -> true
+        else -> !isUnrotatedSideways(entry, index) &&
+            (entry.wide || (pageEdits[index] == null && entry.verdict == SidewaysPage.Verdict.SPREAD))
+    }
+
+    private fun isUnrotatedSideways(entry: PageCache.Entry, index: Int): Boolean =
+        prefs.detectSideways && !prefs.vertical && pageEdits[index] == null && entry.verdict == SidewaysPage.Verdict.SIDEWAYS
+
+    private fun Rect.toBox(): WideSplit.Box = WideSplit.Box(left, top, right, bottom)
+
+    private fun WideSplit.Box.toRect(): Rect = Rect(left, top, right, bottom)
+
+    /**
+     * 转过的那一页：位图与裁边范围都按转过后的画面算，翻走再回来直接复用。
+     *
+     * 复用要同时核对四件事：页号、角度、源位图身份、裁边参数。
+     * 源位图身份挡住「预览小图顶替高清正片」与重解码；裁边参数挡住「同一张图上改了裁边却仍显示旧范围」。
+     */
+    @Synchronized
+    private fun rotatedEntryFor(index: Int, angle: Int, src: Bitmap): PageCache.Entry {
+        val trimKey = trimKey()
+        rotatedEntry?.let {
+            if (rotatedIndex == index && rotatedAngle == angle &&
+                rotatedSource === src && rotatedTrimKey == trimKey
+            ) {
+                return it
+            }
+        }
+        val matrix = Matrix().apply { postRotate(angle.toFloat()) }
+        val bitmap = Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
+        val bounds = boundsOf(bitmap)
+        val entry = PageCache.Entry(bitmap, bounds, bounds.width() > bounds.height() * 1.2f)
+        rotatedIndex = index
+        rotatedAngle = angle
+        rotatedSource = src
+        rotatedTrimKey = trimKey
+        rotatedEntry = entry
+        return entry
+    }
+
+    /** 裁边相关参数的快照：任一改动都让旋转结果作废，与主缓存的失效口径对齐 */
+    private fun trimKey(): String =
+        "${prefs.trimBorder}|${prefs.trimLevel}|${prefs.trimIgnoreSides}|" +
+            "${prefs.trimIgnorePx}|${prefs.trimProtect}|${prefs.trimAlgo}"
+
+    /** 主缓存因显示参数变化清空时，旋转结果同步作废，避免留下旧裁边 / 旧尺寸的图 */
+    @Synchronized
+    private fun clearRotatedCache() {
+        rotatedEntry = null
+        rotatedSource = null
+        rotatedTrimKey = null
+    }
+
+    /**
+     * 横置页提示：一页横着扫进来，内容转 90° 才是正的。
+     *
+     * 判定放到后台做，只读一张小图；判不准（[SidewaysPage.Verdict.UNKNOWN]）就什么都不做，
+     * 跨页拆分照旧。每页只提示一次，竖向模式下不提示（那里本来就是整页铺满宽度）。
+     */
+    private fun maybeHintSideways(index: Int) {
+        if (!prefs.detectSideways || prefs.vertical || atEnd || page != index) return
+        if (index in hintedPages || rotatedDegrees.containsKey(index) || pageEdits.pairedWith(index) != null) return
+        if (pageCache[index]?.let { isUnrotatedSideways(it, index) } == true) showSidewaysHint()
+    }
+
+    /** 判定只看字行走向，长边缩到 [JUDGE_SIDE] 就够；返回亮度、宽、高 */
+    private fun lumaOf(bitmap: Bitmap): Triple<IntArray, Int, Int>? {
+        if (bitmap.isRecycled) return null
+        val longest = maxOf(bitmap.width, bitmap.height)
+        val w = if (longest <= JUDGE_SIDE) bitmap.width else (bitmap.width * JUDGE_SIDE / longest).coerceAtLeast(1)
+        val h = if (longest <= JUDGE_SIDE) bitmap.height else (bitmap.height * JUDGE_SIDE / longest).coerceAtLeast(1)
+        val small = if (w == bitmap.width && h == bitmap.height) {
+            bitmap
+        } else {
+            Bitmap.createScaledBitmap(bitmap, w, h, true)
+        }
+        val pixels = IntArray(w * h)
+        small.getPixels(pixels, 0, w, 0, 0, w, h)
+        if (small !== bitmap) small.recycle()
+        val luma = IntArray(pixels.size)
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+            luma[i] = (r * 299 + g * 587 + b * 114) / 1000
+        }
+        return Triple(luma, w, h)
+    }
+
+    /**
+     * 浮层内容分两态：首次问「要不要转」，转过之后改成二次确认。
+     * 转过一次就不再打扰翻页：右边换成「就这样」，提示里只问方向对不对。
+     */
+    private fun showSidewaysHint(turns: Int = 0) {
+        if (page < 0) return
+        // 工具栏展开时底栏占着同一块区域，提示盖上去会挡住按钮：此时不显示、也不记「已提示」，
+        // 等工具栏收起后再评估。识别开关、阅读模式、书末状态也在显示前统一复查一遍。
+        if (toolbarShown || !prefs.detectSideways || prefs.vertical || atEnd) return
+        sidewaysHintPage = page
+        hintedPages += page
+        val rotated = turns > 0
+        binding.sidewaysTitle.text = getString(
+            if (rotated) R.string.reader_sideways_done_title else R.string.reader_sideways_title,
+        )
+        binding.sidewaysRotate.text = getString(
+            if (rotated) R.string.reader_sideways_again else R.string.reader_sideways_rotate,
+        )
+        binding.sidewaysSkip.text = getString(
+            if (rotated) R.string.reader_sideways_accept else R.string.reader_sideways_skip,
+        )
+        binding.sidewaysHint.animate().cancel()
+        if (!binding.sidewaysHint.isVisible) {
+            binding.sidewaysHint.isVisible = true
+            binding.sidewaysHint.alpha = 0f
+            binding.sidewaysHint.translationY = dp(8).toFloat()
+            binding.sidewaysHint.animate().alpha(1f).translationY(0f).setDuration(180).start()
+        } else {
+            // 收起动画刚起就被再次唤起：把透明度拉回实心，别停在半透明上
+            binding.sidewaysHint.alpha = 1f
+            binding.sidewaysHint.translationY = 0f
+        }
+        scheduleHintHide()
+    }
+
+    private fun scheduleHintHide() {
+        binding.sidewaysHint.removeCallbacks(hideSidewaysHintRunnable)
+        binding.sidewaysHint.postDelayed(hideSidewaysHintRunnable, SIDEWAYS_HINT_MS)
+    }
+
+    private fun hideSidewaysHint() {
+        sidewaysHintPage = -1
+        binding.sidewaysHint.removeCallbacks(hideSidewaysHintRunnable)
+        if (binding.sidewaysHint.isVisible) {
+            binding.sidewaysHint.animate().cancel()
+            binding.sidewaysHint.animate().alpha(0f).setDuration(150).withEndAction {
+                binding.sidewaysHint.isVisible = false
+                binding.sidewaysHint.alpha = 1f
+            }.start()
+        }
+    }
+
+    /**
+     * 手动转正：每点一次转 90°，转满一圈回到原样。
+     * 先预览角度，点「保存转正」才按页存入书库。
+     */
+    private fun rotateCurrentPage() {
+        val index = page
+        if (index < 0 || index != sidewaysHintPage || loading || editing) return
+        val next = ((rotatedDegrees[index] ?: 0) + 90) % 360
+        if (next == 0) rotatedDegrees.remove(index) else rotatedDegrees[index] = next
+        clearRotatedCache()
+        half = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false)
+        keepHintOnShow = true
+        showPage()
+        if (next == 0) {
+            hideSidewaysHint()
+            return
+        }
+        showSidewaysHint(next / 90)
+    }
+
+    private suspend fun verifyPageEdits(src: BookSource, rows: List<PageEditEntity>): PageEdits {
+        val context = currentCoroutineContext()
+        checkedEditPages = checkedEditPages + rows.flatMap { row ->
+            listOfNotNull(row.page, PageEdits.partner(row.page, row.pairing))
+        }
+        return PageEdits.verify(rows, src.pageCount, { if (chaptered) src.chapterOf(it) else 0 }) { index ->
+            context.ensureActive()
+            try {
+                verifiedProofs[index] ?: readPageProof(src, index).also { verifiedProofs[index] = it }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun readPageProof(src: BookSource, index: Int): String = sourceLock.withLock {
+        check(!sourceClosed)
+        PageProof.read(src, index)
+    }
+
+    private fun choosePageEdit() {
+        val src = source ?: return
+        if (loading || editing || atEnd || binding.error.isVisible) return
+        if (prefs.vertical && verticalSlots.firstSlotOf(page) < 0) return
+        if (!prefs.vertical && !drawnOnce) return
+        stopAutoScroll()
+        flingAnimator?.cancel()
+        val first = page
+        if (!prefs.vertical && shownPages == 2) {
+            AppDialogBuilder(this).setTitle(R.string.reader_edit_page)
+                .setItems(arrayOf(editPageLabel(src, first), editPageLabel(src, first + 1))) { _, which ->
+                    showPageEdit(src, first + which)
+                }
+                .setNegativeButton(R.string.action_cancel, null).show()
+        } else {
+            showPageEdit(src, first)
+        }
+    }
+
+    private fun editPageLabel(src: BookSource, index: Int): String {
+        val pos = src.pagePosition(index, chaptered)
+        val label = getString(R.string.reader_edit_page_number, pos.page)
+        return if (pos.chaptered) pos.chapterTitle + " · " + label else label
+    }
+
+    private fun showPageEdit(src: BookSource, index: Int) {
+        val saved = pageEdits[index]
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(8), dp(22), dp(8))
+        }
+        fun field(label: Int, labels: List<Int>, selected: Int): Spinner {
+            val spinner = Spinner(this).apply { id = View.generateViewId() }
+            form.addView(TextView(this).apply {
+                text = getString(label)
+                labelFor = spinner.id
+                setPadding(0, dp(8), 0, 0)
+            })
+            spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels.map(::getString)).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            spinner.setSelection(selected.coerceIn(labels.indices))
+            form.addView(spinner, ViewGroup.LayoutParams.MATCH_PARENT, dp(44))
+            return spinner
+        }
+        val kind = field(R.string.reader_edit_kind, listOf(
+            R.string.reader_edit_auto, R.string.reader_edit_normal, R.string.reader_edit_spread,
+        ), saved?.kind ?: PageEdits.AUTO)
+        val rotation = field(R.string.reader_edit_rotation, listOf(
+            R.string.reader_edit_0, R.string.reader_edit_90, R.string.reader_edit_180, R.string.reader_edit_270,
+        ), (rotatedDegrees[index] ?: saved?.rotation ?: 0) / 90)
+        val pairs = buildList {
+            add(PageEdits.AUTO to R.string.reader_edit_auto)
+            add(PageEdits.SOLO to R.string.reader_edit_solo)
+            if (canPair(src, index, index - 1)) add(PageEdits.PREVIOUS to R.string.reader_edit_previous)
+            if (canPair(src, index, index + 1)) add(PageEdits.NEXT to R.string.reader_edit_next)
+        }
+        val pairing = field(R.string.reader_edit_pairing, pairs.map { it.second },
+            pairs.indexOfFirst { it.first == pageEdits.pairingAt(index) })
+        if (prefs.vertical) form.addView(TextView(this).apply { text = getString(R.string.reader_edit_horizontal_only) })
+        AppDialogBuilder(this)
+            .setTitle(editPageLabel(src, index)).setView(form)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setNeutralButton(R.string.reader_edit_clear) { _, _ -> savePageEdit(index, PageEdits.AUTO, 0, PageEdits.AUTO) }
+            .setPositiveButton(R.string.reader_edit_save) { _, _ ->
+                savePageEdit(index, kind.selectedItemPosition, rotation.selectedItemPosition * 90,
+                    pairs[pairing.selectedItemPosition].first)
+            }.show()
+    }
+
+    private fun canPair(src: BookSource, index: Int, other: Int): Boolean =
+        other in 0 until total && (!chaptered || src.chapterOf(index) == src.chapterOf(other))
+
+    private fun savePageEdit(index: Int, kind: Int, angle: Int, pairing: Int) {
+        val src = source ?: return
+        val original = bookAtOpen ?: return
+        if (editing || index !in 0 until total) return
+        val partner = PageEdits.partner(index, pairing)
+        if (partner != null && !canPair(src, index, partner)) return
+        editing = true
+        binding.editPage.isEnabled = false
+        lifecycleScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val clearing = kind == PageEdits.AUTO && angle == 0 && pairing == PageEdits.AUTO
+                    if (!clearing) {
+                        for (p in listOfNotNull(index, partner)) verifiedProofs[p] = readPageProof(src, p)
+                    }
+                    val dao = db.pageEditDao()
+                    val rows = db.withTransaction {
+                        val current = db.bookDao().get(bookId)
+                        check(current != null && current.contentVersion == original.contentVersion &&
+                            current.byteSize == original.byteSize && current.modifiedAt == original.modifiedAt &&
+                            current.docRef == original.docRef) { "Book changed while reading" }
+                        for (old in PageEdits.unlink(dao.forBook(bookId), index, partner)) {
+                            if (old.isEmpty()) dao.remove(bookId, old.page) else dao.put(old)
+                        }
+                        if (clearing) dao.remove(bookId, index) else dao.put(PageEditEntity(
+                            bookId, index, verifiedProofs.getValue(index), kind, angle, pairing, partner?.let(verifiedProofs::getValue),
+                        ))
+                        dao.forBook(bookId)
+                    }
+                    verifyPageEdits(src, rows)
+                }
+                pageEdits = result
+                rotatedDegrees.remove(index)
+                hintedPages.remove(index)
+                pageCache.remove(index)
+                partner?.let(pageCache::remove)
+                clearRotatedCache()
+                if (!atEnd && (page == index || (!prefs.vertical && shownPages == 2 && page + 1 == index) ||
+                        (partner != null && page == partner))) {
+                    val target = if (prefs.vertical) page else partner?.let { minOf(index, it) } ?: index
+                    keepVerticalOffset = prefs.vertical
+                    turnTo(target, exact = !prefs.vertical && partner == null && target > page)
+                } else if (!atEnd && prefs.vertical && verticalSlots.firstSlotOf(index) >= 0) {
+                    keepVerticalOffset = true
+                    turnTo(page)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("Reading", "Page edit failed", e)
+                Toast.makeText(this@ReadingActivity, R.string.reader_edit_failed, Toast.LENGTH_SHORT).show()
+            } finally {
+                editing = false
+                binding.editPage.isEnabled = true
+            }
+        }
     }
 
     /**
@@ -1070,9 +1615,27 @@ class ReadingActivity : AppCompatActivity() {
      * 放大后拖动平移。双击缩放开着时单击要等双击判定，翻页会慢一拍——设置页里写明了。
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        scaleDetector.onTouchEvent(ev)
-        gestureDetector.onTouchEvent(ev)
-        return super.dispatchTouchEvent(ev)
+        // 落在横置提示卡上的这一条手势整套都不喂给手势识别：
+        // 手势是提前于子视图分发的，喂了就会先翻页；而且卡片按钮一点就收，
+        // 双击判定等 300ms 后补发的单击会落空再翻一页。
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            touchOnSidewaysHint = overSidewaysHintAt(ev.x, ev.y)
+            touchOnAutoSpeedBar = overAutoSpeedBarAt(ev.x, ev.y)
+            // 自动下滑一碰就停：调速浮层与「自动」键除外，那两处按下去是为了调速和停/开
+            if (autoScroll.running && !touchOnAutoSpeedBar && !overAutoButtonAt(ev.x, ev.y)) {
+                stopAutoScroll()
+            }
+        }
+        if (!touchOnSidewaysHint && !touchOnAutoSpeedBar) {
+            scaleDetector.onTouchEvent(ev)
+            gestureDetector.onTouchEvent(ev)
+        }
+        val handled = super.dispatchTouchEvent(ev)
+        if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+            touchOnSidewaysHint = false
+            touchOnAutoSpeedBar = false
+        }
+        return handled
     }
 
     /** 音量键 / 自定义键翻页。关掉就原样交给系统，让音量条正常出现 */
@@ -1225,6 +1788,127 @@ class ReadingActivity : AppCompatActivity() {
         anim.start()
     }
 
+    /** 条漫自动下滑：状态与速度在 [AutoScroll] 里，这里只按帧钟驱动、把位移落到画面 */
+    private val autoScroll = AutoScroll()
+    private var autoAnimator: android.animation.ValueAnimator? = null
+
+    /** 这一条手势按在调速浮层上，整条不喂手势识别，也不停自动下滑 */
+    private var touchOnAutoSpeedBar = false
+
+    private fun toggleAutoScroll() {
+        if (autoScroll.running) stopAutoScroll() else startAutoScroll()
+    }
+
+    /**
+     * 开始自动下滑：匀速推进、滚到书的尾自停、内容上一碰就停。
+     * 只在竖向连贯里有意义；书的尾空态与还在解首窗时不起。
+     */
+    private fun startAutoScroll() {
+        if (!prefs.vertical || atEnd || source == null || loading) return
+        autoScroll.level = globalPrefs.autoScrollLevel
+        autoScroll.start()
+        setToolbarVisible(false)
+        syncAutoButton()
+        showAutoSpeedBar(true)
+        autoAnimator?.cancel()
+        var last = 0f
+        val anim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = AUTO_TICK_MS
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.LinearInterpolator()
+            addUpdateListener { a ->
+                val v = a.animatedValue as Float
+                // 循环重启时值跳回 0：这一帧的时长 = 上一轮的余量 + 新一轮的开头
+                val dt = if (v >= last) v - last else v + (1f - last)
+                last = v
+                val dyDp = autoScroll.tick(dt, atEnd)
+                if (!autoScroll.running) {
+                    stopAutoScroll()
+                    return@addUpdateListener
+                }
+                if (dyDp > 0f) {
+                    handleVerticalScroll(dyDp * resources.displayMetrics.density)
+                }
+                // 接页解不动时画面停在边界，等解好接着走；整本翻完才收
+                if (atEnd) stopAutoScroll()
+            }
+        }
+        autoAnimator = anim
+        anim.start()
+    }
+
+    private fun stopAutoScroll() {
+        val wasRunning = autoScroll.running
+        autoScroll.stop()
+        autoAnimator?.cancel()
+        autoAnimator = null
+        if (wasRunning) {
+            syncAutoButton()
+            showAutoSpeedBar(false)
+            // 停下的位置就是离开的位置，别等节流窗口
+            saveProgress()
+        }
+    }
+
+    /** 调速：改档位立即生效并写全局值，下一本书、下一次进来还按这一档走 */
+    private fun adjustAutoSpeed(delta: Int) {
+        val next = AutoScroll.clampLevel(autoScroll.level + delta)
+        autoScroll.level = next
+        globalPrefs.autoScrollLevel = next
+        binding.autoSpeedLabel.text = getString(R.string.reader_auto_speed_value, next)
+    }
+
+    /** 底栏「自动」键的两态：跑着时写「停止」并点亮图标 */
+    private fun syncAutoButton() {
+        val running = autoScroll.running
+        binding.autoLabel.setText(if (running) R.string.reader_auto_stop else R.string.reader_auto)
+        if (running) {
+            binding.autoIcon.setColorFilter(getColor(R.color.brand_accent))
+        } else {
+            binding.autoIcon.clearColorFilter()
+        }
+    }
+
+    private fun showAutoSpeedBar(show: Boolean) {
+        val bar = binding.autoSpeedBar
+        bar.animate().cancel()
+        if (show) {
+            binding.autoSpeedLabel.text = getString(R.string.reader_auto_speed_value, autoScroll.level)
+            bar.isVisible = true
+            bar.alpha = 0f
+            bar.animate().alpha(1f).setDuration(160).start()
+        } else if (bar.isVisible) {
+            bar.animate().alpha(0f).setDuration(150).withEndAction {
+                bar.isVisible = false
+                bar.alpha = 1f
+            }.start()
+        }
+    }
+
+    /** 调速浮层上的触摸不算「一碰就停」，否则想调个速就把滚动停了 */
+    private fun overAutoSpeedBarAt(x: Float, y: Float): Boolean {
+        if (!binding.autoSpeedBar.isVisible) return false
+        return viewHitAt(binding.autoSpeedBar, x, y, dp(6))
+    }
+
+    /** 底栏「自动」键：按它是为了停/开，不当内容触摸处理 */
+    private fun overAutoButtonAt(x: Float, y: Float): Boolean {
+        if (!binding.bottomBar.isVisible || !binding.auto.isVisible) return false
+        return viewHitAt(binding.auto, x, y, 0)
+    }
+
+    private fun viewHitAt(view: View, x: Float, y: Float, pad: Int): Boolean {
+        val loc = IntArray(2)
+        view.getLocationInWindow(loc)
+        val r = Rect(
+            loc[0] - pad,
+            loc[1] - pad,
+            loc[0] + view.width + pad,
+            loc[1] + view.height + pad,
+        )
+        return r.contains(x.toInt(), y.toInt())
+    }
+
     private val scaleDetector by lazy {
         ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -1241,7 +1925,7 @@ class ReadingActivity : AppCompatActivity() {
 
     private fun handleTap(x: Float, y: Float) {
         if (source == null) return
-        if (overToolbarAt(x, y) || overEndButtonAt(x, y)) return
+        if (overToolbarAt(x, y) || overEndButtonAt(x, y) || overSidewaysHintAt(x, y)) return
         // 竖向连贯里点击只负责呼出工具栏，位置交给滚动
         // 关掉点击翻页之后，点哪儿也都只呼出工具栏——留给只想看不想误翻的人
         if (prefs.vertical || prefs.tapFlipMode == 0) {
@@ -1280,6 +1964,22 @@ class ReadingActivity : AppCompatActivity() {
         return inTop || inBottom
     }
 
+    /** 横置提示卡自带按钮，点在卡上不算翻页，事件留给卡里的按钮 */
+    private fun overSidewaysHintAt(x: Float, y: Float): Boolean {
+        if (!binding.sidewaysHint.isVisible) return false
+        // 卡片淡入时带 translation，getHitRect 会偏；按落位后的窗口坐标加余量算
+        val loc = IntArray(2)
+        binding.sidewaysHint.getLocationInWindow(loc)
+        val pad = dp(6)
+        val r = Rect(
+            loc[0] - pad,
+            loc[1] - pad,
+            loc[0] + binding.sidewaysHint.width + pad,
+            loc[1] + binding.sidewaysHint.height + pad
+        )
+        return r.contains(x.toInt(), y.toInt())
+    }
+
     /** 书的尾上只有「回到书库」一个按钮，点它别顺带翻页 */
     private fun overEndButtonAt(x: Float, y: Float): Boolean {
         if (!atEnd) return false
@@ -1290,6 +1990,7 @@ class ReadingActivity : AppCompatActivity() {
 
     private fun setToolbarVisible(show: Boolean) {
         toolbarShown = show
+        if (show) hideSidewaysHint()
         // 常驻页码与工具栏里的页码只留一个，避免重复；书的尾上也不显示
         binding.pageLabel.isVisible = !show && prefs.showPageLabel && !atEnd
         binding.topBar.isVisible = show
@@ -1302,6 +2003,9 @@ class ReadingActivity : AppCompatActivity() {
             binding.bottomBar.alpha = 0f
             binding.topBar.animate().alpha(1f).setDuration(140).start()
             binding.bottomBar.animate().alpha(1f).setDuration(140).start()
+        } else {
+            // 工具栏收起后，之前被它挡住的横置提示可以重新评估要不要显示
+            maybeHintSideways(page)
         }
     }
 
@@ -1328,7 +2032,7 @@ class ReadingActivity : AppCompatActivity() {
 
     /** 章节目录。当前章标出来，点任一章跳过去 */
     /**
-     * 目录抽屉：列章与每章页数，点章跳过去。
+     * 目录抽屉：点章去首页，点书签去章内页。
      *
      * 右上角一枚正序/倒序：章多的书从第 1 话翻到第 300 话很累，
      * 倒过来以后「最新一话」就在顶上。它与详情页目录共用同一个偏好。
@@ -1343,13 +2047,21 @@ class ReadingActivity : AppCompatActivity() {
         val list = content.findViewById<LinearLayout>(R.id.toc_list)
         val scroll = content.findViewById<View>(R.id.toc_scroll)
         val order = content.findViewById<TextView>(R.id.toc_order)
+        val tabs = content.findViewById<TabLayout>(R.id.toc_tabs)
+        val contentsTab = tabs.newTab().setText(R.string.reader_toolbar_toc)
+        val bookmarksTab = tabs.newTab().setText(R.string.reader_bookmark)
+        tabs.addTab(contentsTab)
+        tabs.addTab(bookmarksTab)
 
         var descending = appPrefs.tocDescending
         val current = src.chapterOf(page)
         val padH = dp(10)
         val padV = dp(13)
+        var bookmarks: List<BookmarkEntity>? = null
+        var bookmarkLoadFailed = false
+        var bookmarkJob: Job? = null
 
-        fun render() {
+        fun renderContents() {
             list.removeAllViews()
             // 按钮写的是「现在是什么序」，不是「点一下会变成什么」——后者读起来正好相反
             order.text = getString(
@@ -1381,8 +2093,7 @@ class ReadingActivity : AppCompatActivity() {
                     }
                     setOnClickListener {
                         sheet.dismiss()
-                        setToolbarVisible(false)
-                        turnTo(src.firstPageOfChapter(info.ordinal))
+                        jumpToPage(src.firstPageOfChapter(info.ordinal))
                     }
                 }
                 if (isCurrent) currentRow = row
@@ -1391,36 +2102,102 @@ class ReadingActivity : AppCompatActivity() {
 
             // 章多的时候把当前章滚到可见位置
             currentRow?.let { row ->
-                scroll.post { scroll.scrollTo(0, (row.top - scroll.height / 3).coerceAtLeast(0)) }
+                scroll.post {
+                    if (tabs.selectedTabPosition == contentsTab.position && row.parent === list) {
+                        scroll.scrollTo(0, (row.top - scroll.height / 3).coerceAtLeast(0))
+                    }
+                }
             }
+        }
+
+        fun renderBookmarks() {
+            list.removeAllViews()
+            for (mark in bookmarks.orEmpty()) {
+                val chapter = src.chapters.getOrNull(mark.chapterOrdinal) ?: continue
+                // 章缩短后，越界的旧书签不能落到下一章。
+                if (mark.pageInChapter !in 0 until chapter.pageCount) continue
+                val target = src.firstPageOfChapter(chapter.ordinal) + mark.pageInChapter
+                val row = TextView(this).apply {
+                    text = getString(R.string.reader_bookmark_row, chapter.title, mark.pageInChapter + 1)
+                    textSize = 14f
+                    minHeight = dp(48)
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(padH, padV, padH, padV)
+                    setTextColor(getColor(R.color.shell_ink))
+                    isFocusable = true
+                    setOnClickListener {
+                        sheet.dismiss()
+                        jumpToPage(target)
+                    }
+                }
+                list.addView(row)
+            }
+            if (list.childCount != 0) return
+            list.addView(TextView(this).apply {
+                setText(when {
+                    bookmarkLoadFailed -> R.string.reader_bookmark_load_failed
+                    bookmarks == null -> R.string.reader_bookmark_loading
+                    else -> R.string.reader_bookmark_empty
+                })
+                textSize = 14f
+                minHeight = dp(72)
+                gravity = Gravity.CENTER
+                setPadding(padH, padV, padH, padV)
+                setTextColor(getColor(R.color.shell_ink))
+            })
         }
 
         order.setOnClickListener {
             descending = !descending
             appPrefs.tocDescending = descending
-            render()
+            renderContents()
         }
+        tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                scroll.scrollTo(0, 0)
+                if (tab == contentsTab) {
+                    order.visibility = View.VISIBLE
+                    renderContents()
+                    return
+                }
+                order.visibility = View.INVISIBLE
+                renderBookmarks()
+                if (bookmarkJob == null) {
+                    bookmarkJob = lifecycleScope.launch {
+                        db.bookmarkDao().observeForBook(bookId)
+                            .catch {
+                                bookmarkLoadFailed = true
+                                if (tabs.selectedTabPosition == bookmarksTab.position) renderBookmarks()
+                            }
+                            .collect {
+                                bookmarks = it
+                                if (tabs.selectedTabPosition == bookmarksTab.position) renderBookmarks()
+                            }
+                    }
+                }
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+            override fun onTabReselected(tab: TabLayout.Tab) = Unit
+        })
+        sheet.setOnDismissListener { bookmarkJob?.cancel() }
 
         sheet.setContentView(content)
         sheet.show()
-        render()
+        renderContents()
     }
 
-    /** 前进一屏：并排时一次跨两页；拆页时先看右半再翻页；长图先滚再看下一页 */
+    /** 前进一屏：并排时一次跨两页；拆页时按「先看哪半」的顺序逐半看；长图先滚再看下一页 */
     private fun turnForward() {
         if (atEnd) return
-        // 竖向连贯没有「一屏一页」，按键与滚轮就是往下挪一页
+        // 竖向连贯没有「一屏一页」：按键与滚轮按视口距离推进，不跳过拆出的上下半段
         if (prefs.vertical) {
-            if (page + 1 >= total) {
-                showEndPage()
-                return
-            }
-            page += 1
-            showPage()
+            jumpVertical(forward = true)
             return
         }
-        if (splitActive() && half == 0) {
-            half = 1
+        val nextHalf = WideSplit.nextHalf(half, prefs.splitFirstHalf)
+        if (splitActive() && nextHalf != null) {
+            half = nextHalf
             showPage()
             return
         }
@@ -1432,7 +2209,7 @@ class ReadingActivity : AppCompatActivity() {
             showEndPage()
             return
         }
-        turnTo(target, newHalf = 0)
+        turnTo(target, newHalf = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false))
     }
 
     private fun turnBackward() {
@@ -1442,20 +2219,52 @@ class ReadingActivity : AppCompatActivity() {
             return
         }
         if (prefs.vertical) {
-            if (page <= 0) return
-            page -= 1
-            showPage()
+            jumpVertical(forward = false)
             return
         }
-        if (splitActive() && half == 1) {
-            half = 0
+        val prevHalf = WideSplit.prevHalf(half, prefs.splitFirstHalf)
+        if (splitActive() && prevHalf != null) {
+            half = prevHalf
             showPage()
             return
         }
         // 页内已经往下滚过：先往回滚，到顶才翻页
         if (binding.page.scrollWithin(-jumpDistancePx())) return
-        // 后退落到宽图时先看右半，符合「从后往前」的直觉
-        turnTo(page - shownPages.coerceAtLeast(1), newHalf = 1)
+        // 后退落到宽图时先看最后读的那半，符合「从后往前」的直觉
+        turnTo(
+            page - 1,
+            newHalf = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = true),
+        )
+    }
+
+    /**
+     * 竖向按键 / 按钮 / 滚轮：按视口距离推进。一次推进跨越窗口边界时，先滚到边界、
+     * 余量接页后接着滚完，推进距离才与一屏一致；整本读完才进书尾。
+     * 按整页号跳会略过拆出的半段，也会把未滚完的末页直接判成读完。
+     */
+    private fun jumpVertical(forward: Boolean) {
+        scrollVerticalBy(if (forward) jumpDistancePx() else -jumpDistancePx())
+    }
+
+    /** 滚 [dy]；被窗口边界截住的余量接页后递归接着滚，直到滚完或整本读完 */
+    private fun scrollVerticalBy(dy: Float) {
+        val before = binding.page.scrollPosition
+        binding.page.scrollBy(dy)
+        val rest = dy - (binding.page.scrollPosition - before)
+        syncVerticalPage()
+        if (kotlin.math.abs(rest) < 0.5f) return
+        if (dy > 0f) {
+            val next = (verticalSlots.lastPage() ?: page) + 1
+            if (next >= total) {
+                showEndPage()
+                return
+            }
+            attachVerticalPage(next, prepend = false, thenScroll = rest)
+        } else {
+            val first = verticalSlots.firstPage() ?: page
+            if (first <= 0) return
+            attachVerticalPage(first - 1, prepend = true, thenScroll = rest)
+        }
     }
 
     /** 一次翻/滚多远：0 与 2 对长图都是一屏，半屏档留给想细看的人 */
@@ -1464,10 +2273,25 @@ class ReadingActivity : AppCompatActivity() {
         return if (prefs.flipStep == 1) h / 2f else h
     }
 
-    private fun splitActive(): Boolean = currentWide && prefs.splitMode != 0
+    private fun splitActive(): Boolean = currentSplit
 
-    private fun turnTo(target: Int, newHalf: Int = 0) {
+    private fun jumpToPage(target: Int) {
+        if (target !in 0 until total) return
+        stopAutoScroll()
+        flingAnimator?.cancel()
+        keepVerticalOffset = false
+        hideEndPage()
+        setToolbarVisible(false)
+        turnTo(target, exact = true)
+    }
+
+    private fun turnTo(
+        target: Int,
+        newHalf: Int = WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = false),
+        exact: Boolean = false,
+    ) {
         if (target < 0 || target >= total) return
+        exactJumpPage = if (exact) target else -1
         half = newHalf
         page = target
         // 上一屏还在解：记下这次翻页，等它画完立刻接着画。
@@ -1477,7 +2301,6 @@ class ReadingActivity : AppCompatActivity() {
             return
         }
         showPage()
-        saveProgress()
     }
 
     /**
@@ -1498,6 +2321,7 @@ class ReadingActivity : AppCompatActivity() {
         binding.error.isVisible = false
         binding.loading.isVisible = false
         binding.pageLabel.isVisible = false
+        hideSidewaysHint()
         binding.endMeta.text = endMetaText()
         binding.endPage.isVisible = true
         if (toolbarShown) setToolbarVisible(false)
@@ -1505,11 +2329,19 @@ class ReadingActivity : AppCompatActivity() {
 
     private fun leaveEndPage() {
         if (!atEnd) return
+        hideEndPage()
+        // 最后一页是宽图且开着拆页时，从后往前落回最后读的那半
+        half = if (currentSplit) {
+            WideSplit.entryHalf(prefs.splitFirstHalf, fromBehind = true)
+        } else {
+            0
+        }
+        showPage()
+    }
+
+    private fun hideEndPage() {
         atEnd = false
         binding.endPage.isVisible = false
-        // 最后一页是宽图且开着拆页时，从后往前落回右半
-        half = if (currentWide && prefs.splitMode != 0) prefs.splitFirstHalf else 0
-        showPage()
     }
 
     private fun endMetaText(): String {
@@ -1535,19 +2367,20 @@ class ReadingActivity : AppCompatActivity() {
 
     private fun saveProgress() {
         val src = source ?: return
-        lifecycleScope.launch(Dispatchers.IO) {
+        if (opening || loading || binding.error.isVisible) return
+        val current = page
+        val chapter = src.chapterOf(current)
+        val progress = ProgressEntity(
+            bookId = bookId,
+            chapterOrdinal = chapter,
+            pageInChapter = current - src.firstPageOfChapter(chapter),
+            pageGlobal = current,
+            finished = finishedOnce,
+            updatedAt = System.currentTimeMillis(),
+        )
+        lifecycleScope.launch {
             runCatching {
-                val chapter = src.chapterOf(page)
-                db.progressDao().upsert(
-                    ProgressEntity(
-                        bookId = bookId,
-                        chapterOrdinal = chapter,
-                        pageInChapter = page - src.firstPageOfChapter(chapter),
-                        pageGlobal = page,
-                        finished = finishedOnce,
-                        updatedAt = System.currentTimeMillis(),
-                    )
-                )
+                db.progressDao().upsert(progress)
             }
         }
     }
@@ -1558,8 +2391,11 @@ class ReadingActivity : AppCompatActivity() {
         resumedOnce = true
         applyOrientation(appPrefs)
         applyDisplayPrefs()
-        // 从设置页回来时参数可能变了，按新参数重画当前页
-        if (!first && source != null && !loading) showPage()
+        // 从设置页回来时参数可能变了，按新参数重画当前页；竖向保留页内位置
+        if (!first && source != null && !loading) {
+            keepVerticalOffset = prefs.vertical
+            showPage()
+        }
     }
 
     /** 锁了方向后屏幕尺寸会变，当前页要按新尺寸重解一次 */
@@ -1573,11 +2409,14 @@ class ReadingActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        // 退到后台就停：回来时画面停在离开的位置，不自己接着滚
+        stopAutoScroll()
         saveProgress()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        stopAutoScroll()
         flingAnimator?.cancel()
         flingAnimator = null
         closeSource()

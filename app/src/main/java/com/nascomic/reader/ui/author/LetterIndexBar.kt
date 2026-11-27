@@ -23,6 +23,13 @@ class LetterIndexBar @JvmOverloads constructor(
 
     private var letters: List<String> = emptyList()
     private var current: String? = null
+
+    /**
+     * 拖到首尾之外时整条被拉开的那一点位移（px）。
+     * 手指还在滑，但已经没有下一节可跳了——让条子跟着走一点点再弹回去，
+     * 比一动不动更容易读出「到头了」。
+     */
+    private var bounce = 0f
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = resources.displayMetrics.scaledDensity * 10f
@@ -45,10 +52,26 @@ class LetterIndexBar @JvmOverloads constructor(
     /** 点/拖到某个字母；调用方负责滚到对应节 */
     var onLetter: ((String) -> Unit)? = null
 
+    private fun pick(y: Float) {
+        val idx = indexAt(y) ?: return
+        val letter = letters[idx]
+        if (letter != current) {
+            current = letter
+            invalidate()
+        }
+        onLetter?.invoke(letter)
+    }
+
     fun setLetters(list: List<String>, current: String?) {
         val changed = list.size != letters.size || list != letters
         letters = list
         this.current = current
+        // 列表换了，之前拉开的位移就不再对应当前这一条
+        if (bounce != 0f) {
+            bounce = 0f
+            animate().cancel()
+            translationY = 0f
+        }
         // 高度是按字母数算的：不变就不重测，变了必须 requestLayout，
         // 否则首次进来（还没数据、高度 0）之后永远不会再长出来
         if (changed) requestLayout()
@@ -97,25 +120,63 @@ class LetterIndexBar @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (letters.isEmpty()) return false
         when (event.action) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                val idx = indexAt(event.y)
-                if (idx != null) {
-                    val letter = letters[idx]
-                    if (letter != current) {
-                        current = letter
-                        invalidate()
-                    }
-                    onLetter?.invoke(letter)
-                }
+            MotionEvent.ACTION_DOWN -> {
+                animate().cancel()
+                followBounce(event.y)
+                pick(event.y)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                followBounce(event.y)
+                pick(event.y)
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 isPressed = false
+                settleBounce()
                 return true
             }
         }
         return true
     }
+
+    /**
+     * 手指越过首/尾之后，条子按阻尼跟一小段。
+     * 位移明显小于手指，看得出是被「拉住」的。
+     */
+    private fun followBounce(y: Float) {
+        val top = contentTop()
+        val bottom = contentBottom()
+        val over = when {
+            y < top -> y - top
+            y > bottom -> y - bottom
+            else -> 0f
+        }
+        val next = IndexBounce.offset(over, maxBounce())
+        // 每次按下/滑动都重新落位：弹回被打断时视图可能停在半路，不能只比数值
+        bounce = next
+        translationY = bounce
+    }
+
+    /** 松手弹回原位。带一点过冲，才有「弹」的意思 */
+    private fun settleBounce() {
+        if (bounce == 0f) return
+        bounce = 0f
+        animate()
+            .translationY(0f)
+            .setDuration(IndexBounce.SETTLE_MS)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.1f))
+            .start()
+    }
+
+    private fun contentTop(): Float = (height - contentHeight()) / 2f
+
+    private fun contentBottom(): Float = contentTop() + contentHeight()
+
+    private fun contentHeight(): Float = heartHeight + letters.size * lineHeight
+
+    private fun maxBounce(): Float =
+        IndexBounce.MAX_DP * resources.displayMetrics.density
 
     private fun indexAt(y: Float): Int? {
         if (letters.isEmpty()) return null

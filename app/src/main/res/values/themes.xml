@@ -27,12 +27,23 @@
         <item name="android:alertDialogTheme">@style/Theme.NasComic.Dialog</item>
     </style>
 
-    <!-- 对话框：白面、圆角、橙按钮，别从 Material 默认里带出一套别的灰 -->
+    <!-- 对话框：白面、圆角、墨色文字；没换成 Material 构建器的那几处也走这里 -->
     <style name="Theme.NasComic.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
         <item name="colorPrimary">@color/brand_accent</item>
         <item name="colorSurface">@color/shell_surface</item>
         <item name="colorOnSurface">@color/shell_ink</item>
+        <item name="colorOnSurfaceVariant">@color/shell_ink</item>
         <item name="shapeAppearanceOverlay">@style/Shape.Dialog</item>
+        <item name="colorSurfaceContainerHigh">@color/shell_surface</item>
+        <item name="colorSurfaceContainer">@color/shell_surface</item>
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/TextAppearance.NasComic.DialogTitle</item>
+    </style>
+
+    <style name="TextAppearance.NasComic.DialogTitle" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/shell_ink</item>
     </style>
 
     <style name="Shape.Dialog" parent="">

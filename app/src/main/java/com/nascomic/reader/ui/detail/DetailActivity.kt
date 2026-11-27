@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.detail
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -33,6 +35,7 @@ import com.nascomic.reader.library.detail.BookDetailLoader
 import com.nascomic.reader.settings.AppPrefs
 import com.nascomic.reader.settings.applyOrientation
 import com.nascomic.reader.ui.reader.ReadingActivity
+import com.nascomic.reader.ui.widget.AppDialogs
 import com.nascomic.reader.ui.widget.padBySystemBars
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,6 +58,7 @@ class DetailActivity : AppCompatActivity() {
     private val opener by lazy { BookOpener(this) }
     private val loader by lazy { BookDetailLoader(this, db) }
     private val chapterWriter by lazy { com.nascomic.reader.library.scan.ChapterWriter(db) }
+    private val scanner by lazy { com.nascomic.reader.library.scan.LibraryScanner(this, db) }
     private val appPrefs by lazy { AppPrefs(this) }
 
     private var bookId: Long = 0
@@ -91,8 +95,8 @@ class DetailActivity : AppCompatActivity() {
             copyPath()
             true
         }
-        // 作品系列关着时不摆这个入口，免得点了没反应
-        binding.more.visibility = if (appPrefs.seriesEnabled) View.VISIBLE else View.GONE
+        // 菜单里还有改名、换封面、改书型、改作者、删除，不能因为系列关着就整个藏起来
+        binding.more.visibility = View.VISIBLE
         binding.more.setOnClickListener { showActions() }
         tocDescending = appPrefs.tocDescending
         applyHeroMetrics()
@@ -469,7 +473,7 @@ class DetailActivity : AppCompatActivity() {
     }
 
     private fun confirmDeleteBookmark(bm: BookmarkEntity) {
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(getString(R.string.detail_bookmark_delete))
             .setPositiveButton(R.string.action_delete) { _, _ -> deleteBookmark(bm) }
             .setNegativeButton(R.string.action_cancel, null)
@@ -488,7 +492,7 @@ class DetailActivity : AppCompatActivity() {
         val b = book ?: return
         lifecycleScope.launch {
             val w = binding.cover.width.takeIf { it > 0 } ?: dp(112)
-            val bmp = withContext(Dispatchers.IO) { thumbs.load(b.id, w, w * 4 / 3) }
+            val bmp = withContext(Dispatchers.IO) { thumbs.load(b, w, w * 4 / 3) }
             if (bmp != null) binding.cover.setImageBitmap(bmp)
         }
     }
@@ -520,29 +524,31 @@ class DetailActivity : AppCompatActivity() {
     }
     private val seriesActions by lazy { SeriesActions(this, db) { load() } }
 
+    /** 改书型后这本书可能被拆掉或并走：还在就刷新，不在就退回书架 */
+    private val bookModeActions by lazy {
+        com.nascomic.reader.ui.shelf.BookModeActions(
+            activity = this,
+            batch = com.nascomic.reader.library.mode.BookModeBatch(this, db, scanner, opener, thumbs),
+        ) {
+            lifecycleScope.launch {
+                if (db.bookDao().get(bookId) == null) finish() else load()
+            }
+        }
+    }
+
     private fun showActions() {
         val book = book ?: return
-        val items = mutableListOf(
-            getString(R.string.shelf_menu_select),
-            getString(R.string.shelf_menu_rename),
-            getString(R.string.shelf_change_cover),
-            getString(R.string.book_author_action),
-            getString(R.string.shelf_menu_delete),
-        )
-        if (appPrefs.seriesEnabled) items += getString(R.string.series_join_action)
-        AlertDialog.Builder(this)
-            .setTitle(book.displayTitle)
-            .setItems(items.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> openShelfSelection(book.id)
-                    1 -> bookActions.rename(book)
-                    2 -> bookActions.changeCover(book)
-                    3 -> bookActions.setAuthor(book)
-                    4 -> bookActions.delete(book)
-                    else -> seriesActions.open(book)
-                }
-            }
-            .show()
+        val actions = ArrayList<Pair<String, () -> Unit>>()
+        actions += getString(R.string.shelf_menu_select) to { openShelfSelection(book.id) }
+        actions += getString(R.string.shelf_menu_rename) to { bookActions.rename(book) }
+        actions += getString(R.string.shelf_change_cover) to { bookActions.changeCover(book) }
+        actions += getString(R.string.book_mode_action_title) to { bookModeActions.choose(listOf(book)) }
+        actions += getString(R.string.book_author_action) to { bookActions.setAuthor(book) }
+        actions += getString(R.string.shelf_menu_delete) to { bookActions.delete(book) }
+        if (appPrefs.seriesEnabled) actions += getString(R.string.series_join_action) to { seriesActions.open(book) }
+        AppDialogs.menu(this, book.displayTitle, actions.map { it.first }) { which ->
+            actions[which].second()
+        }
     }
 
     /** 多选发生在书架页：带着这本书回到书架并进入多选态 */

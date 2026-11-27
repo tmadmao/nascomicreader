@@ -23,12 +23,15 @@ class ThumbnailStore(private val context: Context) {
 
     private val dir: File = File(context.cacheDir, "reader/thumbs").apply { mkdirs() }
 
-    fun fileOf(bookId: Long): File = File(dir, "b$bookId.jpg")
+    data class Key(val bookId: Long, val contentVersion: Long, val coverPage: Int)
 
-    fun has(bookId: Long): Boolean {
-        val f = fileOf(bookId)
-        return f.isFile && f.length() > 0
-    }
+    fun key(book: BookEntity) = Key(book.id, book.contentVersion, book.coverPage)
+
+    internal fun fileOf(book: BookEntity): File = fileOf(key(book))
+
+    private fun fileOf(key: Key): File = File(dir, "b${key.bookId}-${key.contentVersion}-${key.coverPage}.jpg")
+
+    fun has(book: BookEntity): Boolean = fileOf(book).let { it.isFile && it.length() > 0 }
 
     /** 生成一本书的封面；打不开或没有页时返回 null，不回退到占位图 */
     suspend fun generate(
@@ -42,8 +45,8 @@ class ThumbnailStore(private val context: Context) {
             // 首页只打开第一章；封面被设到别的章时由 opener 折算到那一章
             val pick = opener.coverPage(book, source, chapters)
             pick.source.use { src ->
-                if (src.pageCount == 0) return@use null
-                val index = pick.index.coerceIn(0, src.pageCount - 1)
+                val index = pick.index
+                if (index !in 0 until src.pageCount) return@use null
                 // PDF 这类来源没有字节流，直接按尺寸渲染；返回 null（图片章）退回字节流
                 val decoded = (src as? RenderedPageSource)
                     ?.renderPage(index, targetWidth, targetWidth * 3 / 2)
@@ -52,19 +55,46 @@ class ThumbnailStore(private val context: Context) {
                     }
                 ?: return@use null
 
-                val scaled = scaleToWidth(decoded, targetWidth)
-                val out = fileOf(book.id)
-                FileOutputStream(out).use { scaled.compress(Bitmap.CompressFormat.JPEG, 82, it) }
-                if (scaled !== decoded) decoded.recycle()
-                scaled.recycle()
-                out
+                try {
+                    val scaled = scaleToWidth(decoded, targetWidth)
+                    try {
+                        val out = fileOf(book)
+                        return@use if (publish(out) { stream ->
+                            scaled.compress(Bitmap.CompressFormat.JPEG, 82, stream)
+                        }) out else null
+                    } finally {
+                        if (scaled !== decoded) scaled.recycle()
+                    }
+                } finally {
+                    decoded.recycle()
+                }
             }
         }.getOrNull()
     }
 
+    /** Publish only a complete JPEG, with a single atomic rename in the destination directory. */
+    internal fun publish(out: File, encode: (FileOutputStream) -> Boolean): Boolean {
+        val tmp = runCatching { File.createTempFile(".cover-", ".tmp", out.parentFile) }.getOrNull() ?: return false
+        return try {
+            FileOutputStream(tmp).use { stream ->
+                if (!encode(stream)) return false
+                stream.fd.sync()
+            }
+            if (tmp.length() == 0L) return false
+            android.system.Os.rename(tmp.absolutePath, out.absolutePath)
+            true
+        } catch (_: Exception) {
+            false
+        } finally {
+            tmp.delete()
+        }
+    }
+
     /** 读缓存好的封面，按所需尺寸降采样 */
-    fun load(bookId: Long, reqWidth: Int, reqHeight: Int): Bitmap? {
-        val f = fileOf(bookId)
+    fun load(book: BookEntity, reqWidth: Int, reqHeight: Int): Bitmap? = load(key(book), reqWidth, reqHeight)
+
+    fun load(key: Key, reqWidth: Int, reqHeight: Int): Bitmap? {
+        val f = fileOf(key)
         if (!f.isFile) return null
         return try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -80,7 +110,8 @@ class ThumbnailStore(private val context: Context) {
     }
 
     fun invalidate(bookId: Long) {
-        runCatching { fileOf(bookId).delete() }
+        dir.listFiles { _, name -> name.startsWith("b$bookId-") || name == "b$bookId.jpg" }
+            ?.forEach { runCatching { it.delete() } }
     }
 
     /**
@@ -92,7 +123,11 @@ class ThumbnailStore(private val context: Context) {
     fun prune(aliveIds: Set<Long>) {
         val alive = ArrayList<File>()
         dir.listFiles()?.forEach { f ->
-            val id = f.name.removePrefix("b").removeSuffix(".jpg").toLongOrNull()
+            if (f.name.startsWith(".cover-")) {
+                if (f.lastModified() < System.currentTimeMillis() - 24 * 60 * 60 * 1000L) f.delete()
+                return@forEach
+            }
+            val id = f.name.removePrefix("b").substringBefore('-').toLongOrNull()
             if (id == null || id !in aliveIds) {
                 runCatching { f.delete() }
             } else {

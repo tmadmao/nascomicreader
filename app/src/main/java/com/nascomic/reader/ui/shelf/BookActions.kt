@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.shelf
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.graphics.Bitmap
 import android.text.InputType
 import android.widget.EditText
@@ -16,7 +18,6 @@ import com.nascomic.reader.library.cover.ThumbnailStore
 import com.nascomic.reader.library.data.BookEntity
 import com.nascomic.reader.library.data.ReaderDatabase
 import com.nascomic.reader.library.data.SourceEntity
-import com.nascomic.reader.ui.reader.DiskPageCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,10 +35,15 @@ class BookActions(
     private val opener: BookOpener,
     private val sourceOf: (Long) -> SourceEntity?,
     /** 封面尺寸变了之后要喂回去，由调用方决定怎么显示 */
-    private val onCoverReady: (Long, Bitmap) -> Unit,
+    private val onCoverReady: (BookEntity, Bitmap) -> Unit,
     /** 改完（改名 / 换封面 / 删除）通知调用方刷新 */
     private val onChanged: () -> Unit,
     private val coverWidth: () -> Int,
+    /**
+     * 删除交给调用方安排：不为空时确认之后不立刻落库，
+     * 由书架先藏起来、过 5 秒再真删（见 [DeleteUndo]）。为空就是当场删，详情页用这种。
+     */
+    private val deferDelete: ((BookEntity) -> Unit)? = null,
 ) {
 
     fun rename(book: BookEntity) {
@@ -57,7 +63,7 @@ class BookActions(
             })
             addView(input)
         }
-        AlertDialog.Builder(activity)
+        AppDialogBuilder(activity)
             .setTitle(R.string.shelf_rename_title)
             .setView(box)
             .setNegativeButton(R.string.action_cancel, null)
@@ -95,7 +101,7 @@ class BookActions(
             })
             addView(input)
         }
-        AlertDialog.Builder(activity)
+        AppDialogBuilder(activity)
             .setTitle(R.string.book_author_title)
             .setView(box)
             .setNegativeButton(R.string.action_cancel, null)
@@ -110,50 +116,45 @@ class BookActions(
             .show()
     }
 
+    /**
+     * 换封面：打开全屏挑页面板。
+     *
+     * 原来的「输入第几页」只适合已经知道页号的人；从书里挑要直观得多。
+     * 面板自己负责开书与取缩略图，点一页回调回来，这里只写库与重生成缩略图。
+     */
     fun changeCover(book: BookEntity) {
-        val pages = book.pageTotal
-        val input = EditText(activity).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            hint = activity.getString(R.string.shelf_cover_input_hint)
-            setText((book.coverPage + 1).toString())
-            setSelection(text.length)
+        val src = sourceOf(book.sourceId)
+        if (src == null) {
+            Toast.makeText(activity, R.string.shelf_cover_failed, Toast.LENGTH_SHORT).show()
+            return
         }
-        val box = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(2), dp(20), 0)
-            addView(TextView(activity).apply {
-                text = activity.getString(R.string.shelf_cover_hint, pages.coerceAtLeast(1))
-                textSize = 12f
-                setTextColor(activity.getColor(R.color.shell_ink_muted))
-                setPadding(0, 0, 0, dp(10))
-            })
-            addView(input)
+        activity.lifecycleScope.launch {
+            val chapters = withContext(Dispatchers.IO) { db.chapterDao().forBook(book.id) }
+            CoverPickerSheet(
+                activity = activity,
+                book = book,
+                source = src,
+                chapters = chapters,
+                opener = opener,
+                onPick = { page -> applyCover(book, page) },
+            ).show()
         }
-        AlertDialog.Builder(activity)
-            .setTitle(activity.getString(R.string.shelf_cover_title, book.displayTitle))
-            .setView(box)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val n = input.text.toString().trim().toIntOrNull()
-                val upper = if (pages > 0) pages else Int.MAX_VALUE
-                if (n == null || n < 1 || n > upper) {
-                    Toast.makeText(
-                        activity,
-                        activity.getString(R.string.shelf_cover_invalid, minOf(upper, pages.coerceAtLeast(1))),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    return@setPositiveButton
-                }
-                applyCover(book, n - 1)
-            }
-            .show()
     }
 
-    /** 写回取图页号，删掉旧缩略图，重新生成一次再喂给界面 */
+    /**
+     * 先生成新封面，成了才写回页号。
+     *
+     * 反过来写（先落页号再生成）一旦生成失败，库里记着新页、缩略图还是老的：
+     * 界面上一张旧图，点进去却是另一页，而且再打开详情也不会自愈。
+     */
     private fun applyCover(book: BookEntity, page: Int) {
         activity.lifecycleScope.launch {
-            db.bookDao().updateCoverPage(book.id, page)
-            val updated = book.copy(coverPage = page)
+            val current = db.bookDao().get(book.id)
+            if (current == null || current.coverPage != book.coverPage || current.contentVersion != book.contentVersion) {
+                Toast.makeText(activity, R.string.shelf_cover_failed, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val updated = current.copy(coverPage = page)
             val src = sourceOf(book.sourceId)
             val chapters = db.chapterDao().forBook(book.id)
             val file = if (src == null) {
@@ -163,37 +164,52 @@ class BookActions(
                     runCatching { thumbs.generate(updated, src, chapters, opener) }.getOrNull()
                 }
             }
-            if (file == null) {
+            val saved = file != null && runCatching {
+                db.bookDao().updateCoverIfUnchanged(book.id, current.coverPage, current.contentVersion, page) == 1
+            }.getOrElse {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                android.util.Log.w("Cover", "保存封面页失败", it)
+                false
+            }
+            if (!saved) {
                 Toast.makeText(activity, R.string.shelf_cover_failed, Toast.LENGTH_SHORT).show()
                 return@launch
             }
             val width = coverWidth().takeIf { it > 0 } ?: dp(112)
-            val bitmap = withContext(Dispatchers.IO) { thumbs.load(book.id, width, width * 4 / 3) }
-            if (bitmap != null) onCoverReady(book.id, bitmap)
+            val bitmap = withContext(Dispatchers.IO) { thumbs.load(updated, width, width * 4 / 3) }
+            if (bitmap != null) onCoverReady(updated, bitmap)
             onChanged()
             Toast.makeText(activity, R.string.shelf_cover_done, Toast.LENGTH_SHORT).show()
         }
     }
 
     fun delete(book: BookEntity) {
-        AlertDialog.Builder(activity)
+        AppDialogBuilder(activity)
             .setTitle(R.string.shelf_delete_title)
             .setMessage(activity.getString(R.string.shelf_delete_message, book.displayTitle))
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.shelf_delete_confirm) { _, _ ->
+                val defer = deferDelete
+                if (defer != null) {
+                    // 撤销窗口由调用方掌握，这里不落库、也不弹「已删除」
+                    defer(book)
+                    return@setPositiveButton
+                }
                 activity.lifecycleScope.launch {
-                    db.bookDao().delete(book.id)
-                    withContext(Dispatchers.IO) {
-                        // 这本书的页缓存与缩略图也一并清掉，不然没人再用它们
-                        DiskPageCache(activity).clearBook(book.id)
-                        thumbs.invalidate(book.id)
-                    }
+                    val failed = remove(listOf(book.id))
                     onChanged()
-                    Toast.makeText(activity, R.string.shelf_delete_done, Toast.LENGTH_SHORT).show()
+                    val msg = if (failed.isEmpty()) R.string.shelf_delete_done else R.string.shelf_delete_failed
+                    Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
                 }
             }
             .show()
     }
+
+    /**
+     * 真删：记录、页缓存、缩略图一起清。源文件一个字节都不动。
+     * 返回没删成的 id；失败的书缓存原样留着。单本与详情页走的都是这一条。
+     */
+    suspend fun remove(ids: List<Long>): List<Long> = BookRemover.remove(activity, ids, db)
 
     private fun dp(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 }

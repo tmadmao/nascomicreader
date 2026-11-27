@@ -23,21 +23,22 @@ class SeriesCover(
 ) {
 
     /** 同一本只生成一次：几屏同时滚到同一本时不要排队打架 */
-    private val inFlight = HashSet<Long>()
+    private val inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<ThumbnailStore.Key>()
 
     suspend fun load(bookId: Long, width: Int): Bitmap? = withContext(Dispatchers.IO) {
+        val book = db.bookDao().get(bookId) ?: return@withContext null
         val height = width * 4 / 3
-        thumbs.load(bookId, width, height)?.let { return@withContext it }
+        thumbs.load(book, width, height)?.let { return@withContext it }
 
-        if (!inFlight.add(bookId)) return@withContext null
+        val key = thumbs.key(book)
+        if (!inFlight.add(key)) return@withContext null
         try {
-            val book = db.bookDao().get(bookId) ?: return@withContext null
             val source = db.sourceDao().get(book.sourceId) ?: return@withContext null
             val chapters = db.chapterDao().forBook(bookId)
             runCatching { thumbs.generate(book, source, chapters, opener, targetWidth = width) }
-            thumbs.load(bookId, width, height)
+            thumbs.load(book, width, height)
         } finally {
-            inFlight.remove(bookId)
+            inFlight.remove(key)
         }
     }
 }

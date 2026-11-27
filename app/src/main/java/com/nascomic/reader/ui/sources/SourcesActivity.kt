@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.sources
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -534,7 +536,7 @@ class SourcesActivity : AppCompatActivity() {
         val lines = report.issues.map { issue ->
             getString(R.string.health_issue_line, issue.title, issueText(issue))
         }
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.health_title)
             .setMessage((listOf(header) + lines).joinToString("\n"))
             .setPositiveButton(android.R.string.ok, null)
@@ -597,6 +599,7 @@ class SourcesActivity : AppCompatActivity() {
     }
 
     /** 用户按了取消：扫描器在下一个检查点停下，库不动 */
+    @Volatile
     private var scanCancelled = false
 
     private fun showProgress(label: String) {
@@ -646,7 +649,7 @@ class SourcesActivity : AppCompatActivity() {
             setText(suggested)
             setSelection(text.length)
         }
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.source_local_label_hint)
             .setView(input)
             .setNegativeButton(R.string.action_cancel, null)
@@ -692,16 +695,22 @@ class SourcesActivity : AppCompatActivity() {
 
     private fun scanListener() = object : LibraryScanner.Listener {
         override fun onListing() = onUi {
+            if (!binding.progressCancel.isEnabled) return@onUi
             binding.progressDetail.text = getString(R.string.sources_scan_listing)
         }
 
         override fun onProgress(done: Int, total: Int) = onUi {
-            if (total <= 0) return@onUi
+            if (total <= 0 || !binding.progressCancel.isEnabled) return@onUi
             val percent = (done * 100 / total).coerceIn(0, 100)
             binding.progressSpinner.isVisible = false
             binding.progressDetail.text = getString(R.string.scan_progress, done, total)
             binding.progressPercent.text = "$percent%"
             binding.progressBar.progress = percent
+        }
+
+        override fun onCommitting() {
+            binding.progressCancel.isEnabled = false
+            binding.progressDetail.setText(R.string.scan_committing)
         }
     }
 
@@ -744,7 +753,7 @@ class SourcesActivity : AppCompatActivity() {
         renderScheme()
         address.requestFocus()
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = AppDialogBuilder(this)
             .setTitle(if (smb) R.string.smb_dialog_title else R.string.dav_dialog_title)
             .setView(content)
             .setNegativeButton(R.string.action_cancel, null)
@@ -912,7 +921,7 @@ class SourcesActivity : AppCompatActivity() {
         actions += getString(R.string.source_rename) to { renameSource(source) }
         actions += getString(R.string.action_delete) to { confirmRemove(source) }
 
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setItems(actions.map { it.first }.toTypedArray()) { _, which ->
                 actions[which].second()
             }
@@ -936,13 +945,13 @@ class SourcesActivity : AppCompatActivity() {
             getString(R.string.source_mode_serial_short),
             getString(R.string.source_mode_single_short),
         )
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.source_mode_change_title)
             .setSingleChoiceItems(labels, if (source.bookMode == SourceEntity.MODE_SINGLE) 1 else 0) { dialog, which ->
                 dialog.dismiss()
                 val target = if (which == 1) SourceEntity.MODE_SINGLE else SourceEntity.MODE_SERIAL
                 if (target == source.bookMode) return@setSingleChoiceItems
-                AlertDialog.Builder(this)
+                AppDialogBuilder(this)
                     .setTitle(R.string.source_mode_change_title)
                     .setMessage(
                         getString(
@@ -1007,7 +1016,7 @@ class SourcesActivity : AppCompatActivity() {
             addView(password)
         }
 
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(getString(R.string.source_edit_title, source.label))
             .setView(box)
             .setNegativeButton(R.string.action_cancel, null)
@@ -1042,7 +1051,7 @@ class SourcesActivity : AppCompatActivity() {
             setText(source.label)
             setSelection(text.length)
         }
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.source_rename_title)
             .setView(input)
             .setNegativeButton(R.string.action_cancel, null)
@@ -1056,7 +1065,7 @@ class SourcesActivity : AppCompatActivity() {
     }
 
     private fun confirmRemove(source: SourceEntity) {
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.source_delete_title)
             .setMessage(getString(R.string.source_delete_message, source.label))
             .setNegativeButton(R.string.action_cancel, null)

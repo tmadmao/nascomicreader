@@ -12,7 +12,12 @@ import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File as SmbFile
 import com.nascomic.reader.core.fs.SystemDirs
+import com.nascomic.reader.format.CancelSignal
 import java.io.Closeable
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+import javax.net.SocketFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -22,11 +27,19 @@ import java.util.concurrent.TimeUnit
  * 协议交给 smbj（SMB2/3），我们只关心「列一层名字」和「读一段字节」——
  * 这两件事够了，上面所有格式解析都走 [com.nascomic.reader.format.zip.RandomAccessData]。
  */
-class SmbClient(
+class SmbClient private constructor(
     private val target: SmbTarget,
     private val account: String?,
     private val password: String?,
+    private val socketFactory: RequestSocketFactory?,
 ) : Closeable {
+    constructor(target: SmbTarget, account: String?, password: String?) : this(target, account, password, null)
+
+    private fun requestClient(signal: CancelSignal? = CancelSignal.current): SmbClient? =
+        if (signal == null || socketFactory != null) null else signal.resource(this) {
+            SmbClient(target, account, password, RequestSocketFactory(signal))
+        }
+
 
     data class Entry(
         /** 共享内的路径，作为书的 docRef */
@@ -34,12 +47,14 @@ class SmbClient(
         val name: String,
         val isDirectory: Boolean,
         val size: Long,
+        val lastModified: Long = 0,
     )
 
     private val client = SMBClient(
         SmbConfig.builder()
             .withTimeout(20, TimeUnit.SECONDS)
             .withSoTimeout(30, TimeUnit.SECONDS)
+            .apply { socketFactory?.let { withSocketFactory(it) } }
             .build()
     )
 
@@ -79,6 +94,7 @@ class SmbClient(
 
     /** 列一层。路径用共享内相对路径，共享根传空串；NAS 的系统目录不返回 */
     fun list(dirPath: String): List<Entry> {
+        requestClient()?.let { return it.list(dirPath) }
         val entries = try {
             share().list(dirPath)
         } catch (e: Exception) {
@@ -93,15 +109,22 @@ class SmbClient(
                     name = info.fileName,
                     isDirectory = (info.fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value) != 0L,
                     size = info.endOfFile,
+                    lastModified = info.lastWriteTime.toEpochMillis(),
                 )
             }
             .filterNot { it.isDirectory && SystemDirs.isIgnoredDirectory(it.name) }
             .toList()
     }
 
-    fun size(path: String): Long = open(path).let { file ->
+    internal fun fileVersion(path: String): String = share().getFileInformation(path).let {
+        "${it.standardInformation.endOfFile}:${it.basicInformation.lastWriteTime.toEpochMillis()}"
+    }
+
+    fun size(path: String): Long {
+        requestClient()?.let { return it.size(path) }
+        val file = open(path)
         try {
-            file.length
+            return file.length
         } catch (e: Exception) {
             throw classify(e, "取文件信息失败：$path")
         }
@@ -112,6 +135,7 @@ class SmbClient(
      * smbj 的 read 在越过末尾时返回 -1，这里统一成 null 让调用方少判断一种情况。
      */
     fun read(path: String, offset: Long, length: Int): ByteArray? {
+        requestClient()?.let { return it.read(path, offset, length) }
         val file = open(path)
         val buffer = ByteArray(length)
         var filled = 0
@@ -144,6 +168,7 @@ class SmbClient(
         out: File,
         isCancelled: () -> Boolean = { false },
     ) {
+        requestClient()?.let { return it.download(path, out, isCancelled) }
         val file = open(path)
         val expected = runCatching { file.length }.getOrDefault(-1L)
         val tmp = File(out.parentFile, out.name + ".part")
@@ -203,8 +228,9 @@ class SmbClient(
         }
     }
 
-    /** 按路径取字节流，目录书逐页读用。同一时刻只有一个打开的句柄，读完即关 */
-    fun openStream(path: String): java.io.InputStream {
+    /** Each cancellable decode owns its socket from connect through the last byte. */
+    fun openStream(path: String, cancel: CancelSignal? = CancelSignal.current): java.io.InputStream {
+        requestClient(cancel)?.let { return it.openStream(path, cancel) }
         val file = open(path)
         return try {
             file.inputStream
@@ -260,6 +286,26 @@ class SmbClient(
         runCatching { client.close() }
     }
 
+}
+
+/** SMBJ uses this factory before negotiate/authenticate, when no SMB handle exists yet. */
+private class RequestSocketFactory(private val signal: CancelSignal) : SocketFactory() {
+    override fun createSocket(): Socket = Socket().also { signal.attach(it) }
+    private fun connect(remote: InetSocketAddress, local: InetSocketAddress? = null): Socket = createSocket().also {
+        try {
+            if (local != null) it.bind(local)
+            it.connect(remote, 15_000)
+        } catch (e: Throwable) {
+            it.close()
+            throw e
+        }
+    }
+    override fun createSocket(host: String, port: Int): Socket = connect(InetSocketAddress(host, port))
+    override fun createSocket(host: InetAddress, port: Int): Socket = connect(InetSocketAddress(host, port))
+    override fun createSocket(host: String, port: Int, local: InetAddress, localPort: Int): Socket =
+        connect(InetSocketAddress(host, port), InetSocketAddress(local, localPort))
+    override fun createSocket(host: InetAddress, port: Int, local: InetAddress, localPort: Int): Socket =
+        connect(InetSocketAddress(host, port), InetSocketAddress(local, localPort))
 }
 
 /** SMB 侧的失败：只区分「账号不对」和「其它（连不上、路径不存在）」 */

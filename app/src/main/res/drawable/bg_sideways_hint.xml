@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 横置页提示：压在画面上的单行浮层，深灰胶囊，右侧是「转正」入口 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#3E3E40" />
+    <corners android:radius="25dp" />
+</shape>

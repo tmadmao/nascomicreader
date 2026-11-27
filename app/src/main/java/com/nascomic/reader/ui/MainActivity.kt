@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -9,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
@@ -38,6 +41,7 @@ import com.nascomic.reader.ui.shelf.ShelfAdapter
 import com.nascomic.reader.ui.shelf.ShelfGrid
 import com.nascomic.reader.ui.update.UpdateDialogs
 import com.nascomic.reader.ui.widget.ScanProgressDialog
+import com.nascomic.reader.ui.widget.AppDialogs
 import com.nascomic.reader.ui.widget.padBySystemBars
 import com.nascomic.reader.update.UpdateCenter
 import com.nascomic.reader.update.UpdateState
@@ -45,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 书架。顶部「书库」+ 标签 chip + 「接着读」卡 + 封面网格。
@@ -79,10 +84,21 @@ class MainActivity : AppCompatActivity() {
             onCoverReady = { id, bitmap -> adapter.showCover(id, bitmap) },
             onChanged = { refresh() },
             coverWidth = { coverWidth },
+            deferDelete = { book -> scheduleDelete(listOf(book.id)) },
         )
     }
     private val seriesActions by lazy {
         com.nascomic.reader.ui.shelf.SeriesActions(this, db) { refresh() }
+    }
+    /** 改书型：预览、冲突选择、按组执行都在这一份里，详情页共用 */
+    private val bookModeActions by lazy {
+        com.nascomic.reader.ui.shelf.BookModeActions(
+            activity = this,
+            batch = com.nascomic.reader.library.mode.BookModeBatch(this, db, scanner, opener, thumbs),
+        ) {
+            exitSelection()
+            refresh()
+        }
     }
     private var sourceFilter: String = com.nascomic.reader.ui.shelf.ShelfTopAdapter.ALL_SOURCES
     private var allSources: List<SourceEntity> = emptyList()
@@ -117,6 +133,15 @@ class MainActivity : AppCompatActivity() {
     /** 多选：开着时点书是勾选，不是打开 */
     private var selecting = false
     private val selectedIds = LinkedHashSet<Long>()
+
+    /**
+     * 删除的 5 秒窗口在 ViewModel 里：改字体这类配置变化会重建本页，
+     * 窗口、计时和到点提交都要活过重建，这里只负责画横条和刷列表。
+     */
+    private val deleteModel by viewModels<com.nascomic.reader.ui.shelf.ShelfDeleteModel>()
+
+    /** 本页挂上去的那份监听，销毁时按引用摘，不误摘重建后新页的 */
+    private var deleteListener: ((List<Long>, List<Long>) -> Unit)? = null
 
     private val pickFolder = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -205,6 +230,17 @@ class MainActivity : AppCompatActivity() {
 
         binding.selectCancel.setOnClickListener { exitSelection() }
         binding.selectDelete.setOnClickListener { showBatchActions() }
+        binding.undoAction.setOnClickListener { undoDeletes() }
+        val onDeletesSettled: (List<Long>, List<Long>) -> Unit = { removed, _ ->
+            removed.forEach { adapter.invalidateCover(it) }
+            // 提交落定时可能又排了新的删除：只有窗口空了才收横条
+            if (deleteModel.pending.isEmpty()) hideUndoBar() else showUndoBar()
+            refresh()
+        }
+        deleteListener = onDeletesSettled
+        deleteModel.listener = onDeletesSettled
+        // 配置变化重建回来：窗口还开着就把横条摆回去
+        if (deleteModel.pending.isNotEmpty()) showUndoBar()
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (selecting) exitSelection() else {
@@ -278,7 +314,7 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.shelf_sort_title_asc),
             getString(R.string.shelf_sort_title_desc),
         )
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.shelf_sort)
             .setSingleChoiceItems(labels, prefs.shelfSort) { dialog, which ->
                 prefs.shelfSort = which
@@ -309,6 +345,26 @@ class MainActivity : AppCompatActivity() {
         // 距上次检查超过六小时才会真的发请求，这里每次回前台都能调
         UpdateCenter.checkIfDue(this)
         applySelectExtra()
+    }
+
+    /**
+     * 离开书架就把撤销窗口收尾：那 5 秒是给「刚刚误删」留的，
+     * 人都已经翻到别处了，还挂着待删记录只会让库和界面对不上。
+     * 配置变化引起的重建不算离开——窗口和计时在 ViewModel 里继续走。
+     */
+    override fun onStop() {
+        super.onStop()
+        if (isChangingConfigurations) return
+        if (deleteModel.pending.isEmpty()) return
+        deleteModel.flush()
+        hideUndoBar()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // ViewModel 比页面活得久：监听里抓着本页，页面走了就摘掉
+        if (deleteModel.listener === deleteListener) deleteModel.listener = null
+        deleteListener = null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -346,7 +402,9 @@ class MainActivity : AppCompatActivity() {
             allSources = sources.list()
 
             // 标签上的计数与列表分两次取：计数要全量，列表要按当前标签筛
-            val allBooks = db.bookDao().allSorted()
+            // 撤销窗口里的书先按「已删」算——界面与库里只差这几秒，收尾时会补齐
+            val pending = deleteModel.pending.toSet()
+            val allBooks = db.bookDao().allSorted().filterNot { it.id in pending }
             val progress = db.progressDao().all().associateBy { it.bookId }
             tabCounts = buildMap {
                 allSources.forEach { source ->
@@ -510,7 +568,7 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.shelf_scope_series),
             getString(R.string.shelf_scope_author),
         )
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.shelf_scope_title)
             .setSingleChoiceItems(labels, scope) { dialog, which ->
                 dialog.dismiss()
@@ -580,18 +638,14 @@ class MainActivity : AppCompatActivity() {
         image: android.widget.ImageView,
     ) {
         val bookId = card.coverBookId ?: return
-        val cached = seriesCovers.cached(bookId)
-        if (cached != null) {
-            image.setImageBitmap(cached)
-            return
-        }
         lifecycleScope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
+            val book = db.bookDao().get(bookId) ?: return@launch
+            val bitmap = seriesCovers.cached(book) ?: withContext(Dispatchers.IO) {
                 val width = if (coverWidth > 0) coverWidth else dp(112)
-                runCatching { thumbs.load(bookId, width, width * 4 / 3) }.getOrNull()
+                thumbs.load(book, width, width * 4 / 3)
             }
             if (bitmap != null) {
-                seriesCovers.put(bookId, bitmap)
+                seriesCovers.put(book, bitmap)
                 seriesAdapter.showCover(card.seriesId, bitmap)
             }
         }
@@ -616,11 +670,12 @@ class MainActivity : AppCompatActivity() {
     ) = object : LibraryScanner.Listener {
         override fun onListing() = progress.showListing(name)
         override fun onProgress(done: Int, total: Int) = progress.progress(done, total)
+        override fun onCommitting() = progress.committing()
     }
 
     private fun requestCover(bookId: Long) {
         if (queuedCovers.size > MAX_COVER_QUEUE) return
-        if (thumbs.has(bookId) || !queuedCovers.add(bookId)) return
+        if (!queuedCovers.add(bookId)) return
         coverQueue.trySend(bookId)
     }
 
@@ -657,18 +712,15 @@ class MainActivity : AppCompatActivity() {
         )
         // 系列功能关着时不摆这一项，菜单里每一条都点得动
         if (prefs.seriesEnabled) items += getString(R.string.series_join_action)
-        AlertDialog.Builder(this)
-            .setTitle(book.displayTitle)
-            .setItems(items.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> enterSelection(book.id)
-                    1 -> bookActions.rename(book)
-                    2 -> bookActions.changeCover(book)
-                    3 -> bookActions.delete(book)
-                    else -> seriesActions.open(book)
-                }
+        AppDialogs.menu(this, book.displayTitle, items) { which ->
+            when (which) {
+                0 -> enterSelection(book.id)
+                1 -> bookActions.rename(book)
+                2 -> bookActions.changeCover(book)
+                3 -> bookActions.delete(book)
+                else -> seriesActions.open(book)
             }
-            .show()
+        }
     }
 
     // ── 多选 ───────────────────────────────────────────────
@@ -705,14 +757,27 @@ class MainActivity : AppCompatActivity() {
      */
     private fun showBatchActions() {
         if (selectedIds.isEmpty()) return
-        val items = mutableListOf(getString(R.string.shelf_batch_delete))
-        if (prefs.seriesEnabled) items += getString(R.string.shelf_batch_series)
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.shelf_selected_count, selectedIds.size))
-            .setItems(items.toTypedArray()) { _, which ->
-                if (which == 0) confirmDeleteSelected() else addSelectedToSeries()
-            }
-            .show()
+        val actions = ArrayList<Pair<String, () -> Unit>>()
+        actions += getString(R.string.shelf_batch_delete) to { confirmDeleteSelected() }
+        actions += getString(R.string.shelf_batch_mode) to { modeForSelected() }
+        if (prefs.seriesEnabled) {
+            actions += getString(R.string.shelf_batch_series) to { addSelectedToSeries() }
+        }
+        AppDialogs.menu(
+            this,
+            getString(R.string.shelf_selected_count, selectedIds.size),
+            actions.map { it.first },
+        ) { which -> actions[which].second() }
+    }
+
+    /** 改书型：把勾选的几本交给预览流程，组由它自己算 */
+    private fun modeForSelected() {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) return
+        lifecycleScope.launch {
+            val books = ids.mapNotNull { db.bookDao().get(it) }
+            bookModeActions.choose(books)
+        }
     }
 
     /** 把当前勾选的几本一次加进同一个系列 */
@@ -728,41 +793,50 @@ class MainActivity : AppCompatActivity() {
     /** 批量删除：只删库里的记录，源文件不动 */
     private fun confirmDeleteSelected() {
         if (selectedIds.isEmpty()) return
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.shelf_delete_title)
             .setMessage(getString(R.string.shelf_delete_batch_message, selectedIds.size))
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.shelf_delete_confirm) { _, _ ->
                 val doomed = selectedIds.toList()
-                lifecycleScope.launch {
-                    val cache = com.nascomic.reader.ui.reader.DiskPageCache(this@MainActivity)
-                    withContext(Dispatchers.IO) {
-                        doomed.forEach { id ->
-                            runCatching { db.bookDao().delete(id) }
-                            cache.clearBook(id)
-                            thumbs.invalidate(id)
-                        }
-                    }
-                    doomed.forEach { adapter.invalidateCover(it) }
-                    Toast.makeText(
-                        this@MainActivity,
-                        getString(R.string.shelf_delete_done),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    exitSelection()
-                    refresh()
-                }
+                exitSelection()
+                scheduleDelete(doomed)
             }
             .show()
     }
 
-    
+    // ── 删除与撤销 ─────────────────────────────────────────
 
-    
+    /**
+     * 删除先落到「待删」：卡片立刻消失，但库里还留着，
+     * 5 秒内点撤销就把它们放回来——那时什么也还没发生。
+     * 计时与到点提交都在 ViewModel 里，本页只管画。
+     */
+    private fun scheduleDelete(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        deleteModel.schedule(ids)
+        showUndoBar()
+        refresh()
+        requestVisibleCovers()
+    }
 
-    
+    /** 撤销：窗口内什么也不删，把书放回列表 */
+    private fun undoDeletes() {
+        if (!deleteModel.undoNow()) return
+        hideUndoBar()
+        refresh()
+    }
 
-    
+    private fun showUndoBar() {
+        val count = deleteModel.pending.size
+        if (count <= 0) return
+        binding.undoText.text = getString(R.string.shelf_undo_text, count)
+        binding.undoBar.isVisible = true
+    }
+
+    private fun hideUndoBar() {
+        binding.undoBar.isVisible = false
+    }
 
     private fun startCoverWorker() {
         // 两条并发：一条在等远端连上时，另一条已经在解下一页。
@@ -771,8 +845,8 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 for (bookId in coverQueue) {
                     try {
-                        if (!thumbs.has(bookId)) {
-                            val book = db.bookDao().get(bookId) ?: continue
+                        val book = db.bookDao().get(bookId) ?: continue
+                        if (!thumbs.has(book)) {
                             val src = allSources.firstOrNull { it.id == book.sourceId } ?: continue
                             val chapters = db.chapterDao().forBook(bookId)
                             withContext(Dispatchers.IO) {
@@ -781,9 +855,9 @@ class MainActivity : AppCompatActivity() {
                         }
                         val width = if (coverWidth > 0) coverWidth else dp(112)
                         val bitmap = withContext(Dispatchers.IO) {
-                            thumbs.load(bookId, width, width * 4 / 3)
+                            thumbs.load(book, width, width * 4 / 3)
                         }
-                        if (bitmap != null) adapter.showCover(bookId, bitmap)
+                        if (bitmap != null) adapter.showCover(book, bitmap)
                     } catch (e: Exception) {
                         // 单本失败不影响别的；缓存目录被清掉时下次滚到再试
                         android.util.Log.d("Cover", "封面生成失败 $bookId", e)
@@ -825,8 +899,8 @@ class MainActivity : AppCompatActivity() {
     // ── 操作 ───────────────────────────────────────────────
 
     private fun scanFolder(uri: Uri) {
-        var cancelled = false
-        val progress = ScanProgressDialog(this) { cancelled = true }
+        val cancelled = AtomicBoolean()
+        val progress = ScanProgressDialog(this) { cancelled.set(true) }
         lifecycleScope.launch {
             status(getString(R.string.status_scanning))
             try {
@@ -837,7 +911,7 @@ class MainActivity : AppCompatActivity() {
                     return@launch
                 }
                 progress.showListing(source.label)
-                val r = scanner.scan(source, listenerFor(progress, source.label)) { cancelled }
+                val r = scanner.scan(source, listenerFor(progress, source.label), cancelled::get)
                 status(
                     if (r.keptAll) {
                         getString(

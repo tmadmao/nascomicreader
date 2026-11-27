@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.settings
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.Intent
 import android.os.Bundle
 import android.util.TypedValue
@@ -741,6 +743,14 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         addView(
+            switchRow(
+                title = getString(R.string.settings_sideways_detect),
+                desc = getString(R.string.settings_sideways_detect_desc),
+                checked = reader.detectSideways,
+            ) { checked -> reader.detectSideways = checked }
+        )
+
+        addView(
             sliderRow(
                 title = getString(R.string.settings_margin),
                 min = 0,
@@ -996,7 +1006,7 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             val content = android.widget.ScrollView(this@SettingsActivity).apply { addView(box) }
-            AlertDialog.Builder(this@SettingsActivity)
+            AppDialogBuilder(this@SettingsActivity)
                 .setTitle(R.string.settings_cache_page_title)
                 .setView(content)
                 .setPositiveButton(R.string.settings_cache_page_set) { _, _ -> showCacheLimitDialog() }
@@ -1012,7 +1022,7 @@ class SettingsActivity : AppCompatActivity() {
             if (it == 0) getString(R.string.settings_cache_gb_auto)
             else getString(R.string.settings_cache_gb_value, it)
         }.toTypedArray()
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.settings_cache_gb)
             .setSingleChoiceItems(
                 labels,
@@ -1036,7 +1046,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun confirmClearCache() {
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setMessage(R.string.settings_cache_clear_confirm)
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -1132,7 +1142,7 @@ class SettingsActivity : AppCompatActivity() {
      * 清完立即重建这一页，参数要当场回到初始值，而不是等下次进来。
      */
     private fun confirmReset() {
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.settings_reset_title)
             .setMessage(R.string.settings_reset_message)
             .setNegativeButton(R.string.action_cancel, null)

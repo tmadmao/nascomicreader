@@ -20,8 +20,18 @@ interface BookSource : Closeable {
     /** 第 [page] 页在容器里的名字，用于调试与日志 */
     fun pageName(page: Int): String
 
+    /** 容器内识别页面的位置，不用界面显示的页码或标题代替。 */
+    fun pageLocator(page: Int): String = pageName(page)
+
     /** 打开第 [page] 页的字节流。调用方负责关闭 */
     fun openPage(page: Int): InputStream
+
+    /**
+     * 打开第 [page] 页，并把「怎么中止这次请求」登记给 [cancel]。
+     *
+     * 远端来源在等响应头时也能被取消；本地来源没有可中止的东西，直接用默认实现。
+     */
+    fun openPage(page: Int, cancel: CancelSignal): InputStream = openPage(page)
 
     /** 第 [page] 页属于哪一章（0 基章号） */
     fun chapterOf(page: Int): Int

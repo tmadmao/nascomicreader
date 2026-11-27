@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 合并面板的主按钮：橙色胶囊，按下去深一档 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/brand_accent_press" />
+            <corners android:radius="23dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/brand_accent" />
+            <corners android:radius="23dp" />
+        </shape>
+    </item>
+</selector>

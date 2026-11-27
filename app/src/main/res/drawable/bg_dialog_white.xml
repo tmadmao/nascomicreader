@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 对话框：纸白实底 + 22dp 圆角，跟主题里的 Shape.Dialog 同一尺度 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/shell_surface" />
+    <corners android:radius="22dp" />
+</shape>

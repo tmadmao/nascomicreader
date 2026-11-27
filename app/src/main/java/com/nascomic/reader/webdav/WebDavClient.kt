@@ -6,6 +6,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import com.nascomic.reader.core.fs.SystemDirs
+import com.nascomic.reader.format.CancelSignal
+import java.io.Closeable
+import okhttp3.Response
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
@@ -32,6 +35,8 @@ class WebDavClient(
         val name: String,
         val isDirectory: Boolean,
         val size: Long,
+        val etag: String? = null,
+        val lastModified: String? = null,
     )
 
     private val client: OkHttpClient get() = shared
@@ -46,7 +51,7 @@ class WebDavClient(
             .method("PROPFIND", body)
             .build()
 
-        client.newCall(request).execute().use { response ->
+        return execute(request) { response ->
             if (!response.isSuccessful) {
                 throw WebDavException(response.code, "列目录失败：HTTP ${response.code}")
             }
@@ -56,7 +61,7 @@ class WebDavClient(
             if (RESPONSE.find(xml) == null) {
                 throw WebDavException(response.code, "列目录的响应不是 WebDAV 列表")
             }
-            return SystemDirs.withoutIgnoredDirectories(
+            SystemDirs.withoutIgnoredDirectories(
                 items = parseMultiStatus(xml, target).filter { normalize(it.url) != normalize(target) },
                 nameOf = { it.name },
                 isDirectory = { it.isDirectory },
@@ -64,14 +69,26 @@ class WebDavClient(
         }
     }
 
+    private fun <T> execute(request: Request, read: (Response) -> T): T {
+        val call = client.newCall(request)
+        val registered = CancelSignal.current?.attach(Closeable { call.cancel() })
+        return try { call.execute().use(read) } finally { registered?.close() }
+    }
+
     /** 文件大小；服务器没给 Content-Length 时返回 -1 */
-    fun size(url: String): Long {
+    fun size(url: String): Long = fileHeaders(url)["Content-Length"]?.toLongOrNull() ?: -1L
+
+    internal fun fileVersion(url: String): String = fileHeaders(url).let {
+        listOf(it["Content-Length"], it["ETag"], it["Last-Modified"]).joinToString("|") { part -> part.orEmpty() }
+    }
+
+    private fun fileHeaders(url: String): okhttp3.Headers {
         val request = request(url).head().build()
-        client.newCall(request).execute().use { response ->
+        return execute(request) { response ->
             if (!response.isSuccessful) {
                 throw WebDavException(response.code, "取文件信息失败：HTTP ${response.code}")
             }
-            return response.header("Content-Length")?.toLongOrNull() ?: -1L
+            response.headers
         }
     }
 
@@ -80,16 +97,16 @@ class WebDavClient(
         val request = request(url)
             .header("Range", "bytes=$offset-${offset + length - 1}")
             .build()
-        client.newCall(request).execute().use { response ->
+        return execute(request) { response ->
             if (response.code == 206) {
-                return response.body?.bytes()
+                return@execute response.body?.bytes()
             }
             if (response.code == 200) {
                 // 服务器忽略了 Range，把整份都发来了。
                 // 不能 body.bytes()：大包整块读进内存会撑爆进程，只读到需要的那一段就停
-                val body = response.body ?: return null
-                if (offset > 0L) return null
-                return body.byteStream().use { input ->
+                val body = response.body ?: return@execute null
+                if (offset > 0L) return@execute null
+                return@execute body.byteStream().use { input ->
                     val out = ByteArray(length)
                     var filled = 0
                     while (filled < length) {
@@ -100,7 +117,7 @@ class WebDavClient(
                     out.copyOf(filled)
                 }
             }
-            if (response.code == 416) return ByteArray(0)
+            if (response.code == 416) return@execute ByteArray(0)
             throw WebDavException(response.code, "读取失败：HTTP ${response.code}")
         }
     }
@@ -121,6 +138,7 @@ class WebDavClient(
         isCancelled: () -> Boolean = { false },
     ) {
         val call = client.newCall(request(url).build())
+        val registered = CancelSignal.current?.attach(Closeable { call.cancel() })
         val finished = java.util.concurrent.atomic.AtomicBoolean(false)
         val watcher = Thread({
             while (!finished.get()) {
@@ -180,6 +198,7 @@ class WebDavClient(
         } finally {
             finished.set(true)
             watcher.interrupt()
+            registered?.close()
         }
     }
 
@@ -212,22 +231,24 @@ class WebDavClient(
      * 按引用取字节流，目录书逐页读用。
      * 关流时把响应一起关掉，否则连接池会被占满。
      */
-    fun openStream(url: String): java.io.InputStream {
-        val response = client.newCall(request(url).build()).execute()
-        if (!response.isSuccessful) {
-            response.close()
-            throw WebDavException(response.code, "读取失败：HTTP ${response.code}")
-        }
-        val body = response.body
-        if (body == null) {
-            response.close()
-            throw WebDavException(response.code, "响应为空")
-        }
-        return object : java.io.FilterInputStream(body.byteStream()) {
-            override fun close() {
-                runCatching { super.close() }
+    fun openStream(url: String, cancel: CancelSignal? = CancelSignal.current): java.io.InputStream {
+        val call = client.newCall(request(url).build())
+        val registered = cancel?.attach(Closeable { call.cancel() })
+        try {
+            val response = call.execute()
+            val body = response.body
+            if (!response.isSuccessful || body == null) {
                 response.close()
+                throw WebDavException(response.code, "读取失败：HTTP ${response.code}")
             }
+            return object : java.io.FilterInputStream(body.byteStream()) {
+                override fun close() {
+                    try { response.close() } finally { registered?.close() }
+                }
+            }
+        } catch (e: Throwable) {
+            registered?.close()
+            throw e
         }
     }
 
@@ -261,11 +282,13 @@ class WebDavClient(
         }
 
         private const val PROPFIND_BODY = """<?xml version="1.0" encoding="utf-8"?>
-<propfind xmlns="DAV:"><prop><resourcetype/><getcontentlength/></prop></propfind>"""
+<propfind xmlns="DAV:"><prop><resourcetype/><getcontentlength/><getetag/><getlastmodified/></prop></propfind>"""
 
         private val RESPONSE = Regex("""<(?:[A-Za-z0-9]+:)?response\b.*?</(?:[A-Za-z0-9]+:)?response>""", RegexOption.DOT_MATCHES_ALL)
         private val HREF = Regex("""<(?:[A-Za-z0-9]+:)?href\s*>(.*?)</""", RegexOption.DOT_MATCHES_ALL)
         private val LENGTH = Regex("""<(?:[A-Za-z0-9]+:)?getcontentlength\s*>(.*?)</""", RegexOption.DOT_MATCHES_ALL)
+        private val ETAG = Regex("""<(?:[A-Za-z0-9]+:)?getetag\s*>(.*?)</""", RegexOption.DOT_MATCHES_ALL)
+        private val MODIFIED = Regex("""<(?:[A-Za-z0-9]+:)?getlastmodified\s*>(.*?)</""", RegexOption.DOT_MATCHES_ALL)
         private val COLLECTION = Regex("""<(?:[A-Za-z0-9]+:)?collection\b""")
 
         /** `&amp;` `&#38;` 这类实体：名字或数字 */
@@ -281,7 +304,9 @@ class WebDavClient(
                 val isDir = COLLECTION.containsMatchIn(block)
                 val size = LENGTH.find(block)?.groupValues?.get(1)?.trim()?.toLongOrNull() ?: -1L
                 val name = decodeName(url)
-                Entry(url = url, name = name, isDirectory = isDir, size = size)
+                Entry(url = url, name = name, isDirectory = isDir, size = size,
+                    etag = ETAG.find(block)?.groupValues?.get(1)?.trim()?.let(::unescapeXml),
+                    lastModified = MODIFIED.find(block)?.groupValues?.get(1)?.trim())
             }.toList()
 
         /**

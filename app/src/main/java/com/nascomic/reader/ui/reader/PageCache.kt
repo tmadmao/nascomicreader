@@ -14,7 +14,17 @@ import android.graphics.Rect
 class PageCache(private val budgetBytes: Long) {
 
     /** 一页解好之后的样子：位图 + 裁边范围 + 是不是跨页宽图 */
-    class Entry(val bitmap: Bitmap, val bounds: Rect, val wide: Boolean)
+    class Entry(
+        val bitmap: Bitmap,
+        val bounds: Rect,
+        val wide: Boolean,
+        val verdict: SidewaysPage.Verdict = SidewaysPage.Verdict.NONE,
+    )
+
+    @Synchronized
+    fun remove(index: Int) {
+        entries.remove(index)?.let { bytes -= it.bitmap.byteCount }
+    }
 
     // accessOrder = true：get 也算用过，淘汰时先丢最久没碰的
     private val entries = LinkedHashMap<Int, Entry>(8, 0.75f, true)

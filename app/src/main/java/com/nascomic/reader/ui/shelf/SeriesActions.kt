@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.shelf
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.Intent
 import android.widget.EditText
 import android.widget.Toast
@@ -79,7 +81,7 @@ class SeriesActions(
             setSelection(text.length)
             hint = activity.getString(R.string.series_name_hint)
         }
-        AlertDialog.Builder(activity)
+        AppDialogBuilder(activity)
             .setTitle(R.string.series_new_title)
             .setView(input)
             .setNegativeButton(R.string.action_cancel, null)
@@ -111,7 +113,7 @@ class SeriesActions(
             activity.getString(R.string.series_view),
             activity.getString(R.string.series_leave),
         )
-        AlertDialog.Builder(activity)
+        AppDialogBuilder(activity)
             .setTitle(activity.getString(R.string.series_in, seriesName))
             .setItems(items) { _, which ->
                 if (which == 0) {

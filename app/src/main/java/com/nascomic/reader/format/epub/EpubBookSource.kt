@@ -47,6 +47,8 @@ class EpubBookSource(
 
     override fun pageName(page: Int): String = pages[page].name.substringAfterLast('/')
 
+    override fun pageLocator(page: Int): String = pages[page].name
+
     override fun openPage(page: Int): InputStream = catalog.open(pages[page])
 
     override fun chapterOf(page: Int): Int = 0

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 护眼暖色·开：太阳填成强调橙，与其它开关的「已开」是同一套语汇 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFF06A35"
+        android:pathData="M12,8.6 a3.4,3.4 0 1,1 0,6.8 a3.4,3.4 0 1,1 0,-6.8" />
+    <path
+        android:strokeColor="#FFF06A35"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M12,6.8 L12,4.9 M12,17.2 L12,19.1 M6.8,12 L4.9,12 M17.2,12 L19.1,12 M8.3,8.3 L6.9,6.9 M15.7,15.7 L17.1,17.1 M15.7,8.3 L17.1,6.9 M8.3,15.7 L6.9,17.1" />
+</vector>

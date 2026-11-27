@@ -12,4 +12,7 @@ interface RenderedPageSource {
 
     /** 把第 [page] 页画成不超过 [width] × [height] 的位图；失败返回 null */
     fun renderPage(page: Int, width: Int, height: Int): Bitmap?
+
+    /** 固定口径的页面指纹取样，不随设备大小或阅读质量偏好变化。调用方释放位图。 */
+    fun renderProofPage(page: Int): Bitmap? = null
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 缩略图角上的页码：半透明墨底小胶囊 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#B31B1C20" />
+    <corners android:radius="7dp" />
+</shape>

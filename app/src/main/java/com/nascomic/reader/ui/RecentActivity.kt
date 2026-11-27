@@ -94,12 +94,13 @@ class RecentActivity : AppCompatActivity() {
     private fun loadCover(bookId: Long) {
         if (loading.size > MAX_LOADING || !loading.add(bookId)) return
         lifecycleScope.launch {
+            val book = db.bookDao().get(bookId)
             val bitmap: Bitmap? = withContext(Dispatchers.IO) {
                 val width = if (coverWidth > 0) coverWidth else dp(112)
-                runCatching { thumbs.load(bookId, width, width * 4 / 3) }.getOrNull()
+                book?.let { thumbs.load(it, width, width * 4 / 3) }
             }
             loading.remove(bookId)
-            if (bitmap != null) adapter.showCover(bookId, bitmap)
+            if (bitmap != null && book != null) adapter.showCover(book, bitmap)
         }
     }
 

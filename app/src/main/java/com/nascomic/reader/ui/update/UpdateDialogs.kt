@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.update
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.Context
 import android.view.LayoutInflater
 import android.widget.Toast
@@ -45,7 +47,7 @@ object UpdateDialogs {
         val titleRes =
             if (forced) R.string.update_title_forced else R.string.update_title_available
 
-        val builder = AlertDialog.Builder(context)
+        val builder = AppDialogBuilder(context)
             .setTitle(context.getString(titleRes, manifest.versionName))
             .setView(binding.root)
             .setPositiveButton(R.string.update_now) { _, _ ->
@@ -71,7 +73,7 @@ object UpdateDialogs {
         versionName: String,
         onDismissed: () -> Unit,
     ) {
-        AlertDialog.Builder(context)
+        AppDialogBuilder(context)
             .setTitle(R.string.update_ready_title)
             .setMessage(context.getString(R.string.update_ready_message, versionName))
             // 不给返回键：包已经在本地了，要么装要么明确放弃，别留个悬念

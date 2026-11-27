@@ -52,4 +52,7 @@
     <color name="cover_placeholder">#EFEAE1</color>
     <color name="tab_active">#1B1C20</color>
     <color name="tab_inactive">#6F6A62</color>
+
+    <!-- 阅读页的护眼暖色：一层约 15% 的暖橙薄膜，叠在画面上，不碰系统亮度 -->
+    <color name="reader_warm_tint">#26FF8B4C</color>
 </resources>

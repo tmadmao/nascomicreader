@@ -9,6 +9,18 @@ import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface PageEditDao {
+    @Query("SELECT * FROM page_edits WHERE book_id = :bookId ORDER BY page_index")
+    suspend fun forBook(bookId: Long): List<PageEditEntity>
+
+    @Upsert
+    suspend fun put(edit: PageEditEntity)
+
+    @Query("DELETE FROM page_edits WHERE book_id = :bookId AND page_index = :page")
+    suspend fun remove(bookId: Long, page: Int)
+}
+
+@Dao
 interface SourceDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -34,6 +46,12 @@ interface SourceDao {
 
     @Query("UPDATE sources SET scan_state = :state, error_code = :errorCode, last_scan_at = :at WHERE id = :id")
     suspend fun setScanState(id: Long, state: Int, errorCode: Int?, at: Long)
+
+    @Query("UPDATE sources SET scan_state = :state, error_code = :errorCode, last_scan_at = :at " +
+        "WHERE id = :id AND scan_state = :scanning AND last_scan_at = :startedAt")
+    suspend fun finishScanIfCurrent(
+        id: Long, scanning: Int, startedAt: Long, state: Int, errorCode: Int?, at: Long?,
+    )
 
     /**
      * 把「停在扫描中」的来源改成失败。
@@ -183,6 +201,9 @@ interface BookDao {
     @Query("UPDATE books SET cover_page = :page WHERE id = :id")
     suspend fun updateCoverPage(id: Long, page: Int)
 
+    @Query("UPDATE books SET cover_page = :page WHERE id = :id AND cover_page = :previous AND content_version = :version")
+    suspend fun updateCoverIfUnchanged(id: Long, previous: Int, version: Long, page: Int): Int
+
     @Query("SELECT COUNT(*) FROM books")
     suspend fun count(): Int
 
@@ -307,6 +328,10 @@ interface BookmarkDao {
 
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /** 改书型重建时先清空这本书的书签，再按新落点一次写回 */
+    @Query("DELETE FROM bookmarks WHERE book_id = :bookId")
+    suspend fun deleteForBook(bookId: Long)
 }
 
 /** 分组计数的投影：来源 id 与该来源下的书数 */
@@ -359,4 +384,79 @@ interface SeriesDao {
         val next = (lastOrdinal(seriesId) ?: -1) + 1
         putMember(SeriesBookEntity(seriesId = seriesId, bookId = bookId, ordinal = next, addedAt = at))
     }
+
+    @Query("SELECT EXISTS(SELECT 1 FROM series_books WHERE series_id = :seriesId AND ordinal = :ordinal)")
+    suspend fun hasOrdinal(seriesId: Long, ordinal: Int): Boolean
+
+    @Query("UPDATE series_books SET ordinal = ordinal + 1 WHERE series_id = :seriesId AND ordinal >= :from")
+    suspend fun shiftFrom(seriesId: Long, from: Int)
+
+    /**
+     * 插到指定位置：原来的书挪岗位让开。
+     *
+     * 改书型会把一本书拆成几本 / 并成一本，[ordinal] 取的是原成员的位置——
+     * 一律追加到队尾会让系列里的顺序凭空变一次。
+     */
+    @Transaction
+    suspend fun insertAt(seriesId: Long, bookId: Long, ordinal: Int?, at: Long) {
+        if (ordinal == null) {
+            append(seriesId, bookId, at)
+            return
+        }
+        if (hasOrdinal(seriesId, ordinal)) shiftFrom(seriesId, ordinal)
+        putMember(SeriesBookEntity(seriesId = seriesId, bookId = bookId, ordinal = ordinal, addedAt = at))
+    }
+}
+
+/**
+ * 单本书型覆盖。按节点查、按节点清，不跟书行走。
+ *
+ * 扫描时一次性把某个来源的覆盖读成 map，避免每个节点查一次库；
+ * 清理由扫描结束时的 [prune] 统一做，部分目录没读到时调用方跳过。
+ */
+@Dao
+interface BookModeOverrideDao {
+
+    @Query("SELECT * FROM book_mode_overrides WHERE source_id = :sourceId")
+    suspend fun forSource(sourceId: Long): List<BookModeOverrideEntity>
+
+    @Query("SELECT * FROM book_mode_overrides WHERE source_id = :sourceId AND doc_ref = :docRef LIMIT 1")
+    suspend fun get(sourceId: Long, docRef: String): BookModeOverrideEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(override: BookModeOverrideEntity): Long
+
+    @Query("DELETE FROM book_mode_overrides WHERE source_id = :sourceId AND doc_ref = :docRef")
+    suspend fun remove(sourceId: Long, docRef: String)
+
+    /** 清掉这次扫描没再见到的节点；按段删，避免单条 SQL 绑定参数超限 */
+    @Query("DELETE FROM book_mode_overrides WHERE source_id = :sourceId AND doc_ref IN (:refs)")
+    suspend fun deleteRefs(sourceId: Long, refs: List<String>)
+
+    @Query("SELECT doc_ref FROM book_mode_overrides WHERE source_id = :sourceId")
+    suspend fun refsOf(sourceId: Long): List<String>
+}
+
+/** 作者别名。扫描写作者前查一次全表（作者量级是几百，不是书量级） */
+@Dao
+interface AuthorAliasDao {
+
+    @Query("SELECT * FROM author_alias")
+    suspend fun all(): List<AuthorAliasEntity>
+
+    @Query("SELECT to_name FROM author_alias WHERE from_name = :from LIMIT 1")
+    suspend fun targetOf(from: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(alias: AuthorAliasEntity)
+
+    @Query("DELETE FROM author_alias WHERE from_name = :from")
+    suspend fun remove(from: String)
+
+    /** 合并 B→C 时，把所有指向 B 的旧名一起改成 C，别留两层 */
+    @Query("UPDATE author_alias SET to_name = :to WHERE to_name = :from")
+    suspend fun repoint(from: String, to: String)
+
+    @Query("SELECT * FROM author_alias WHERE to_name = :to")
+    suspend fun sourcesOf(to: String): List<AuthorAliasEntity>
 }

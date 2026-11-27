@@ -136,6 +136,39 @@ class MigrationTest {
         db.close()
     }
 
+    @Test
+    fun `10到11建覆盖与别名表_书与进度不动`() {
+        val name = "mig_10_11.db"
+        createOld(name, version = 10).close()
+
+        val db = helper.runMigrationsAndValidate(name, 11, true, *chainUpTo(11))
+        assertTrue(db.hasTable("book_mode_overrides"))
+        assertTrue(db.hasTable("author_alias"))
+        assertEquals("第一卷", db.text("SELECT title FROM books WHERE id = 1"))
+        assertEquals(7L, db.count("SELECT page_global FROM progress WHERE book_id = 1"))
+        // 两张新表升级时是空的：覆盖与别名都由用户动作写入
+        assertEquals(0L, db.count("SELECT COUNT(*) FROM book_mode_overrides"))
+        assertEquals(0L, db.count("SELECT COUNT(*) FROM author_alias"))
+        db.close()
+    }
+
+    @Test
+    fun `11到12保留进度和书签_页修正随书删除`() {
+        val name = "mig_11_12.db"
+        createOld(name, version = 11).close()
+
+        val db = helper.runMigrationsAndValidate(name, 12, true, *chainUpTo(12))
+        assertEquals(7L, db.count("SELECT page_global FROM progress WHERE book_id = 1"))
+        assertEquals("看到这里", db.text("SELECT note FROM bookmarks WHERE id = 1"))
+        assertEquals(0L, db.count("SELECT count(*) FROM page_edits"))
+        db.execSQL("PRAGMA foreign_keys = ON")
+        db.execSQL("INSERT INTO page_edits VALUES (1, 7, 'test-proof', 0, 90, 0, NULL)")
+        assertEquals(90L, db.count("SELECT rotation FROM page_edits WHERE book_id = 1 AND page_index = 7"))
+        db.execSQL("DELETE FROM books WHERE id = 1")
+        assertEquals(0L, db.count("SELECT count(*) FROM page_edits"))
+        db.close()
+    }
+
     /** 跨过多个版本的库要能一路升上来，中间每一步都不能断 */
     @Test
     fun `从2一路升到当前版本_书与进度书签都在`() {

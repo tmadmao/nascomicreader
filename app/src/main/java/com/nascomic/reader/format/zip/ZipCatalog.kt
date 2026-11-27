@@ -29,6 +29,7 @@ class ZipCatalog private constructor(
         val compressedSize: Long,
         val uncompressedSize: Long,
         val localHeaderOffset: Long,
+        val crc32: Long = 0,
     ) {
         val isDirectory: Boolean get() = name.endsWith("/")
     }
@@ -142,7 +143,8 @@ class ZipCatalog private constructor(
                 buf.position(buf.position() + 4)          // version made by + version needed
                 val flags = buf.short.toInt() and 0xFFFF
                 val method = buf.short.toInt() and 0xFFFF
-                buf.position(buf.position() + 8)          // time + date + crc
+                buf.position(buf.position() + 4)          // time + date
+                val crc32 = buf.int.toLong() and 0xFFFFFFFFL
                 var compSize = buf.int.toLong() and 0xFFFFFFFFL
                 var uncompSize = buf.int.toLong() and 0xFFFFFFFFL
                 val nameLen = buf.short.toInt() and 0xFFFF
@@ -177,6 +179,7 @@ class ZipCatalog private constructor(
                     compressedSize = compSize,
                     uncompressedSize = uncompSize,
                     localHeaderOffset = localOffset,
+                    crc32 = crc32,
                 )
                 seen++
             }

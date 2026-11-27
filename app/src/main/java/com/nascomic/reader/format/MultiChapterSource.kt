@@ -22,15 +22,20 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource, RenderedPa
         val title: String,
         /** 已知页数，-1 表示不知道（要打开才知道） */
         private val declaredPages: Int = -1,
+        val locator: String = title,
         private val factory: () -> BookSource,
     ) {
 
-        constructor(title: String, source: BookSource) : this(title, -1, { source })
+        constructor(title: String, source: BookSource) : this(title, -1, factory = { source })
 
         private var opened: BookSource? = null
+        private var closed = false
 
         val source: BookSource
-            @Synchronized get() = opened ?: factory().also { opened = it }
+            @Synchronized get() {
+                check(!closed) { "章节已关闭" }
+                return opened ?: factory().also { opened = it }
+            }
 
         /** 这一章的书源建过没有。关的时候只关建过的 */
         val isOpened: Boolean
@@ -40,6 +45,7 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource, RenderedPa
 
         fun close() {
             synchronized(this) {
+                closed = true
                 val src = opened ?: return
                 opened = null
                 runCatching { src.close() }
@@ -76,14 +82,30 @@ class MultiChapterSource(private val parts: List<Part>) : BookSource, RenderedPa
         return parts[index].source.pageName(local)
     }
 
+    override fun pageLocator(page: Int): String {
+        val (index, local) = locate(page)
+        val part = parts[index]
+        return "${part.locator.length}:${part.locator}${part.source.pageLocator(local)}"
+    }
+
     override fun openPage(page: Int): InputStream {
         val (index, local) = locate(page)
         return parts[index].source.openPage(local)
     }
 
+    override fun openPage(page: Int, cancel: CancelSignal): InputStream {
+        val (index, local) = locate(page)
+        return parts[index].source.openPage(local, cancel)
+    }
+
     override fun renderPage(page: Int, width: Int, height: Int): Bitmap? {
         val (index, local) = locate(page)
         return (parts[index].source as? RenderedPageSource)?.renderPage(local, width, height)
+    }
+
+    override fun renderProofPage(page: Int): Bitmap? {
+        val (index, local) = locate(page)
+        return (parts[index].source as? RenderedPageSource)?.renderProofPage(local)
     }
 
     override fun chapterOf(page: Int): Int = locate(page).first

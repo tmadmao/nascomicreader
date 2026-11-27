@@ -28,6 +28,10 @@ class ZipBookSource internal constructor(
 
     override fun pageName(page: Int): String = layout.pages[page].name
 
+    internal fun pageIdentity(page: Int): Pair<String, String> = layout.pages[page].let {
+        it.name to "${it.crc32}:${it.uncompressedSize}"
+    }
+
     override fun openPage(page: Int): InputStream = catalog.open(layout.pages[page])
 
     override fun chapterOf(page: Int): Int = layout.chapterOf(page)

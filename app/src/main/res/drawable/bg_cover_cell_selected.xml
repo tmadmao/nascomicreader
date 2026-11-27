@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 挑封面：当前封面的格子，2dp 品牌橙描边 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FFFFFF" />
+    <corners android:radius="6dp" />
+    <stroke android:width="2dp" android:color="@color/brand_accent" />
+</shape>

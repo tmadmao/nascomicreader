@@ -226,6 +226,39 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- 删除的 5 秒撤销：一条与多选带同高的横条，书已经不在列表里了，点撤销就放回来 -->
+    <LinearLayout
+        android:id="@+id/undo_bar"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:background="@drawable/bg_bottom_bar"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_margin"
+        android:paddingEnd="@dimen/page_margin"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/undo_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/shell_ink"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/undo_action"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:background="@drawable/bg_pill_ink"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/action_undo"
+            android:textColor="#FFFFFFFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+
     <!-- 多选态：底部一条操作带，取消就退出 -->
     <LinearLayout
         android:id="@+id/select_bar"

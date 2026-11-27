@@ -113,16 +113,16 @@ class ShelfAdapter(
         holder.progress.ratio = if (p != null) readPercent(read, total, p.finished) / 100f else 0f
         holder.meta.text = metaOf(holder.itemView.context, book, p)
 
-        holder.cover.tag = book.id
+        holder.cover.tag = covers.key(book)
         bound[book.id] = holder
 
-        val bitmap = covers.cached(book.id)
+        val bitmap = covers.cached(book)
         if (bitmap != null) {
             holder.cover.setImageBitmap(bitmap)
         } else {
             holder.cover.setImageDrawable(null)
             // 文件在就排队解一次；真的没有，外面那条生成队列会补上，生成好再回调到这里
-            covers.load(book.id) { id, loaded -> showCover(id, loaded) }
+            covers.load(book, ::showCover)
             onCoverNeeded(book.id)
         }
 
@@ -146,14 +146,14 @@ class ShelfAdapter(
     }
 
     /** 封面生成好了：还在显示这一本的格子直接换图，不整表刷新 */
-    fun showCover(bookId: Long, bitmap: android.graphics.Bitmap) {
-        covers.put(bookId, bitmap)
-        val holder = bound[bookId] ?: return
-        if (holder.cover.tag == bookId) holder.cover.setImageBitmap(bitmap)
+    fun showCover(book: BookEntity, bitmap: android.graphics.Bitmap) {
+        covers.put(book, bitmap)
+        val holder = bound[book.id] ?: return
+        if (holder.cover.tag == covers.key(book)) holder.cover.setImageBitmap(bitmap)
     }
 
     override fun onViewRecycled(holder: Holder) {
-        val id = holder.cover.tag as? Long
+        val id = (holder.cover.tag as? com.nascomic.reader.library.cover.ThumbnailStore.Key)?.bookId
         if (id != null && bound[id] === holder) bound.remove(id)
         super.onViewRecycled(holder)
     }

@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui.about
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.EditText
@@ -80,7 +82,7 @@ class AboutActivity : AppCompatActivity() {
             minLines = 2
             gravity = Gravity.START or Gravity.TOP
         }
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.settings_update_source)
             .setMessage(R.string.settings_update_source_hint)
             .setView(input)

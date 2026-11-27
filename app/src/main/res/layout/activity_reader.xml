@@ -11,6 +11,17 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 护眼暖色：只盖在画面上，工具栏与提示卡保持本色；不接触摸 -->
+    <View
+        android:id="@+id/warm_tint"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/reader_warm_tint"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="gone" />
+
+
     <ProgressBar
         android:id="@+id/loading"
         android:layout_width="wrap_content"
@@ -35,6 +46,143 @@
         android:singleLine="true"
         android:textColor="#FFFFFFFF"
         android:textSize="11sp" />
+
+    <!-- 横置页提示：判定为「单页横着扫进来」时浮出一条，点右侧才转 90°，不自动改画面 -->
+    <LinearLayout
+        android:id="@+id/sideways_hint"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/bg_sideways_hint"
+        android:elevation="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="14dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_sideways_rotate" />
+
+        <TextView
+            android:id="@+id/sideways_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:text="@string/reader_sideways_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/sideways_skip"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="48dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/reader_sideways_skip"
+            android:textColor="#B0B0B2"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/sideways_rotate"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_sideways_primary"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="50dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/reader_sideways_rotate"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 自动下滑调速：只在自动下滑跑着时浮出，− / + 调档，右侧一键停 -->
+    <LinearLayout
+        android:id="@+id/auto_speed_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/bg_sideways_hint"
+        android:elevation="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/auto_slower"
+            android:layout_width="44dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="@string/reader_auto_slower"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="@string/reader_auto_minus"
+            android:textColor="#FFFFFFFF"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/auto_speed_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="56dp"
+            android:gravity="center"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/auto_faster"
+            android:layout_width="44dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="@string/reader_auto_faster"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="@string/reader_auto_plus"
+            android:textColor="#FFFFFFFF"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/auto_stop"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_sideways_primary"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="50dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/reader_auto_stop"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <!-- 书的尾：整本读完之后再往后翻，整屏一块空态，不再是翻不动 -->
     <LinearLayout
@@ -162,6 +310,16 @@
             </LinearLayout>
 
             <ImageView
+                android:id="@+id/edit_page"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/reader_edit_page"
+                android:enabled="false"
+                android:padding="8dp"
+                android:src="@drawable/ic_page_edit" />
+
+            <ImageView
                 android:id="@+id/open_toc"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
@@ -249,6 +407,40 @@
             <TextView
                 style="@style/ReaderBarLabel"
                 android:text="@string/reader_bookmark" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/warm"
+            style="@style/ReaderBarItem">
+
+            <ImageView
+                android:id="@+id/warm_icon"
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="@string/reader_warm"
+                android:src="@drawable/ic_warm" />
+
+            <TextView
+                style="@style/ReaderBarLabel"
+                android:text="@string/reader_warm" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/auto"
+            style="@style/ReaderBarItem"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/auto_icon"
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="@string/reader_auto"
+                android:src="@drawable/ic_auto_scroll" />
+
+            <TextView
+                android:id="@+id/auto_label"
+                style="@style/ReaderBarLabel"
+                android:text="@string/reader_auto" />
         </LinearLayout>
 
         <LinearLayout

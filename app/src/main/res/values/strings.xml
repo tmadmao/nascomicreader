@@ -15,23 +15,60 @@
     <string name="scan_cancelled">已取消扫描，书库没有改动</string>
     <string name="scan_title">正在扫描书库</string>
     <string name="scan_listing">正在读取「%1$s」的目录…</string>
-    <string name="scan_progress">已读 %1$d / %2$d 本</string>
+    <string name="scan_progress">正在写入书库：%1$d / %2$d 本</string>
+    <string name="scan_committing">正在提交书库变更…</string>
     <string name="status_scan_done">「%1$s」扫描完成\n发现 %2$d 本 · 新增 %3$d · 更新 %4$d</string>
     <string name="status_scan_kept">「%1$s」这次一本都没扫到，原有 %2$d 本已保留</string>
     <string name="status_scan_failed">扫描失败：%1$s</string>
     <string name="status_source_missing">来源记录丢失，请重新选择目录</string>
 
-    <string name="reader_page_format">%1$d / %2$d</string>
-    <string name="reader_page_chapter_format">%1$s · %2$d / %3$d</string>
+    <string name="reader_page_format">%1$d / %2$d</string>    <string name="reader_page_chapter_format">%1$s · %2$d / %3$d</string>
     <string name="reader_page_range">%1$d–%2$d / %3$d</string>
     <string name="reader_page_chapter_range">%1$s · %2$d–%3$d / %4$d</string>
+    <string name="reader_sideways_title">这页像是横着扫进来的</string>
+    <string name="reader_sideways_rotate">转正</string>
+    <string name="reader_sideways_skip">不用</string>
+    <string name="reader_sideways_done_title">方向还不对？</string>
+    <string name="reader_sideways_again">再转 90°</string>
+    <string name="reader_sideways_accept">保存转正</string>
+    <string name="reader_edit_page">修正页面</string>
+    <string name="reader_edit_page_number">第 %1$d 页</string>
+    <string name="reader_edit_kind">页面类型</string>
+    <string name="reader_edit_rotation">顺时针旋转</string>
+    <string name="reader_edit_pairing">并排方式</string>
+    <string name="reader_edit_auto">自动</string>
+    <string name="reader_edit_normal">普通页</string>
+    <string name="reader_edit_spread">跨页图</string>
+    <string name="reader_edit_solo">单独显示</string>
+    <string name="reader_edit_previous">与前一页并排</string>
+    <string name="reader_edit_next">与后一页并排</string>
+    <string name="reader_edit_0">0°</string>
+    <string name="reader_edit_90">90°</string>
+    <string name="reader_edit_180">180°</string>
+    <string name="reader_edit_270">270°</string>
+    <string name="reader_edit_horizontal_only">并排方式只在横向阅读中生效。</string>
+    <string name="reader_edit_clear">清除修正</string>
+    <string name="reader_edit_save">保存修正</string>
+    <string name="reader_edit_failed">未能保存页面修正。请重新打开这本书后再试。</string>
     <string name="reader_toolbar_toc">目录</string>
     <string name="reader_bookmark">书签</string>
+    <string name="reader_warm">暖色</string>
+    <string name="reader_auto">自动</string>
+    <string name="reader_auto_stop">停止</string>
+    <string name="reader_auto_slower">减速</string>
+    <string name="reader_auto_faster">加速</string>
+    <string name="reader_auto_minus">−</string>
+    <string name="reader_auto_plus">＋</string>
+    <string name="reader_auto_speed_value">速度 %1$d</string>
     <string name="reader_prev_page">上一页</string>
     <string name="reader_next_page">下一页</string>
     <string name="reader_zone_menu">菜单</string>
     <string name="reader_bookmark_added">已加书签</string>
     <string name="reader_bookmark_removed">已取消书签</string>
+    <string name="reader_bookmark_loading">正在加载书签…</string>
+    <string name="reader_bookmark_empty">暂无书签</string>
+    <string name="reader_bookmark_load_failed">书签加载失败</string>
+    <string name="reader_bookmark_row">%1$s · 第 %2$d 页</string>
     <string name="reader_toc_row">%1$d. %2$s</string>
     <string name="reader_toc_row_pages">%1$d. %2$s　%3$d 页</string>
     <string name="reader_open_failed">打不开这本书</string>
@@ -133,6 +170,8 @@
     <string name="shelf_delete_title">从书库删除</string>
     <string name="shelf_delete_message">「%1$s」会从书架移除，它的阅读进度与书签一并删掉。\n源文件不动，下次重扫还会回来。</string>
     <string name="shelf_delete_done">已从书库移除</string>
+    <string name="shelf_delete_failed">删除失败，记录仍在书库</string>
+    <string name="shelf_undo_text">已从书库删除 %1$d 本</string>
     <string name="shelf_delete_confirm">删除</string>
     <string name="shelf_cover_title">「%1$s」用第几张做封面</string>
     <string name="shelf_cover_hint">这本书共 %1$d 页；很多书的第一张是扉页，可以从第二张起算</string>
@@ -146,6 +185,7 @@
     <string name="detail_bookmark_row_chapter">%1$s · 第 %2$d 页</string>
     <string name="detail_bookmark_delete">删除书签</string>
     <string name="action_delete">删除</string>
+    <string name="action_undo">撤销</string>
     <string name="action_cancel">取消</string>
     <string name="detail_bookmark_deleted">已删除</string>
     <string name="detail_chapter_row">%1$d. %2$s</string>
@@ -290,7 +330,7 @@
     <string name="settings_native_decode">原图显示</string>
     <string name="settings_native_decode_desc">按图片原始尺寸解码，放大看细节不糊。关闭后宽于屏幕的图会先缩到屏宽，省内存但放大发虚</string>
     <string name="settings_tap_zone">点击翻页</string>
-    <string name="settings_tap_zone_desc">分区线固定在屏宽 35% 与 65%；对角档按对角线切</string>
+    <string name="settings_tap_zone_desc" formatted="false">分区线固定在屏宽 35% 与 65%；对角档按对角线切</string>
     <string name="settings_tap_zone_off">关</string>
     <string name="settings_tap_zone_sides">左右两区</string>
     <string name="settings_tap_zone_diag1">对角 · 左下↔右上</string>
@@ -302,7 +342,7 @@
     <string name="settings_skip_off">关</string>
     <string name="settings_skip_from">第 %1$d 张起</string>
     <string name="settings_split_mode">跨页拆分</string>
-    <string name="settings_split_mode_desc">宽图拆成两半显示；方向决定先看哪半</string>
+    <string name="settings_split_mode_desc">宽图拆成两半；方向决定先看哪半。竖向连贯里拆成上下两段接着看</string>
     <string name="settings_split_off">关</string>
     <string name="settings_split_left">先看左半</string>
     <string name="settings_split_right">先看右半</string>
@@ -652,6 +692,8 @@
 
     <string name="settings_split_wide">跨页拆分</string>
     <string name="settings_split_wide_desc">横向跨页大图拆成左右两半，先看左再翻到右</string>
+    <string name="settings_sideways_detect">识别横置页</string>
+    <string name="settings_sideways_detect_desc">一页横着扫进来时提示转正；判不准就不打扰</string>
 
     <string name="settings_margin">两侧边距</string>
     <string name="settings_margin_value">%1$d dp</string>
@@ -664,4 +706,63 @@
 
     <string name="settings_page_label">显示页码</string>
     <string name="settings_page_label_desc">阅读时在底部显示位置，呼出工具栏时自动让位</string>
+
+    <!-- 改书型：单本覆盖与批量拆并 -->
+    <string name="shelf_batch_mode">改书型…</string>
+    <string name="book_mode_action_title">改书型</string>
+    <string name="book_mode_to_single">改为单行本 / 图集</string>
+    <string name="book_mode_to_serial">改为连载</string>
+    <string name="book_mode_restore">恢复跟随来源</string>
+    <string name="book_mode_reading">正在读目录…</string>
+    <string name="book_mode_preview_title">确认改书型</string>
+    <string name="book_mode_preview_group">《%1$s》：%2$d 本 → %3$d 本</string>
+    <string name="book_mode_preview_same">《%1$s》：%2$d 本（书目不变，只更新章节结构）</string>
+    <string name="book_mode_incoming">一并纳入：%1$s</string>
+    <string name="book_mode_series_keep">系列：保留「%1$s」</string>
+    <string name="book_mode_cover_keep">封面：保留「%1$s」</string>
+    <string name="book_mode_confirm">执行</string>
+    <string name="book_mode_result_title">改书型结果</string>
+    <string name="book_mode_result_ok">《%1$s》：%2$s</string>
+    <string name="book_mode_result_fail">《%1$s》失败：%2$s</string>
+    <string name="book_mode_retry_failed">重试失败组</string>
+    <string name="book_mode_nothing">这些书不需要改书型</string>
+    <string name="book_mode_only_folders">只有目录书能改书型；独立的压缩包 / PDF 本身就是一册</string>
+    <string name="book_mode_failed_generic">执行时出错，这一组先不动</string>
+    <string name="book_mode_reading_failed">读目录失败，先重试</string>
+    <string name="book_mode_series_pick">这条系列归属保留哪一本的？</string>
+    <string name="book_mode_cover_pick">自选封面保留哪一本的？</string>
+
+    <!-- 作者合并 -->
+    <string name="author_menu_rename">改名</string>
+    <string name="author_menu_merge">合并到…</string>
+    <string name="author_merge_title">合并到…</string>
+    <string name="author_merge_desc">把「%1$s」并入另一位作者。旧写法会记下来，以后扫到的书不再单列一条。</string>
+    <string name="author_merge_search_hint">搜作者名，或直接输入新名字</string>
+    <string name="author_merge_create">新建「%1$s」</string>
+    <string name="author_merge_create_hint">把这个名字当成新的正名</string>
+    <string name="author_merge_confirm">合并到「%1$s」</string>
+    <string name="author_merge_busy">上一笔合并正在处理，请稍后再试</string>
+    <string name="author_merge_failed">合并作者失败，原有记录已保留</string>
+    <string name="author_merge_need_target">先选一位作者</string>
+    <string name="author_merge_empty">没有别的作者，直接输入一个名字</string>
+    <string name="author_merge_done">已将「%1$s」合并到「%2$s」</string>
+    <string name="author_merge_undo">撤销</string>
+    <string name="author_merge_undo_done">已撤销合并</string>
+    <string name="author_merge_undo_hint">合并后 5 秒内可撤销</string>
+
+    <!-- 换封面挑页 -->
+    <string name="cover_picker_title">选择封面</string>
+    <string name="cover_picker_jump">跳到第 N 页</string>
+    <string name="cover_picker_book">《%1$s》· 共 %2$d 页；点一页就设为封面</string>
+    <string name="cover_picker_chapter">第 %1$d 章 · %2$s</string>
+    <string name="cover_picker_chapter_plain">第 %1$d 章</string>
+    <string name="cover_picker_pages">%1$d 页</string>
+    <string name="cover_picker_restore">恢复默认封面</string>
+    <string name="cover_picker_current">当前封面：第 %1$d 页</string>
+    <string name="cover_picker_loading">正在打开这本书…</string>
+    <string name="cover_picker_failed">这本书打不开，换一本试试</string>
+    <string name="cover_picker_jump_title">跳到第几页</string>
+    <string name="cover_picker_jump_hint">1 – %1$d</string>
+    <string name="cover_picker_jump_invalid">页码要在 1 到 %1$d 之间</string>
+    <string name="cover_picker_failed_cell">取不出来</string>
 </resources>

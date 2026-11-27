@@ -1,5 +1,7 @@
 package com.nascomic.reader.ui
 
+import com.nascomic.reader.ui.widget.AppDialogBuilder
+
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -161,7 +163,7 @@ class SeriesDetailActivity : AppCompatActivity() {
             getString(R.string.series_menu_rename),
             getString(R.string.series_menu_delete),
         )
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setItems(items) { _, which ->
                 if (which == 0) askRename() else confirmDelete()
             }
@@ -174,7 +176,7 @@ class SeriesDetailActivity : AppCompatActivity() {
             setSelection(text.length)
             hint = getString(R.string.series_rename_hint)
         }
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.series_rename_title)
             .setView(input)
             .setNegativeButton(R.string.action_cancel, null)
@@ -190,7 +192,7 @@ class SeriesDetailActivity : AppCompatActivity() {
     }
 
     private fun confirmDelete() {
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.series_delete_title)
             .setMessage(getString(R.string.series_delete_message, binding.title.text, volumes.size))
             .setNegativeButton(R.string.action_cancel, null)
@@ -237,7 +239,7 @@ class SeriesDetailActivity : AppCompatActivity() {
     private fun confirmRemove() {
         if (selectedIds.isEmpty()) return
         val doomed = selectedIds.toList()
-        AlertDialog.Builder(this)
+        AppDialogBuilder(this)
             .setTitle(R.string.series_remove_title)
             .setMessage(getString(R.string.series_remove_message, doomed.size))
             .setNegativeButton(R.string.action_cancel, null)

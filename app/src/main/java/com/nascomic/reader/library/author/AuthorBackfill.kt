@@ -16,14 +16,17 @@ class AuthorBackfill(private val db: ReaderDatabase) {
     suspend fun run(): Int {
         val books = db.bookDao().withoutAuthor()
         if (books.isEmpty()) return 0
+        // 回填的也是解析值，同样先过别名表
+        val aliases = db.authorAliasDao().all().associate { it.fromName to it.toName }
         var filled = 0
         db.withTransaction {
             for (book in books) {
                 val parsed = VolumeNameParser.parse(book.title)
-                if (parsed.author == null && parsed.volume == null) continue
+                val author = parsed.author?.let { AuthorAliases.resolve(it, aliases) }
+                if (author == null && parsed.volume == null) continue
                 db.bookDao().setAuthorAndVolume(
                     book.id,
-                    parsed.author,
+                    author,
                     parsed.volume?.toString(),
                 )
                 filled++

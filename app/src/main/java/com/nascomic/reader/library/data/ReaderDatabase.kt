@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 库版本。实体声明、导出的 schema、迁移目标都取这一处，
  * 改表只动这里一个数。
  */
-internal const val DB_VERSION = 10
+internal const val DB_VERSION = 12
 
 /**
  * 应用数据库。
@@ -28,6 +28,9 @@ internal const val DB_VERSION = 10
         BookmarkEntity::class,
         SeriesEntity::class,
         SeriesBookEntity::class,
+        BookModeOverrideEntity::class,
+        AuthorAliasEntity::class,
+        PageEditEntity::class,
     ],
     version = DB_VERSION,
     exportSchema = true
@@ -40,6 +43,9 @@ abstract class ReaderDatabase : RoomDatabase() {
     abstract fun progressDao(): ProgressDao
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun seriesDao(): SeriesDao
+    abstract fun modeOverrideDao(): BookModeOverrideDao
+    abstract fun authorAliasDao(): AuthorAliasDao
+    abstract fun pageEditDao(): PageEditDao
 
     companion object {
         private const val NAME = "reader.db"
@@ -170,6 +176,68 @@ abstract class ReaderDatabase : RoomDatabase() {
         }
 
         /**
+         * 10→11：单本书型覆盖与作者别名两张表。
+         *
+         * 覆盖按「来源 + 节点引用」记而不是给 books 加列：拆并会把书行删掉重建，
+         * 挂在书上的列活不过一次拆并。别名记的是字符串对应关系，与作者实体无关，不建外键。
+         */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `book_mode_overrides` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `source_id` INTEGER NOT NULL,
+                        `doc_ref` TEXT NOT NULL,
+                        `mode` INTEGER NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        FOREIGN KEY(`source_id`) REFERENCES `sources`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_book_mode_overrides_source_id_doc_ref` " +
+                        "ON `book_mode_overrides` (`source_id`, `doc_ref`)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `author_alias` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `from_name` TEXT NOT NULL,
+                        `to_name` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_author_alias_from_name` " +
+                        "ON `author_alias` (`from_name`)"
+                )
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS page_edits (
+                        book_id INTEGER NOT NULL,
+                        page_index INTEGER NOT NULL,
+                        page_proof TEXT NOT NULL,
+                        page_kind INTEGER NOT NULL,
+                        rotation INTEGER NOT NULL,
+                        pairing INTEGER NOT NULL,
+                        partner_proof TEXT,
+                        PRIMARY KEY(book_id, page_index),
+                        FOREIGN KEY(book_id) REFERENCES books(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /**
          * 迁移链，按版本顺序排列。建库与设备测试共用这一份：
          * 测试按它逐级套用，避免测试里另抄一份而两处走散。
          */
@@ -182,6 +250,8 @@ abstract class ReaderDatabase : RoomDatabase() {
             MIGRATION_7_8,
             MIGRATION_8_9,
             MIGRATION_9_10,
+            MIGRATION_10_11,
+            MIGRATION_11_12,
         )
 
         private fun build(context: Context): ReaderDatabase =

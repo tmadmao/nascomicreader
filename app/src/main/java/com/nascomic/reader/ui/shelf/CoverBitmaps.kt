@@ -6,6 +6,8 @@ import android.os.Looper
 import android.util.LruCache
 import com.nascomic.reader.library.cover.ThumbnailStore
 import java.util.concurrent.Executors
+import com.nascomic.reader.library.data.BookEntity
+import com.nascomic.reader.library.cover.ThumbnailStore.Key
 
 /**
  * 书架封面的内存缓存与后台解码。
@@ -22,13 +24,13 @@ class CoverBitmaps(private val store: ThumbnailStore) {
     private val executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "shelf-cover").apply { isDaemon = true }
     }
-    private val inFlight = HashSet<Long>()
+    private val inFlight = HashSet<Key>()
 
     /** 上限取堆的八分之一：封面是锦上添花，不该跟正文抢内存 */
-    private val cache = object : LruCache<Long, Bitmap>(
+    private val cache = object : LruCache<Key, Bitmap>(
         (Runtime.getRuntime().maxMemory() / 8).coerceAtMost(48L * 1024 * 1024).toInt()
     ) {
-        override fun sizeOf(key: Long, value: Bitmap): Int = value.byteCount
+        override fun sizeOf(key: Key, value: Bitmap): Int = value.byteCount
     }
 
     private var width = 0
@@ -42,40 +44,37 @@ class CoverBitmaps(private val store: ThumbnailStore) {
         cache.evictAll()
     }
 
-    fun cached(bookId: Long): Bitmap? = cache.get(bookId)
+    fun key(book: BookEntity): Key = store.key(book)
 
-    fun put(bookId: Long, bitmap: Bitmap) {
-        cache.put(bookId, bitmap)
+    fun cached(book: BookEntity): Bitmap? = cache.get(key(book))
+
+    fun put(book: BookEntity, bitmap: Bitmap) {
+        cache.put(key(book), bitmap)
     }
 
-    /**
-     * 取一张封面。命中缓存直接回调（还是在主线程上）；没命中就去后台解，
-     * 解完回主线程。同一本只排一次。
-     */
-    fun load(bookId: Long, onReady: (Long, Bitmap) -> Unit) {
-        cache.get(bookId)?.let {
-            onReady(bookId, it)
+    fun load(book: BookEntity, onReady: (BookEntity, Bitmap) -> Unit) {
+        val key = key(book)
+        cache.get(key)?.let {
+            onReady(book, it)
             return
         }
         val w = width
         val h = height
         if (w <= 0 || h <= 0) return
         synchronized(inFlight) {
-            if (!inFlight.add(bookId)) return
+            if (!inFlight.add(key)) return
         }
         executor.execute {
-            val bitmap = runCatching { store.load(bookId, w, h) }.getOrNull()
-            synchronized(inFlight) { inFlight.remove(bookId) }
-            if (bitmap == null) return@execute
-            // 尺寸在解码期间又变了：这张已经不对了，丢掉别往缓存里塞
-            if (w != width || h != height) return@execute
-            cache.put(bookId, bitmap)
-            main.post { onReady(bookId, bitmap) }
+            val bitmap = runCatching { store.load(key, w, h) }.getOrNull()
+            synchronized(inFlight) { inFlight.remove(key) }
+            if (bitmap == null || w != width || h != height) return@execute
+            cache.put(key, bitmap)
+            main.post { onReady(book, bitmap) }
         }
     }
 
     fun invalidate(bookId: Long) {
-        cache.remove(bookId)
+        cache.snapshot().keys.filter { it.bookId == bookId }.forEach { cache.remove(it) }
     }
 
     fun clear() {

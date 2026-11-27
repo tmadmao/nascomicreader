@@ -50,6 +50,10 @@ class BookOpener(private val context: Context) {
     fun open(book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>): BookSource =
         open(book, source, chapters, trustStoredPages = true)
 
+    internal fun openForCoverPicker(
+        book: BookEntity, source: SourceEntity, chapters: List<ChapterEntity>, cancel: CancelSignal,
+    ): BookSource = cancel.run { open(book, source, chapters, trustStoredPages = true) }
+
     /**
      * 核对路径：章页数一律重数，并且读当前源文件。
      *
@@ -133,18 +137,26 @@ class BookOpener(private val context: Context) {
      */
     private interface RemoteBackend : java.io.Closeable {
         fun list(dir: String): List<RemoteItem>
+        fun fileVersion(ref: String): String
         fun openStream(ref: String): InputStream
+        /** 可取消的取字节；请求一建好就挂到 [cancel] 上 */
+        fun openStream(ref: String, cancel: CancelSignal): InputStream = openStream(ref)
         fun randomAccess(ref: String): RandomAccessData
         fun download(ref: String, out: File, isCancelled: () -> Boolean)
     }
 
-    private class RemoteItem(val ref: String, val name: String, val isDir: Boolean)
+    private class RemoteItem(val ref: String, val name: String, val isDir: Boolean, val version: String)
 
     private class WebDavBackend(private val client: WebDavClient) : RemoteBackend {
         override fun list(dir: String): List<RemoteItem> =
-            client.list(dir).map { RemoteItem(it.url, it.name, it.isDirectory) }
+            client.list(dir).map { RemoteItem(it.url, it.name, it.isDirectory, listOf(it.size, it.etag, it.lastModified).joinToString("|")) }
+
+        override fun fileVersion(ref: String): String = client.fileVersion(ref)
 
         override fun openStream(ref: String): InputStream = client.openStream(ref)
+
+        override fun openStream(ref: String, cancel: CancelSignal): InputStream =
+            client.openStream(ref, cancel)
 
         override fun randomAccess(ref: String): RandomAccessData =
             HttpRandomAccess(client, ref, client.size(ref))
@@ -158,9 +170,14 @@ class BookOpener(private val context: Context) {
 
     private class SmbBackend(private val client: SmbClient) : RemoteBackend {
         override fun list(dir: String): List<RemoteItem> =
-            client.list(dir).map { RemoteItem(it.path, it.name, it.isDirectory) }
+            client.list(dir).map { RemoteItem(it.path, it.name, it.isDirectory, listOf(it.size, it.lastModified).joinToString("|")) }
+
+        override fun fileVersion(ref: String): String = client.fileVersion(ref)
 
         override fun openStream(ref: String): InputStream = client.openStream(ref)
+
+        override fun openStream(ref: String, cancel: CancelSignal): InputStream =
+            client.openStream(ref, cancel)
 
         override fun randomAccess(ref: String): RandomAccessData =
             SmbRandomAccess(client, ref, client.size(ref))
@@ -263,6 +280,85 @@ class BookOpener(private val context: Context) {
         return CoverPage(openChapter(book, source, ordered[hit.first]), hit.second)
     }
 
+    /**
+     * 只数页数：改书型时换算全局页号要用。
+     *
+     * 打开的是当前内容（不强制重取），也不写库、不缓存页；[ref] 可以是整本书，
+     * 也可以是某一章的引用。打不开返回 null，由调用方决定整组不动。
+     */
+    fun countPages(
+        book: BookEntity,
+        source: SourceEntity,
+        chapters: List<ChapterEntity>,
+        ref: String,
+    ): Int? = pageLayout(book, source, chapters, ref)?.count
+
+    /** 一章（或整本）的页数与页序签名 */
+    data class PageLayout(val count: Int, val signature: String)
+
+    /**
+     * 数页数，同时记下**页序**。
+     *
+     * 只比页数不够：作者把 p1、p2 换成 p2、p3，页数没变，进度却指到了另一张图。
+     * 核对完整引用与来源提供的文件版本；ZIP 另用中央目录中的每页 CRC。
+     * 打不开返回 null，由调用方决定整组不动。
+     */
+    fun pageLayout(
+        book: BookEntity,
+        source: SourceEntity,
+        chapters: List<ChapterEntity>,
+        ref: String,
+    ): PageLayout? = runCatching {
+        val chapter = chapters.firstOrNull { it.chapterRef == ref }
+        if (ref != book.docRef && chapter == null) return@runCatching null
+        fun layout(open: () -> BookSource, version: (() -> String)?): PageLayout? {
+            val before = version?.invoke()
+            return open().use { opened ->
+                if (opened.pageCount <= 0) return@use null
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                fun add(value: String) {
+                    val bytes = value.toByteArray(Charsets.UTF_8)
+                    digest.update(ByteBuffer.allocate(4).putInt(bytes.size).array())
+                    digest.update(bytes)
+                }
+                add(ref)
+                add(before.orEmpty())
+                for (p in 0 until opened.pageCount) {
+                    val (identity, revision) = when (opened) {
+                        is FolderBookSource -> opened.pageIdentity(p)
+                        is ZipBookSource -> opened.pageIdentity(p)
+                        else -> opened.pageName(p) to ""
+                    }
+                    add(identity)
+                    add(revision)
+                }
+                if (version?.invoke() != before) return@use null
+                PageLayout(opened.pageCount, digest.digest().joinToString("") { "%02x".format(it) })
+            }
+        }
+        val folder = chapter?.let { it.chapterKind == ChapterEntity.KIND_FOLDER }
+            ?: (book.format == BookEntity.FORMAT_FOLDER)
+        fun remote(backend: RemoteBackend): PageLayout? = backend.use {
+            layout({
+                if (chapter == null) openRemote(book, emptyList(), backend, false, true) { false }
+                else remoteChapter(backend, chapter, book, audit = true)
+            }, if (folder) null else ({ backend.fileVersion(ref) }))
+        }
+        when (source.kind) {
+            SourceEntity.KIND_WEBDAV -> remote(WebDavBackend(WebDavClient(source.account, secrets.get(source.secretRef), source.endpoint)))
+            SourceEntity.KIND_SMB -> remote(SmbBackend(SmbClient(SmbTarget.parse(source.endpoint ?: error("No endpoint")),
+                source.account, secrets.get(source.secretRef))))
+            else -> {
+                val tree = source.treeUri ?: return@runCatching null
+                val walker = SafWalker(context, Uri.parse(tree))
+                layout({
+                    if (chapter == null) openLocal(book, tree, emptyList(), false, true) { false }
+                    else openLocalChapter(walker, chapter, audit = true)
+                }, if (folder) null else ({ walker.versionOf(ref) }))
+            }
+        }
+    }.getOrNull()
+
     /** 只打开某一章，其余不碰 */
     private fun openChapter(book: BookEntity, source: SourceEntity, ch: ChapterEntity): BookSource =
         when (source.kind) {
@@ -361,10 +457,14 @@ class BookOpener(private val context: Context) {
         isCancelled: () -> Boolean = { false },
     ): BookSource {
         val entries = ArrayList<Pair<String, String>>()
-        collectRemoteImages(backend, dir, "", entries, 0, isCancelled)
-        return FolderBookSource.from(entries, title) { ref ->
-            backend.openStream(ref)
-        }
+        val versions = HashMap<String, String>()
+        collectRemoteImages(backend, dir, "", entries, versions, 0, isCancelled)
+        return FolderBookSource.from(entries, title, versions, object : PageOpener {
+            override fun open(ref: String): InputStream = backend.openStream(ref)
+
+            override fun open(ref: String, cancel: CancelSignal): InputStream =
+                backend.openStream(ref, cancel)
+        })
     }
 
     private fun collectRemoteImages(
@@ -372,6 +472,7 @@ class BookOpener(private val context: Context) {
         dir: String,
         prefix: String,
         out: MutableList<Pair<String, String>>,
+        versions: MutableMap<String, String>,
         depth: Int,
         isCancelled: () -> Boolean,
     ) {
@@ -381,8 +482,11 @@ class BookOpener(private val context: Context) {
             if (isCancelled()) throw java.io.InterruptedIOException("已取消")
             val path = if (prefix.isEmpty()) item.name else "$prefix/${item.name}"
             when {
-                item.isDir -> collectRemoteImages(backend, item.ref, path, out, depth + 1, isCancelled)
-                ImageNames.isImage(item.name) -> out += path to item.ref
+                item.isDir -> collectRemoteImages(backend, item.ref, path, out, versions, depth + 1, isCancelled)
+                ImageNames.isImage(item.name) -> {
+                    out += path to item.ref
+                    versions[item.ref] = item.version
+                }
             }
         }
     }
@@ -617,8 +721,9 @@ class BookOpener(private val context: Context) {
         strict: Boolean = false,
         isCancelled: () -> Boolean = { false },
     ): BookSource {
-        val entries = listImages(walker, docId, prefix = "", strict = strict, isCancelled = isCancelled)
-        return FolderBookSource.from(entries, title) { ref ->
+        val versions = HashMap<String, String>()
+        val entries = listImages(walker, docId, prefix = "", strict = strict, isCancelled = isCancelled, versions = versions)
+        return FolderBookSource.from(entries, title, versions) { ref ->
             walker.open(ref) ?: throw IllegalStateException("打不开图片：$ref")
         }
     }
@@ -661,6 +766,7 @@ class BookOpener(private val context: Context) {
         val parts = chapters.sortedBy { it.ordinal }.map { ch ->
             MultiChapterSource.Part(
                 title = ch.title,
+                locator = ch.chapterRef.ifEmpty { ch.entryPrefix },
                 declaredPages = if (trustStoredPages) {
                     ch.pageTotal.takeIf { it > 0 } ?: -1
                 } else {
@@ -682,6 +788,7 @@ class BookOpener(private val context: Context) {
         depth: Int = 0,
         strict: Boolean = false,
         isCancelled: () -> Boolean = { false },
+        versions: MutableMap<String, String>,
     ): List<Pair<String, String>> {
         if (depth > 2) return emptyList()
         if (isCancelled()) throw java.io.InterruptedIOException("已取消")
@@ -697,16 +804,24 @@ class BookOpener(private val context: Context) {
             if (isCancelled()) throw java.io.InterruptedIOException("已取消")
             val path = if (prefix.isEmpty()) node.name else "$prefix/${node.name}"
             when {
-                node.isDir -> out += listImages(walker, node.docId, path, depth + 1, strict, isCancelled)
-                ImageNames.isImage(node.name) -> out += path to node.docId
+                node.isDir -> out += listImages(walker, node.docId, path, depth + 1, strict, isCancelled, versions)
+                ImageNames.isImage(node.name) -> {
+                    out += path to node.docId
+                    versions[node.docId] = "${node.size}:${node.lastModified}"
+                }
             }
         }
         return out
     }
 }
 
-/** 用文件描述符做随机读，压缩包按需取字节，不整包进内存 */
-private class ChannelRandomAccess(pfd: ParcelFileDescriptor) : RandomAccessData {
+/**
+ * 用文件描述符做随机读，压缩包按需取字节，不整包进内存。
+ *
+ * 必须一直攥着 [pfd]：[FileInputStream] 只借用描述符、不持有它，
+ * PFD 一旦被回收，finalize 会把底层 fd 关掉，之后所有读取都是 Bad file descriptor。
+ */
+private class ChannelRandomAccess(private val pfd: ParcelFileDescriptor) : RandomAccessData {
     private val stream = FileInputStream(pfd.fileDescriptor)
     private val channel = stream.channel
 
@@ -719,5 +834,6 @@ private class ChannelRandomAccess(pfd: ParcelFileDescriptor) : RandomAccessData 
 
     override fun close() {
         runCatching { stream.close() }
+        runCatching { pfd.close() }
     }
 }

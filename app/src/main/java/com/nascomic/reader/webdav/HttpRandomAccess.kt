@@ -13,16 +13,16 @@ class HttpRandomAccess(
     override val size: Long,
 ) : RandomAccessData {
 
-    private var cacheStart = -1L
-    private var cache: ByteArray? = null
+    @Volatile private var cache: Pair<Long, ByteArray>? = null
 
     override fun read(offset: Long, dest: ByteArray, destOffset: Int, length: Int): Int {
         if (offset < 0 || offset >= size) return -1
         val want = minOf(length.toLong(), size - offset).toInt()
         if (want <= 0) return -1
 
-        val cached = cache
-        val start = cacheStart
+        val blockAt = cache
+        val cached = blockAt?.second
+        val start = blockAt?.first ?: -1L
         if (cached != null && offset >= start && offset + want <= start + cached.size) {
             System.arraycopy(cached, (offset - start).toInt(), dest, destOffset, want)
             return want
@@ -34,8 +34,7 @@ class HttpRandomAccess(
             ?: throw IllegalStateException("服务器不支持按区间读取")
         if (block.isEmpty()) return -1
 
-        cacheStart = offset
-        cache = block
+        cache = offset to block
         val n = minOf(want, block.size)
         System.arraycopy(block, 0, dest, destOffset, n)
         return n
@@ -43,7 +42,6 @@ class HttpRandomAccess(
 
     override fun close() {
         cache = null
-        cacheStart = -1L
     }
 
     private companion object {

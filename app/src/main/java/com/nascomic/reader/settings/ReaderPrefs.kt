@@ -51,7 +51,7 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
 
     /**
      * 阅读方向：0 竖向连贯 / 1 横向·点右侧下一页 / 2 横向·点左侧下一页。
-     * 横向两种是同一件事的两个方向，「分区互换」不再单列一个开关。
+     * 横向两种是同一件事的两个方向，「分区互换」不单列开关。
      */
     var scrollMode: Int
         get() = int(KEY_SCROLL_MODE, 1)
@@ -152,6 +152,30 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
 
     /** 拆分后的第一半：0 左 / 1 右 */
     val splitFirstHalf: Int get() = if (splitMode == 2) 1 else 0
+
+    /**
+     * 识别横置页：一页横着扫进来时提示转正。
+     * 默认开——这一类页不提示就只能自己歪着头看；判不准时不提示，不打扰。
+     */
+    var detectSideways: Boolean
+        get() = bool(KEY_SIDEWAYS, true)
+        set(value) = putBool(KEY_SIDEWAYS, value)
+
+    /**
+     * 护眼暖色：画面之上盖一层暖色薄膜，不改系统亮度。
+     * 默认关；这是全屏观感，按全局值读写，不跟单本书走。
+     */
+    var warmTint: Boolean
+        get() = bool(KEY_WARM_TINT, false)
+        set(value) = putBool(KEY_WARM_TINT, value)
+
+    /**
+     * 条漫自动下滑的速度档位（1–9）。在阅读页的调速浮层里加减，按全局值读写：
+     * 顺手的速度跟人不跟书，换本书还按这一档走。
+     */
+    var autoScrollLevel: Int
+        get() = int(KEY_AUTO_SPEED, 3)
+        set(value) = putInt(KEY_AUTO_SPEED, value.coerceIn(1, 9))
 
     /** 页面上是否显示页码与章名 */
     var showPageLabel: Boolean
@@ -366,9 +390,12 @@ class ReaderPrefs(context: Context, private val bookId: Long = 0L) {
         const val KEY_DUAL_PAGE = "reader.dual_page"
         const val KEY_MARGIN = "reader.side_margin_dp"
         const val KEY_CANVAS = "reader.canvas"
+        const val KEY_WARM_TINT = "reader.warm_tint"
+        const val KEY_AUTO_SPEED = "reader.auto_scroll_speed"
         const val KEY_PAGE_LABEL = "reader.show_page_label"
         const val KEY_TRIM = "reader.trim_border"
         const val KEY_SPLIT = "reader.split_wide"
+        const val KEY_SIDEWAYS = "reader.detect_sideways"
         const val KEY_TRIM_LEVEL = "reader.trim_level"
         const val KEY_SKIP_BLANK = "reader.skip_blank"
         const val KEY_KEEP_ON = "reader.keep_screen_on"

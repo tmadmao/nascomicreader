@@ -45,7 +45,11 @@ class PdfBookSource(
 
     override fun firstPageOfChapter(chapter: Int): Int = 0
 
-    override fun renderPage(page: Int, width: Int, height: Int): Bitmap? = synchronized(lock) {
+    override fun renderPage(page: Int, width: Int, height: Int): Bitmap? = render(page, width, height, quality)
+
+    override fun renderProofPage(page: Int): Bitmap? = render(page, 768, 768, 8)
+
+    private fun render(page: Int, width: Int, height: Int, quality: Int): Bitmap? = synchronized(lock) {
         if (closed || width <= 0 || height <= 0) return null
         runCatching {
             if (page < 0 || page >= renderer.pageCount) return null

@@ -106,15 +106,12 @@ class SeriesActivity : AppCompatActivity() {
     /** 系列封面 = 首卷封面；首卷还没缩略图就现生成一次，别让整页灰着 */
     private fun loadCover(card: SeriesCardAdapter.Card, image: ImageView) {
         val bookId = card.coverBookId ?: return
-        covers.cached(bookId)?.let {
-            image.setImageBitmap(it)
-            return
-        }
         lifecycleScope.launch {
+            val book = db.bookDao().get(bookId) ?: return@launch
             val width = if (coverWidth > 0) coverWidth else dp(112)
-            val bitmap = seriesCover.load(bookId, width)
+            val bitmap = covers.cached(book) ?: seriesCover.load(bookId, width)
             if (bitmap != null) {
-                covers.put(bookId, bitmap)
+                covers.put(book, bitmap)
                 adapter.showCover(card.seriesId, bitmap)
             }
         }

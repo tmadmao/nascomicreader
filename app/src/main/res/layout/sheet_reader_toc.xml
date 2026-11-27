@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@color/shell_surface"
     android:orientation="vertical"
     android:paddingBottom="12dp">
 
-    <!-- 标题与排序钮同一行：右边这枚写的是「现在是什么序」，点一下换另一种 -->
+    <!-- 切到书签时给排序钮留出同样的空间，避免两个页签改变位置。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -14,17 +15,19 @@
         android:orientation="horizontal"
         android:paddingStart="20dp"
         android:paddingEnd="20dp"
-        android:paddingTop="18dp"
+        android:paddingTop="8dp"
         android:paddingBottom="10dp">
 
-        <TextView
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/toc_tabs"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/reader_toolbar_toc"
-            android:textColor="@color/shell_ink"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:layout_marginEnd="12dp"
+            app:tabIndicatorColor="@color/brand_accent"
+            app:tabIndicatorFullWidth="false"
+            app:tabSelectedTextColor="@color/brand_accent_deep"
+            app:tabTextColor="@color/shell_ink" />
 
         <TextView
             android:id="@+id/toc_order"
@@ -33,12 +36,14 @@
             android:background="@drawable/bg_chip_unselected"
             android:clickable="true"
             android:focusable="true"
+            android:minHeight="48dp"
+            android:gravity="center"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:paddingTop="5dp"
             android:paddingBottom="5dp"
             android:text="@string/detail_order_asc"
-            android:textColor="@color/brand_accent"
+            android:textColor="@color/brand_accent_deep"
             android:textSize="12sp" />
     </LinearLayout>
 

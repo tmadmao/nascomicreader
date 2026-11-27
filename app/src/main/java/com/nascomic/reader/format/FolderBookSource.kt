@@ -10,6 +10,9 @@ import java.io.InputStream
  */
 fun interface PageOpener {
     fun open(ref: String): InputStream
+
+    /** 可取消的取字节；远端实现会在这里把请求挂上 [cancel] */
+    fun open(ref: String, cancel: CancelSignal): InputStream = open(ref)
 }
 
 /**
@@ -24,13 +27,22 @@ class FolderBookSource private constructor(
     private val chapterStarts: IntArray,
     override val chapters: List<ChapterInfo>,
     private val opener: PageOpener,
+    private val versions: Map<String, String>,
 ) : BookSource {
 
     override val pageCount: Int get() = pageRefs.size
 
     override fun pageName(page: Int): String = pageRefs[page].substringAfterLast('/')
 
+    override fun pageLocator(page: Int): String = pageRefs[page]
+
+    internal fun pageIdentity(page: Int): Pair<String, String> =
+        pageRefs[page].let { it to versions[it].orEmpty() }
+
     override fun openPage(page: Int): InputStream = opener.open(pageRefs[page])
+
+    override fun openPage(page: Int, cancel: CancelSignal): InputStream =
+        opener.open(pageRefs[page], cancel)
 
     override fun chapterOf(page: Int): Int = chapterOfPage[page]
 
@@ -46,6 +58,13 @@ class FolderBookSource private constructor(
         fun from(
             entries: List<Pair<String, String>>,
             fallbackTitle: String,
+            opener: PageOpener,
+        ): FolderBookSource = from(entries, fallbackTitle, emptyMap(), opener)
+
+        internal fun from(
+            entries: List<Pair<String, String>>,
+            fallbackTitle: String,
+            versions: Map<String, String>,
             opener: PageOpener,
         ): FolderBookSource {
             val images = entries.filter { (name, _) -> ImageNames.isImage(name) }
@@ -77,7 +96,7 @@ class FolderBookSource private constructor(
                 for (p in from until to) map[p] = ordinal
             }
 
-            return FolderBookSource(flatRefs, map, starts.toIntArray(), infos, opener)
+            return FolderBookSource(flatRefs, map, starts.toIntArray(), infos, opener, versions)
         }
 
         private fun chapterKeyOf(name: String): String {

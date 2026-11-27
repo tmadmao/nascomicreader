@@ -161,6 +161,53 @@ data class BookEntity(
     }
 }
 
+/**
+ * 单本书型覆盖：这个目录节点按另一种书型切书。
+ *
+ * 记在「来源 + 节点引用」上，不挂在 [BookEntity] 上——拆并会把书行删掉重建，
+ * 挂在书上的字段会跟着没；按节点记，书重建后覆盖仍然对得上。
+ * 没有行 = 跟随来源书型，不另设「跟随」枚举值。
+ */
+@Entity(
+    tableName = "book_mode_overrides",
+    foreignKeys = [
+        ForeignKey(
+            entity = SourceEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["source_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["source_id", "doc_ref"], unique = true)]
+)
+data class BookModeOverrideEntity(
+    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
+    @ColumnInfo(name = "source_id") val sourceId: Long,
+    /** 与 `books.doc_ref` 同一口径：本地为 SAF docId，远端为地址 / 路径 */
+    @ColumnInfo(name = "doc_ref") val docRef: String,
+    /** 0=连载 1=单行本，与 `sources.book_mode` 同值域 */
+    @ColumnInfo(name = "mode") val mode: Int,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
+/**
+ * 作者别名：旧写法 → 正名。
+ *
+ * 合并改的是 `books.author`，但扫描新书时仍会解析出旧写法；
+ * 不记这张表，下次扫进来的旧写法又会长成一条作者。
+ */
+@Entity(
+    tableName = "author_alias",
+    indices = [Index(value = ["from_name"], unique = true)]
+)
+data class AuthorAliasEntity(
+    @PrimaryKey(autoGenerate = true) @ColumnInfo(name = "id") val id: Long = 0,
+    @ColumnInfo(name = "from_name") val fromName: String,
+    /** 正名；合并时按链压平，这里不会指向另一个旧名 */
+    @ColumnInfo(name = "to_name") val toName: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
 /** 章。容器内的子目录即一章；没有子目录时整本只有一章。见 §2.3 */
 @Entity(
     tableName = "chapters",
@@ -241,6 +288,27 @@ data class BookmarkEntity(
     @ColumnInfo(name = "page_in_chapter") val pageInChapter: Int,
     @ColumnInfo(name = "note") val note: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
+/** 阅读者的页级修正；签名用于确认当前页仍是保存修正时的页面。 */
+@Entity(
+    tableName = "page_edits",
+    primaryKeys = ["book_id", "page_index"],
+    foreignKeys = [ForeignKey(
+        entity = BookEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["book_id"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+)
+data class PageEditEntity(
+    @ColumnInfo(name = "book_id") val bookId: Long,
+    @ColumnInfo(name = "page_index") val page: Int,
+    @ColumnInfo(name = "page_proof") val proof: String,
+    @ColumnInfo(name = "page_kind") val kind: Int,
+    @ColumnInfo(name = "rotation") val rotation: Int,
+    @ColumnInfo(name = "pairing") val pairing: Int,
+    @ColumnInfo(name = "partner_proof") val partnerProof: String?,
 )
 
 /**

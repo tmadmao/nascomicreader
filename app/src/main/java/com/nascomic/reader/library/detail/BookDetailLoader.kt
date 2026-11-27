@@ -1,6 +1,7 @@
 package com.nascomic.reader.library.detail
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.nascomic.reader.format.BookOpener
 import com.nascomic.reader.format.ChapterInfo
 import com.nascomic.reader.format.comic.ComicMeta
@@ -73,12 +74,18 @@ class BookDetailLoader(
      * 只覆盖「还停在文件名解析值」的那一栏：用户改过的（`author` 与文件名解析结果不一致、
      * 或本来就是他自己设的）一律不动。卷号同理。
      */
-    private suspend fun applyMeta(book: BookEntity, meta: ComicMeta) {
+    private suspend fun applyMeta(book: BookEntity, meta: ComicMeta) = db.withTransaction {
         val parsed = VolumeNameParser.parse(book.title)
+        // 包里的写法和文件名解析值都要先过别名表，否则「用户改过」的判断会把旧写法当成用户改的
+        val aliases = db.authorAliasDao().all().associate { it.fromName to it.toName }
+        fun canon(name: String?): String? =
+            name?.let { com.nascomic.reader.library.author.AuthorAliases.resolve(it, aliases) }
+        val writer = canon(meta.writer)
+        val parsedAuthor = canon(parsed.author)
         val author = when {
-            meta.writer == null -> null
-            book.author.isNullOrBlank() -> meta.writer
-            book.author == parsed.author -> meta.writer
+            writer == null -> null
+            book.author.isNullOrBlank() -> writer
+            book.author == parsedAuthor -> writer
             else -> null
         }
         val parsedVolume = parsed.volume?.toString()
@@ -92,5 +99,6 @@ class BookDetailLoader(
         // 远端读元数据要几秒，这期间用户可能已经手动改过其中一栏，不能把他的改动盖回去
         if (author != null) db.bookDao().setAuthorIfUnchanged(book.id, author, book.author)
         if (volume != null) db.bookDao().setVolumeIfUnchanged(book.id, volume, book.volume)
+        Unit
     }
 }

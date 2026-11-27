@@ -16,8 +16,9 @@ import android.view.View
 data class ReaderPage(
     val bitmap: Bitmap,
     val src: Rect,
-    /** 宽图（跨页大图）。宽图不并排，可拆两半看 */
+    /** 此页不参加自动并排 */
     val wide: Boolean,
+    val split: Boolean = false,
 ) {
     val width: Int get() = src.width()
     val height: Int get() = src.height()
@@ -95,13 +96,13 @@ class ReaderView @JvmOverloads constructor(
             if (field != value) {
                 field = value
                 resetZoom()
-                scrollY = 0f
+                axis.reset()
                 rebuildFit()
                 invalidate()
             }
         }
 
-    private var scrollY = 0f
+    private val axis = ScrollAxis()
     private var verticalTops = FloatArray(0)
     private var verticalTotal = 0f
     private var verticalLeft = 0f
@@ -117,8 +118,12 @@ class ReaderView @JvmOverloads constructor(
      */
     fun bitmapBytes(): Long {
         var sum = 0L
+        // 拆开的上下两段共用一张位图，按身份去重，同一张图只算一次
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Bitmap, Boolean>())
         for (page in pages) {
-            if (!page.bitmap.isRecycled) sum += page.bitmap.byteCount.toLong()
+            if (!page.bitmap.isRecycled && seen.add(page.bitmap)) {
+                sum += page.bitmap.byteCount.toLong()
+            }
         }
         return sum
     }
@@ -136,39 +141,72 @@ class ReaderView @JvmOverloads constructor(
     val currentIndex: Int
         get() {
             if (!vertical || verticalTops.isEmpty()) return 0
-            val anchor = scrollY + height * 0.4f
-            var index = 0
-            for (i in verticalTops.indices) {
-                if (verticalTops[i] <= anchor) index = i else break
-            }
-            return index
+            return slotAt(axis.position + height * 0.4f)
         }
 
-    val atTop: Boolean get() = vertical && scrollY <= 0.5f
+    /** 屏幕顶所在的槽位：短页跨屏时它可能比锚点页落后好几页 */
+    val topIndex: Int
+        get() {
+            if (!vertical || verticalTops.isEmpty()) return 0
+            return slotAt(axis.position)
+        }
 
-    val atBottom: Boolean
-        get() = vertical && scrollY >= (verticalTotal - height).coerceAtLeast(0f) - 0.5f
+    /** 屏幕底所在的槽位：重建窗口要接得住恢复前的整个视口 */
+    val bottomIndex: Int
+        get() {
+            if (!vertical || verticalTops.isEmpty()) return 0
+            return slotAt(axis.position + height)
+        }
 
-    /** 竖向滚动。返回 false 表示已经到头 */
+    private fun slotAt(y: Float): Int {
+        var index = 0
+        for (i in verticalTops.indices) {
+            if (verticalTops[i] <= y) index = i else break
+        }
+        return index
+    }
+
+    val atTop: Boolean get() = vertical && axis.atTop
+
+    val atBottom: Boolean get() = vertical && axis.atBottom
+
+    /** 竖向滚动。返回 false 表示真到了该方向的边界；亚像素小位移先攒着，不算到头 */
     fun scrollBy(dy: Float): Boolean {
         if (!vertical) return false
-        val max = (verticalTotal - height).coerceAtLeast(0f)
-        val next = (scrollY + dy).coerceIn(0f, max)
-        if (kotlin.math.abs(next - scrollY) < 0.5f) return false
-        scrollY = next
-        invalidate()
-        return true
+        val before = axis.position
+        val ok = axis.scrollBy(dy)
+        if (axis.position != before) invalidate()
+        return ok
     }
 
     /** 竖向滚到某一页的顶部 */
     fun scrollToIndex(index: Int) {
         if (!vertical || verticalTops.isEmpty()) {
-            scrollY = 0f
+            axis.reset()
             return
         }
         val i = index.coerceIn(0, verticalTops.size - 1)
-        val max = (verticalTotal - height).coerceAtLeast(0f)
-        scrollY = verticalTops[i].coerceIn(0f, max)
+        axis.scrollTo(verticalTops[i])
+        invalidate()
+    }
+
+    /** 当前滚动位置（px）：按键推进要算实际挪了多少，余量接着滚 */
+    val scrollPosition: Float get() = axis.position
+
+    /** 当前位置距某槽位顶部的有符号偏移：重建窗口后落回页内原处用（跨两页时为负） */
+    fun offsetFromSlot(index: Int): Float {
+        if (!vertical || index !in verticalTops.indices) return 0f
+        return axis.offsetFrom(verticalTops[index])
+    }
+
+    /** 滚到某槽位顶部再往下 [offset]：后台返回重建窗口后恢复页内位置 */
+    fun scrollToSlotOffset(index: Int, offset: Float) {
+        if (!vertical || verticalTops.isEmpty()) {
+            axis.reset()
+            return
+        }
+        val i = index.coerceIn(0, verticalTops.size - 1)
+        axis.scrollTo(verticalTops[i] + offset)
         invalidate()
     }
 
@@ -185,7 +223,7 @@ class ReaderView @JvmOverloads constructor(
         if (!vertical) return
         pages = listOf(page) + pages
         relayoutVertical()
-        scrollY += heightOf(page)
+        axis.shift(heightOf(page))
         invalidate()
     }
 
@@ -196,8 +234,9 @@ class ReaderView @JvmOverloads constructor(
         if (n <= 0) return
         val removed = verticalTops[n]
         pages = pages.drop(n)
+        // 先补偿再按新边界钳位：反过来会先被旧位置钳到新边界、再减一次，画面回跳
+        axis.shift(-removed)
         relayoutVertical()
-        scrollY = (scrollY - removed).coerceAtLeast(0f)
         invalidate()
     }
 
@@ -224,7 +263,7 @@ class ReaderView @JvmOverloads constructor(
         scale = 1f
         panX = 0f
         panY = 0f
-        scrollY = 0f
+        axis.reset()
         rebuildFit()
         invalidate()
     }
@@ -361,6 +400,9 @@ class ReaderView @JvmOverloads constructor(
             content.setEmpty()
             verticalTops = FloatArray(0)
             verticalTotal = 0f
+            axis.viewport = height.toFloat()
+            axis.total = 0f
+            axis.clamp()
             return
         }
         if (vertical) {
@@ -398,6 +440,9 @@ class ReaderView @JvmOverloads constructor(
         if (pages.isEmpty() || width == 0 || height == 0) {
             verticalTops = FloatArray(0)
             verticalTotal = 0f
+            axis.viewport = height.toFloat()
+            axis.total = 0f
+            axis.clamp()
             return
         }
         val margin = marginPx.coerceIn(0, width / 2)
@@ -412,7 +457,9 @@ class ReaderView @JvmOverloads constructor(
         }
         verticalTops = tops
         verticalTotal = y
-        scrollY = scrollY.coerceIn(0f, (verticalTotal - height).coerceAtLeast(0f))
+        axis.viewport = height.toFloat()
+        axis.total = y
+        axis.clamp()
     }
 
     private fun heightOf(page: ReaderPage): Float =
@@ -420,7 +467,7 @@ class ReaderView @JvmOverloads constructor(
 
     private fun drawVertical(canvas: Canvas) {
         canvas.save()
-        canvas.translate(0f, -scrollY)
+        canvas.translate(0f, -axis.position)
         for (i in pages.indices) {
             val page = pages[i]
             if (page.bitmap.isRecycled) continue
@@ -428,7 +475,7 @@ class ReaderView @JvmOverloads constructor(
             val height = (if (i + 1 < pages.size) verticalTops[i + 1] else verticalTotal) - top
             if (height <= 0f) continue
             // 只画落在视口附近的页，绘制量与书的总页数无关
-            val visibleTop = top - scrollY
+            val visibleTop = top - axis.position
             if (visibleTop > this.height || visibleTop + height < 0f) continue
             dst.set(verticalLeft, top, verticalLeft + verticalWidth, top + height)
             canvas.drawBitmap(page.bitmap, page.src, dst, paint)

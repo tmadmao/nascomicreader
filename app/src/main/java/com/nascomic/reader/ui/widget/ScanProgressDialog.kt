@@ -7,22 +7,19 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import com.nascomic.reader.R
 
 /**
- * 扫描进度：一个小弹窗，先说「正在列目录」，列完再报「已读 N / 总数 本」。
- *
- * 远端书逐本列目录，书库一大就要等一阵；没有反馈用户只会以为卡死了。
- * 弹窗不可取消——扫描中途掐断会留下半本书架。
+ * 扫描进度：列目录和写入时可取消；提交时关闭取消入口。
  */
 class ScanProgressDialog(
     private val context: Context,
-    /** 用户点「取消扫描」；扫描会在下一批目录处停下，库不动 */
+    /** 用户点「取消扫描」；扫描在下一个检查点停下，库不动 */
     private val onCancel: (() -> Unit)? = null,
 ) {
 
     private val main = Handler(Looper.getMainLooper())
+    private var progressLocked = false
 
     private val label = TextView(this.context).apply {
         textSize = 13f
@@ -46,7 +43,7 @@ class ScanProgressDialog(
         )
     }
 
-    private val dialog = AlertDialog.Builder(this.context)
+    private val dialog = AppDialogBuilder(this.context)
         .setTitle(R.string.scan_title)
         .setView(
             LinearLayout(this.context).apply {
@@ -69,8 +66,10 @@ class ScanProgressDialog(
     /** 取消按钮：只置标记，真正的停手由扫描器在下一个检查点完成 */
     private fun wireCancel() {
         val button = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
+        button.isEnabled = onCancel != null
         button.setOnClickListener {
             if (onCancel == null) return@setOnClickListener
+            progressLocked = true
             button.isEnabled = false
             label.text = context.getString(R.string.scan_cancelling)
             onCancel.invoke()
@@ -78,6 +77,7 @@ class ScanProgressDialog(
     }
 
     fun showListing(name: String) = onMain {
+        if (progressLocked) return@onMain
         label.text = context.getString(R.string.scan_listing, name)
         bar.isIndeterminate = true
         if (!dialog.isShowing) {
@@ -87,12 +87,18 @@ class ScanProgressDialog(
     }
 
     fun progress(done: Int, total: Int) = onMain {
-        if (total <= 0) return@onMain
+        if (total <= 0 || progressLocked) return@onMain
         bar.isIndeterminate = false
         bar.max = total
         bar.progress = done
         label.text = context.getString(R.string.scan_progress, done, total)
-        if (!dialog.isShowing) dialog.show()
+    }
+
+    /** 由扫描器在主线程同步调用。 */
+    fun committing() {
+        progressLocked = true
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.isEnabled = false
+        label.setText(R.string.scan_committing)
     }
 
     fun dismiss() = onMain {
